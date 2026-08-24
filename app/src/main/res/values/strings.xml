@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">气象天气</string>
+    <string name="default_weather_source">中央气象台</string>
+    <string name="source_cma_desc">国家气象中心官方权威气象实况与预报</string>
+    <string name="source_qweather_name">和风天气</string>
+    <string name="source_qweather_desc">高精度多维度商业气象服务 (扩展备选)</string>
+    <string name="source_openmeteo_name">Open-Meteo</string>
+    <string name="source_openmeteo_desc">全球开源高精度气象预报模型 (扩展备选)</string>
+    <string name="auto_location">当前定位</string>
+    <string name="locating">正在定位中...</string>
+    <string name="location_permission_required">需要位置权限以自动获取您所在城市的天气</string>
+    <string name="grant_permission">授权定位</string>
+    <string name="refresh">刷新</string>
+    <string name="search_city_hint">搜索城市名称（如：海淀、朝阳、南京）</string>
+</resources>

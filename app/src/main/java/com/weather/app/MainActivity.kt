@@ -1,0 +1,88 @@
+package com.weather.app
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
+import com.weather.app.ui.WeatherScreen
+import com.weather.app.ui.theme.WeatherAppTheme
+import com.weather.app.viewmodel.WeatherViewModel
+
+/**
+ * 天气应用主入口 Activity
+ *
+ * 负责应用启动生命周期管理、定位权限请求与 Compose 主界面渲染。
+ */
+class MainActivity : ComponentActivity() {
+
+    private val weatherViewModel: WeatherViewModel by viewModels()
+
+    /**
+     * 定位权限请求启动器
+     */
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+        if (fineGranted || coarseGranted) {
+            // 授权成功后立即触发高精度 GPS 定位刷新与天气预加载
+            weatherViewModel.autoLocateAndPreload()
+        }
+    }
+
+    /**
+     * Activity 创建生命周期回调
+     *
+     * @param savedInstanceState 状态保存 Bundle
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // 启用沉浸式全屏布局
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // 检查并请求定位权限
+        checkAndRequestLocationPermission()
+
+        setContent {
+            WeatherAppTheme {
+                WeatherScreen(
+                    viewModel = weatherViewModel,
+                    onRequestLocationPermission = {
+                        checkAndRequestLocationPermission()
+                    }
+                )
+            }
+        }
+    }
+
+    /**
+     * 检查并请求定位权限
+     */
+    private fun checkAndRequestLocationPermission() {
+        val fineGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val coarseGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!fineGranted && !coarseGranted) {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+}

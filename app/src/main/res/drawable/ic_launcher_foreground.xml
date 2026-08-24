@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- 金黄色太阳 (垂直微调下移，中心位于 (64, 48)) -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M64,48m-14,0a14,14 0 1,0 28,0a14,14 0 1,0 -28,0" />
+
+    <!-- 太阳光芒微光晕 -->
+    <path
+        android:fillColor="#FFF59D"
+        android:pathData="M64,28L64,32 M64,64L64,68 M44,48L48,48 M80,48L84,48 M49.86,33.86L52.69,36.69 M75.31,59.31L78.14,62.14 M49.86,62.14L52.69,59.31 M75.31,36.69L78.14,33.86"
+        android:strokeWidth="2.5"
+        android:strokeColor="#FFCA28"
+        android:strokeLineCap="round" />
+
+    <!-- 纯白立体云朵 (下移至完美居中，中心位于 (54, 56)) -->
+    <!-- 云朵主体 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70,74 H38 C31.37,74 26,68.63 26,62 C26,56.15 30.2,51.28 35.8,50.22 C37.8,42.1 45.2,36 54,36 C64.1,36 72.4,43.8 73.8,53.7 C77.9,55.1 81,59.2 81,64 C81,69.52 76.52,74 70,74 Z" />
+
+    <!-- 云朵底部微弱阴影层次 -->
+    <path
+        android:fillColor="#E3F2FD"
+        android:pathData="M70,74 H38 C34,74 30.5,72 28.5,69 C33,71 65,71 77.5,69 C75.5,72 73,74 70,74 Z" />
+</vector>
