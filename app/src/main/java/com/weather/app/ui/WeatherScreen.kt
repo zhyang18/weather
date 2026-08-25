@@ -65,6 +65,7 @@ import com.weather.app.ui.components.WeatherDetailGrid
 import com.weather.app.ui.components.WeatherSkyBackground
 import com.weather.app.ui.dialogs.CitySelectionSheet
 import com.weather.app.ui.dialogs.SourceSelectionSheet
+import com.weather.app.ui.dialogs.UpdateIntervalDialog
 import com.weather.app.ui.dialogs.WeatherSettingsMenu
 import com.weather.app.viewmodel.WeatherViewModel
 import java.text.SimpleDateFormat
@@ -120,9 +121,16 @@ fun WeatherScreen(
     val currentWeather = uiState.getCurrentWeather()
     val weatherText = currentWeather?.current?.weatherText ?: "多云"
 
+    // 顶部栏随当前页平滑展示对应城市名称
+    val displayedCity = uiState.savedCities.getOrNull(pagerState.currentPage) ?: currentCity
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // 沉浸式动态真实天气天空背景 (支持晴、夜、多云、雨、雷、雪、雾霾、风等全天候动效与平滑过渡)
-        WeatherSkyBackground(weatherText = weatherText)
+        // 沉浸式动态真实天气天空背景 (通过 Lambda 提供视差，在绘制阶段消费，避免触碰高频重组)
+        WeatherSkyBackground(
+            weatherText = weatherText,
+            city = displayedCity,
+            parallaxOffsetProvider = { pagerState.currentPageOffsetFraction }
+        )
 
         Column(
             modifier = Modifier
@@ -132,20 +140,35 @@ fun WeatherScreen(
         ) {
             // 顶部导航栏：左侧城市管理入口、中间城市与分页点指示器、右侧 80% 半透明设置菜单
             TopImmersiveWeatherBar(
-                cityName = currentCity.name,
-                isAutoLocated = currentCity.isAutoLocated,
+                cityName = displayedCity.getDisplayName(uiState.locationDisplayMode),
+                isFirstPageAutoLocated = uiState.savedCities.firstOrNull()?.isAutoLocated == true,
                 pageCount = cityCount,
                 currentPage = pagerState.currentPage,
                 onMenuClick = {
                     viewModel.setCityManagementOpen(true)
                 },
                 onSourceClick = { viewModel.setShowSourceDialog(true) },
+                onIntervalClick = { viewModel.showIntervalDialog(true) },
                 onLocationSettingsClick = { viewModel.setShowLocationSettings(true) }
             )
 
             // 水平滑动手势分页器 (左右滑动切换城市)
+            // 启用 beyondBoundsPageCount = 1 预热前后邻近页面
+            // 配置 snapPositionalThreshold = 0.15f，大幅减少手势滑动触发切换的最小位移门槛，轻轻一划即可灵敏切页
             HorizontalPager(
                 state = pagerState,
+                beyondBoundsPageCount = 1,
+                flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
+                    state = pagerState,
+                    snapPositionalThreshold = 0.15f,
+                    snapAnimationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                    )
+                ),
+                key = { page ->
+                    uiState.savedCities.getOrNull(page)?.let { "${it.code}_${it.name}_${it.isAutoLocated}_$page" } ?: page.toString()
+                },
                 modifier = Modifier.weight(1f)
             ) { page ->
                 val pageCity = uiState.savedCities.getOrNull(page)
@@ -157,6 +180,8 @@ fun WeatherScreen(
                     city = pageCity,
                     weatherData = pageWeather,
                     isRefreshing = uiState.isRefreshing,
+                    isDailyChartMode = uiState.isDailyChartMode,
+                    onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
                     onRefresh = { viewModel.refreshCityAtIndex(page) }
                 )
             }
@@ -175,6 +200,9 @@ fun WeatherScreen(
             onDeleteCity = { city ->
                 viewModel.removeCity(city)
             },
+            onRestoreCity = { city, index ->
+                viewModel.restoreCity(city, index)
+            },
             onAddCityClick = {
                 viewModel.setShowAddCityDialog(true)
             },
@@ -183,22 +211,23 @@ fun WeatherScreen(
             }
         )
 
-        // 定位设置全屏界面 (100% 对齐设计图：< 定位设置、地标/街道与区县单选切换)
-        LocationSettingsScreen(
-            visible = uiState.showLocationSettings,
-            currentMode = uiState.locationDisplayMode,
-            onModeSelected = { mode ->
-                viewModel.setLocationDisplayMode(mode)
-            },
-            onBackClick = {
-                viewModel.setShowLocationSettings(false)
-            }
-        )
-
         // Snackbar 宿主
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+
+    // 定位设置底部抽屉面板 (与天气数据源弹框样式一致)
+    if (uiState.showLocationSettings) {
+        LocationSettingsScreen(
+            currentMode = uiState.locationDisplayMode,
+            onModeSelected = { mode ->
+                viewModel.setLocationDisplayMode(mode)
+            },
+            onDismiss = {
+                viewModel.setShowLocationSettings(false)
+            }
         )
     }
 
@@ -211,6 +240,17 @@ fun WeatherScreen(
                 viewModel.switchWeatherSource(sourceId)
             },
             onDismiss = { viewModel.setShowSourceDialog(false) }
+        )
+    }
+
+    // 更新间隔选择底部弹出窗口 (从底往上弹出，支持 无、30分钟、1/2/6/12/24小时 单选)
+    if (uiState.showIntervalDialog) {
+        UpdateIntervalDialog(
+            currentIntervalMinutes = uiState.autoUpdateIntervalMinutes,
+            onSelectInterval = { minutes ->
+                viewModel.setAutoUpdateIntervalMinutes(minutes)
+            },
+            onDismiss = { viewModel.showIntervalDialog(false) }
         )
     }
 
@@ -247,21 +287,23 @@ fun WeatherScreen(
  * 沉浸式顶部栏组件
  *
  * @param cityName 城市名称
- * @param isAutoLocated 是否为定位城市
+ * @param isFirstPageAutoLocated 第一页是否为定位城市
  * @param pageCount 城市总页数
  * @param currentPage 当前城市页码
  * @param onMenuClick 点击左侧城市管理按钮回调
  * @param onSourceClick 点击切换天气源回调
+ * @param onIntervalClick 点击设置更新间隔回调
  * @param onLocationSettingsClick 点击打开定位设置回调
  */
 @Composable
 private fun TopImmersiveWeatherBar(
     cityName: String,
-    isAutoLocated: Boolean,
+    isFirstPageAutoLocated: Boolean,
     pageCount: Int,
     currentPage: Int,
     onMenuClick: () -> Unit,
     onSourceClick: () -> Unit,
+    onIntervalClick: () -> Unit,
     onLocationSettingsClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -289,54 +331,52 @@ private fun TopImmersiveWeatherBar(
             }
         }
 
-        // 中间：城市名称与分页小圆点指示器
+        // 中间：纯净城市名称与分页指示器（第一页定位页展示定位 Pin 图标，后续城市展示指示圆点）
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = cityName,
-                    style = TextStyle(
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = Color.White,
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.40f),
-                            offset = Offset(0f, 2f),
-                            blurRadius = 5f
-                        )
+            Text(
+                text = cityName,
+                style = TextStyle(
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = Color.White,
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.40f),
+                        offset = Offset(0f, 2f),
+                        blurRadius = 5f
                     )
                 )
-                if (isAutoLocated) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = "定位",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
+            )
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // 页面指示点 (• • •)
+            // 页面指示器 (第一页定位页为定位图标，选中时纯白高亮，未选时半透明)
             if (pageCount > 1) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     for (i in 0 until pageCount) {
                         val isSelected = i == currentPage
-                        Box(
-                            modifier = Modifier
-                                .height(4.dp)
-                                .width(if (isSelected) 10.dp else 4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(
-                                    if (isSelected) Color.White else Color.White.copy(alpha = 0.4f)
-                                )
-                        )
+                        if (i == 0 && isFirstPageAutoLocated) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = "当前定位城市",
+                                tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.45f),
+                                modifier = Modifier.size(11.dp)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .height(4.dp)
+                                    .width(if (isSelected) 8.dp else 4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(
+                                        if (isSelected) Color.White else Color.White.copy(alpha = 0.45f)
+                                    )
+                            )
+                        }
                     }
                 }
             }
@@ -364,6 +404,7 @@ private fun TopImmersiveWeatherBar(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
                 onSelectSourceClick = onSourceClick,
+                onIntervalClick = onIntervalClick,
                 onLocationSettingsClick = onLocationSettingsClick
             )
         }
@@ -371,13 +412,13 @@ private fun TopImmersiveWeatherBar(
 }
 
 /**
- * 单个城市天气详情分页内容组件
- *
- * 集成 PullRefresh 下拉刷新（含上次刷新时间展示）、官方气象预警卡片（按需展示）、短时降水预测（按需展示）、居中主温度、24小时预报卡片、7天预报卡片与气象详情宫格。
+ * 单城市天气主内容滚动容器
  *
  * @param city 城市信息 [CityInfo]
  * @param weatherData 聚合天气数据 [WeatherData]
  * @param isRefreshing 是否处于刷新中
+ * @param isDailyChartMode 近日天气是否为趋势折线图表模式
+ * @param onDailyChartModeChange 切换近日天气模式回调
  * @param onRefresh 下拉刷新触发回调
  */
 @OptIn(ExperimentalMaterialApi::class)
@@ -386,6 +427,8 @@ private fun CityWeatherPageContent(
     city: CityInfo,
     weatherData: WeatherData?,
     isRefreshing: Boolean,
+    isDailyChartMode: Boolean,
+    onDailyChartModeChange: (Boolean) -> Unit,
     onRefresh: () -> Unit
 ) {
     val pullRefreshState = rememberPullRefreshState(
@@ -426,14 +469,6 @@ private fun CityWeatherPageContent(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 上次刷新时间小标签
-                Text(
-                    text = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText,
-                    color = Color.White.copy(alpha = 0.70f),
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
-                )
-
                 // 1. 顶部居中核心温度展示 (如 32° / 最高 32° 最低 25° / 空气优 多云)
                 HeroWeatherView(weatherData = weatherData)
 
@@ -458,13 +493,20 @@ private fun CityWeatherPageContent(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // 5. 近日天气预报卡片 (对齐设计稿 7 天预报列表)
-                DailyForecastCard(dailyList = weatherData.dailyForecasts)
+                // 5. 近日天气预报卡片 (对齐设计稿 7 天预报列表，持久化记住切换状态)
+                DailyForecastCard(
+                    dailyList = weatherData.dailyForecasts,
+                    isChartMode = isDailyChartMode,
+                    onChartModeChange = onDailyChartModeChange
+                )
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // 6. 详细气象指标指标宫格 (湿度、风向、气压、降水、空气质量建议)
-                WeatherDetailGrid(weatherData = weatherData)
+                // 6. 详细气象指标指标宫格 (底部依次展示数据来源、气象观测发布时间与上次刷新时间)
+                WeatherDetailGrid(
+                    weatherData = weatherData,
+                    lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText
+                )
 
                 Spacer(modifier = Modifier.height(36.dp))
             }

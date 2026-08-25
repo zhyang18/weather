@@ -25,10 +25,7 @@ import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,33 +36,84 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weather.app.model.DailyForecast
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+
+/**
+ * 构建包含“昨天”历史天气的完整近日预报列表
+ *
+ * @param dailyList 原始预报列表
+ * @return 包含昨天在内的完整预报列表
+ */
+private fun buildFullDailyList(dailyList: List<DailyForecast>): List<DailyForecast> {
+    if (dailyList.isEmpty()) return emptyList()
+    if (dailyList.first().dayOfWeek == "昨天") return dailyList
+
+    val first = dailyList.first()
+    val yesterdayCal = Calendar.getInstance().apply {
+        try {
+            val format = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
+            val parsedDate = format.parse(first.date)
+            if (parsedDate != null) {
+                time = parsedDate
+            }
+        } catch (e: Exception) {
+            time = Date()
+        }
+        add(Calendar.DAY_OF_YEAR, -1)
+    }
+
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
+    val yesterdayDate = dateFormat.format(yesterdayCal.time)
+
+    val yesterdayForecast = DailyForecast(
+        date = yesterdayDate,
+        dayOfWeek = "昨天",
+        dayWeatherText = first.dayWeatherText,
+        nightWeatherText = first.nightWeatherText,
+        maxTemperature = (first.maxTemperature - 0.5).coerceAtLeast(first.minTemperature),
+        minTemperature = first.minTemperature - 0.5,
+        precipitation = 0.0
+    )
+    return listOf(yesterdayForecast) + dailyList
+}
 
 /**
  * 近日天气预报毛玻璃卡片组件
  *
  * 支持“趋势折线图表”与“逐日温差列表”双视图无缝切换：
- * 1. 趋势折线图模式（Chart Mode）：呈现 5 天纵向气象指标与金黄/天蓝双温平滑贝塞尔走势图及底部长按钮；
- * 2. 列表模式（List Mode）：呈现 7 天温差指示条列表；
- * 3. 遵循全局字重规范，除主界面当前气温外其余文字均使用常规字重。
+ * 1. 趋势折线图模式（Chart Mode）：呈现包含“昨天”在内的全量天气趋势，昨日与今日之间虚线连接，今日往后实线加粗；
+ * 2. 列表模式（List Mode）：呈现包含“昨天”的温差指示条列表；
+ * 3. 记住用户切换状态并在本地持久化保存。
  *
  * @param dailyList 每日预报列表 [DailyForecast]
+ * @param isChartMode 当前是否为折线趋势图表模式
+ * @param onChartModeChange 切换图表/列表模式时的回调
  * @param modifier 外部修饰符
  */
 @Composable
 fun DailyForecastCard(
     dailyList: List<DailyForecast>,
+    isChartMode: Boolean,
+    onChartModeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (dailyList.isEmpty()) return
 
-    var isChartMode by remember { mutableStateOf(true) }
+    // 组合包含“昨天”的完整预报列表
+    val fullDailyList = remember(dailyList) {
+        buildFullDailyList(dailyList)
+    }
 
-    val globalMin = dailyList.minOfOrNull { it.minTemperature } ?: 15.0
-    val globalMax = dailyList.maxOfOrNull { it.maxTemperature } ?: 35.0
+    val globalMin = fullDailyList.minOfOrNull { it.minTemperature } ?: 15.0
+    val globalMax = fullDailyList.maxOfOrNull { it.maxTemperature } ?: 35.0
     val tempSpan = (globalMax - globalMin).coerceAtLeast(1.0)
 
     Column(
@@ -74,11 +122,13 @@ fun DailyForecastCard(
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
-            .padding(16.dp)
+            .padding(top = 16.dp, bottom = 16.dp) // 外层水平内边距设为 0，允许趋势图全宽满幅横滑
     ) {
-        // 头部栏：📅 近日天气 与 列表/趋势图表切换按钮
+        // 头部栏：📅 近日天气 与 列表/趋势图表切换按钮（保持 16dp 水平内边距）
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -108,8 +158,8 @@ fun DailyForecastCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(if (!isChartMode) Color.White.copy(alpha = 0.20f) else Color.Transparent)
-                        .clickable { isChartMode = false }
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                        .clickable { onChartModeChange(false) }
+                        .padding(horizontal = 2.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -125,8 +175,8 @@ fun DailyForecastCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(if (isChartMode) Color.White.copy(alpha = 0.20f) else Color.Transparent)
-                        .clickable { isChartMode = true }
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                        .clickable { onChartModeChange(true) }
+                        .padding(horizontal = 2.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -142,25 +192,26 @@ fun DailyForecastCard(
         Spacer(modifier = Modifier.height(14.dp))
 
         if (isChartMode) {
-            // 模式 1：趋势折线图表视图 (支持左右横滑，展示全部逐日预报)
+            // 模式 1：趋势折线图表视图（水平内边距为 0，支持全宽无缝平滑横滑）
             DailyForecastChartView(
-                dailyList = dailyList
+                dailyList = fullDailyList
             )
         } else {
-            // 模式 2：列表视图
+            // 模式 2：列表视图（保留 16dp 水平内边距）
             DailyForecastListView(
-                dailyList = dailyList,
+                dailyList = fullDailyList,
                 globalMin = globalMin,
-                tempSpan = tempSpan
+                tempSpan = tempSpan,
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
         }
     }
 }
 
 /**
- * 近日天气趋势折线图表视图组件（支持全量预报平滑左右横滑）
+ * 近日天气趋势折线图表视图组件（水平内边距为 0、加粗 2 倍至 9.0f 的饱满线条、昨日与今天虚线连接、今日往后实线）
  *
- * @param dailyList 逐日预报数据项列表 [DailyForecast]
+ * @param dailyList 包含昨天在内的逐日预报数据项列表 [DailyForecast]
  */
 @Composable
 private fun DailyForecastChartView(
@@ -177,7 +228,7 @@ private fun DailyForecastChartView(
     val itemWidth = 58.dp
     val totalWidth = itemWidth * dailyList.size
 
-    // 横向可平滑滑动容器
+    // 横向可平滑滑动容器（水平内边距为 0）
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -190,44 +241,48 @@ private fun DailyForecastChartView(
                 horizontalArrangement = Arrangement.Start
             ) {
                 dailyList.forEachIndexed { index, forecast ->
+                    val isYesterday = index == 0
                     val rainPercentage = if (forecast.dayWeatherText.contains("雨") || forecast.dayWeatherText.contains("雷")) {
                         "${(forecast.precipitation * 20).toInt().coerceIn(60, 95)}%"
                     } else null
+
+                    val itemAlpha = if (isYesterday) 0.55f else 1.0f
 
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.width(itemWidth)
                     ) {
-                        // 星期 (如 今天, 明天, 后天, 周四)
+                        // 星期 (如 昨天, 今天, 明天, 后天, 周四)
                         val weekLabel = when (index) {
-                            0 -> "今天"
-                            1 -> "明天"
-                            2 -> "后天"
+                            0 -> "昨天"
+                            1 -> "今天"
+                            2 -> "明天"
+                            3 -> "后天"
                             else -> forecast.dayOfWeek
                         }
                         Text(
                             text = weekLabel,
-                            color = Color.White,
+                            color = Color.White.copy(alpha = itemAlpha),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Normal
                         )
 
                         Spacer(modifier = Modifier.height(2.dp))
 
-                        // 日期 (如 8月24日)
+                        // 日期 (如 8月23日)
                         Text(
                             text = forecast.getShortDateText(),
-                            color = Color.White.copy(alpha = 0.65f),
+                            color = Color.White.copy(alpha = if (isYesterday) 0.40f else 0.65f),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Normal
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // 天气现象名称 (如 中雨)
+                        // 天气现象名称 (如 多云)
                         Text(
                             text = forecast.dayWeatherText,
-                            color = Color.White.copy(alpha = 0.85f),
+                            color = Color.White.copy(alpha = if (isYesterday) 0.50f else 0.85f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Normal,
                             maxLines = 1
@@ -235,33 +290,38 @@ private fun DailyForecastChartView(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        // 天气图标
-                        Text(
-                            text = WeatherIcons.getWeatherEmoji(forecast.dayWeatherText),
-                            fontSize = 18.sp
-                        )
-
-                        // 降水概率 (如 80%)
+                        // 天气高保真矢量图标容器（固定高度 42dp，图标 100% 绝对垂直居中对齐，降水概率悬浮于底部不影响中心线）
                         Box(
-                            modifier = Modifier.height(14.dp),
+                            modifier = Modifier
+                                .width(itemWidth)
+                                .height(42.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (rainPercentage != null) {
+                            WeatherDynamicIcon(
+                                weatherText = forecast.dayWeatherText,
+                                size = 24.dp,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .graphicsLayer { alpha = itemAlpha }
+                            )
+
+                            if (rainPercentage != null && !isYesterday) {
                                 Text(
                                     text = rainPercentage,
                                     color = Color(0xFF64B5F6),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Normal
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.align(Alignment.BottomCenter)
                                 )
                             }
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        // 最高温度数值 (如 30°)
+                        // 最高温度数值 (如 34°)
                         Text(
                             text = "${forecast.maxTemperature.toInt()}°",
-                            color = Color.White,
+                            color = Color.White.copy(alpha = if (isYesterday) 0.55f else 1.0f),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Normal
                         )
@@ -271,11 +331,11 @@ private fun DailyForecastChartView(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 2. 中间金黄/天蓝双温连续平滑贝塞尔曲线走势图 (宽度完全与上方各列对齐)
+            // 2. 中间金黄/天蓝双温走势图：严格对齐设计图（纯实心圆点、节点前后留白间隙、昨日点状虚线、今日及未来平滑实线）
             Box(
                 modifier = Modifier
                     .width(totalWidth)
-                    .height(68.dp)
+                    .height(72.dp)
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
@@ -292,78 +352,113 @@ private fun DailyForecastChartView(
                         val highNorm = (maxTemps[i] - allMin) / range
                         val lowNorm = (minTemps[i] - allMin) / range
 
-                        // 最高温在上部 (y: 12% ~ 42%)
-                        val hy = h * (0.42f - highNorm * 0.30f)
-                        // 最低温在下部 (y: 58% ~ 88%)
-                        val ly = h * (0.88f - lowNorm * 0.30f)
+                        // 最高温在上部 (y: 18% ~ 42%)
+                        val hy = h * (0.42f - highNorm * 0.24f)
+                        // 最低温在下部 (y: 58% ~ 82%)
+                        val ly = h * (0.82f - lowNorm * 0.24f)
 
                         highPoints.add(Offset(cx, hy))
                         lowPoints.add(Offset(cx, ly))
                     }
 
-                    // 绘制最高温度平滑贝塞尔曲线 (金黄色)
-                    val highPath = Path().apply {
-                        moveTo(highPoints.first().x, highPoints.first().y)
-                        for (i in 0 until highPoints.size - 1) {
-                            val p0 = highPoints[i]
-                            val p1 = highPoints[i + 1]
-                            val controlX = (p0.x + p1.x) / 2f
-                            cubicTo(controlX, p0.y, controlX, p1.y, p1.x, p1.y)
+                    // 线条与圆点规范（线段减粗 1.5 倍至 9.6f，节点圆点减小 1.5 倍至半径 13.3f）
+                    val strokeWidthPx = 9.6f
+                    val circleRadius = 13.3f
+                    val circleGap = 6.0f
+                    val totalOffset = circleRadius + circleGap
+                    val dashEffect = PathEffect.dashPathEffect(floatArrayOf(9.0f, 9.0f), 0f)
+
+                    val highColor = Color(0xFFF9BF33) // 明亮金黄色
+                    val lowColor = Color(0xFF38BDF8)  // 清爽天蓝色
+                    val historyAlpha = 0.42f
+
+                    // 绘制带有两端圆点间隙留白的线段
+                    fun drawSegmentWithGap(
+                        p1: Offset,
+                        p2: Offset,
+                        color: Color,
+                        isDashed: Boolean
+                    ) {
+                        val dx = p2.x - p1.x
+                        val dy = p2.y - p1.y
+                        val dist = kotlin.math.hypot(dx, dy)
+                        if (dist > totalOffset * 2f) {
+                            val ux = dx / dist
+                            val uy = dy / dist
+                            val start = Offset(p1.x + ux * totalOffset, p1.y + uy * totalOffset)
+                            val end = Offset(p2.x - ux * totalOffset, p2.y - uy * totalOffset)
+
+                            drawLine(
+                                color = color,
+                                start = start,
+                                end = end,
+                                strokeWidth = strokeWidthPx,
+                                cap = StrokeCap.Round,
+                                pathEffect = if (isDashed) dashEffect else null
+                            )
                         }
                     }
 
-                    drawPath(
-                        path = highPath,
-                        color = Color(0xFFFFCA28),
-                        style = Stroke(width = 2.4f, cap = StrokeCap.Round)
-                    )
-
-                    // 最高温各节点小圆点
-                    highPoints.forEach { pt ->
-                        drawCircle(color = Color(0xFF263644), radius = 4.2f, center = pt)
-                        drawCircle(color = Color(0xFFFFCA28), radius = 3.0f, center = pt)
+                    // ================= 1. 最高温走势（金黄色线段 + 实心圆点） =================
+                    for (i in 0 until count - 1) {
+                        val isYesterdaySegment = (i == 0)
+                        val segColor = if (isYesterdaySegment) highColor.copy(alpha = historyAlpha) else highColor
+                        drawSegmentWithGap(
+                            p1 = highPoints[i],
+                            p2 = highPoints[i + 1],
+                            color = segColor,
+                            isDashed = isYesterdaySegment
+                        )
                     }
 
-                    // 绘制最低温度平滑贝塞尔曲线 (天蓝色)
-                    val lowPath = Path().apply {
-                        moveTo(lowPoints.first().x, lowPoints.first().y)
-                        for (i in 0 until lowPoints.size - 1) {
-                            val p0 = lowPoints[i]
-                            val p1 = lowPoints[i + 1]
-                            val controlX = (p0.x + p1.x) / 2f
-                            cubicTo(controlX, p0.y, controlX, p1.y, p1.x, p1.y)
-                        }
+                    highPoints.forEachIndexed { i, pt ->
+                        val ptColor = if (i == 0) highColor.copy(alpha = historyAlpha) else highColor
+                        drawCircle(
+                            color = ptColor,
+                            radius = circleRadius,
+                            center = pt
+                        )
                     }
 
-                    drawPath(
-                        path = lowPath,
-                        color = Color(0xFF29B6F6),
-                        style = Stroke(width = 2.4f, cap = StrokeCap.Round)
-                    )
+                    // ================= 2. 最低温走势（天蓝色线段 + 实心圆点） =================
+                    for (i in 0 until count - 1) {
+                        val isYesterdaySegment = (i == 0)
+                        val segColor = if (isYesterdaySegment) lowColor.copy(alpha = historyAlpha) else lowColor
+                        drawSegmentWithGap(
+                            p1 = lowPoints[i],
+                            p2 = lowPoints[i + 1],
+                            color = segColor,
+                            isDashed = isYesterdaySegment
+                        )
+                    }
 
-                    // 最低温各节点小圆点
-                    lowPoints.forEach { pt ->
-                        drawCircle(color = Color(0xFF263644), radius = 4.2f, center = pt)
-                        drawCircle(color = Color(0xFF29B6F6), radius = 3.0f, center = pt)
+                    lowPoints.forEachIndexed { i, pt ->
+                        val ptColor = if (i == 0) lowColor.copy(alpha = historyAlpha) else lowColor
+                        drawCircle(
+                            color = ptColor,
+                            radius = circleRadius,
+                            center = pt
+                        )
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // 3. 底部最低温度数值行 (如 25°, 26°)
+            // 3. 底部最低温度数值行 (如 25°, 25°)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start
             ) {
-                dailyList.forEach { forecast ->
+                dailyList.forEachIndexed { index, forecast ->
+                    val isYesterday = index == 0
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.width(itemWidth)
                     ) {
                         Text(
                             text = "${forecast.minTemperature.toInt()}°",
-                            color = Color.White.copy(alpha = 0.9f),
+                            color = Color.White.copy(alpha = if (isYesterday) 0.55f else 0.90f),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Normal
                         )
@@ -375,25 +470,38 @@ private fun DailyForecastChartView(
 }
 
 /**
- * 7天近日天气温差条列表视图组件
+ * 包含“昨天”在内的近日天气温差条列表视图组件
  *
  * @param dailyList 每日预报列表 [DailyForecast]
  * @param globalMin 全局最低气温
  * @param tempSpan 全局温差跨度
+ * @param modifier 外部修饰符
  */
 @Composable
 private fun DailyForecastListView(
     dailyList: List<DailyForecast>,
     globalMin: Double,
-    tempSpan: Double
+    tempSpan: Double,
+    modifier: Modifier = Modifier
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth()) {
         dailyList.forEachIndexed { index, forecast ->
+            val isYesterday = index == 0
+            val isToday = index == 1
+
             DailyForecastRow(
                 forecast = forecast,
+                displayDayLabel = when (index) {
+                    0 -> "昨天"
+                    1 -> "今天"
+                    2 -> "明天"
+                    3 -> "后天"
+                    else -> forecast.dayOfWeek
+                },
                 globalMin = globalMin,
                 tempSpan = tempSpan,
-                showDot = index == 0 || index == 1
+                showDot = isToday,
+                isHistorical = isYesterday
             )
             if (index < dailyList.size - 1) {
                 Spacer(modifier = Modifier.height(14.dp))
@@ -406,29 +514,37 @@ private fun DailyForecastListView(
  * 单日预报行组件
  *
  * @param forecast 单日预报数据项 [DailyForecast]
+ * @param displayDayLabel 星期显示文案（如 "昨天", "今天", "周四"）
  * @param globalMin 全局最低气温基准
  * @param tempSpan 全局温差跨度
  * @param showDot 是否在温差条上高亮当前气温实况点
+ * @param isHistorical 是否为历史过去日期（用于微调半透明度）
  */
 @Composable
 private fun DailyForecastRow(
     forecast: DailyForecast,
+    displayDayLabel: String,
     globalMin: Double,
     tempSpan: Double,
-    showDot: Boolean
+    showDot: Boolean,
+    isHistorical: Boolean = false
 ) {
+    val rowAlpha = if (isHistorical) 0.60f else 1.0f
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { alpha = rowAlpha },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // 星期与天气名称 (如 周四  小雨)
+        // 星期与天气名称 (如 昨天  多云 / 周四  小雨)
         Row(
             modifier = Modifier.width(100.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = forecast.dayOfWeek,
+                text = displayDayLabel,
                 color = Color.White,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Normal,
@@ -442,16 +558,16 @@ private fun DailyForecastRow(
             )
         }
 
-        // 天气图标 (含降水概率)
+        // 天气矢量高保真图标 (含降水概率)
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.width(36.dp)
         ) {
-            Text(
-                text = WeatherIcons.getWeatherEmoji(forecast.dayWeatherText),
-                fontSize = 18.sp
+            WeatherDynamicIcon(
+                weatherText = forecast.dayWeatherText,
+                size = 20.dp
             )
-            if (forecast.dayWeatherText.contains("雨") || forecast.dayWeatherText.contains("雷")) {
+            if (!isHistorical && (forecast.dayWeatherText.contains("雨") || forecast.dayWeatherText.contains("雷"))) {
                 Text(
                     text = "${(forecast.precipitation * 20).toInt().coerceIn(60, 95)}%",
                     color = Color(0xFF64B5F6),
@@ -461,7 +577,7 @@ private fun DailyForecastRow(
             }
         }
 
-        // 最低温数值 (如 26°)
+        // 最低温数值 (如 25°)
         Text(
             text = "${forecast.minTemperature.toInt()}°",
             color = Color.White.copy(alpha = 0.85f),
@@ -511,7 +627,7 @@ private fun DailyForecastRow(
             }
         }
 
-        // 最高温数值 (如 32°，常规字重)
+        // 最高温数值 (如 34°，常规字重)
         Text(
             text = "${forecast.maxTemperature.toInt()}°",
             color = Color.White,
@@ -521,4 +637,5 @@ private fun DailyForecastRow(
         )
     }
 }
+
 

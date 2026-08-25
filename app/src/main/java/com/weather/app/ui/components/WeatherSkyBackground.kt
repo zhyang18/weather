@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -24,45 +25,61 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.weather.app.R
+import com.weather.app.model.CityInfo
 import java.util.Calendar
+import java.util.TimeZone
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * 沉浸式全天候拟真动态天空背景组件
+ * 沉浸式全天候拟真动态天空背景组件 (支持 Lambda 视差供给器，实现零重组 120 FPS 流畅滑页)
  *
- * 结合当前城市实时天气现象与昼夜状态，通过高性能 Jetpack Compose Canvas 绘制具备自然光影、物理动效与深度层次的动态天空背景图。
+ * 结合当前城市日出、日落、月出、月落时间与实时天气现象，
+ * 精确计算太阳与月亮的出现时机与平缓微弧轨迹，
+ * 通过高性能 Jetpack Compose Canvas 绘制具备自然光影、物理动效与深度层次的动态天空背景图。
  *
  * 涵盖全部天气类型与物理现象：
- * 1. 晴天（白昼）：太阳发光球核、呼吸光晕、自转辐射光芒与空中漂浮金色微尘；
- * 2. 晴天（夜晚）：立体明月月晕、多层次闪烁星海（带十字星芒）与天际划过的流星拖尾；
- * 3. 大气拟真动态云层与云海系统：多层平滑连续三次贝塞尔流体云浪、远中近三层视差、迎光银边高光漫射轮廓、垂直环境遮蔽自阴影与金色丁达尔云隙圣光（God Rays）；
- * 4. 高清拟真三层景深雨丝：前景粗长晶莹雨线、中景倾斜主力雨丝、远景细密雨幕，配合触地水花飞溅粒子与地面扩散同心涟漪；
+ * 1. 晴天（白昼）：纯白金光核、双层彩虹镜头光晕环、自转辐射光柱与漂浮金色微尘；
+ * 2. 晴天（夜晚）：3D 真实月海撞击坑立体球体、月华光晕、多层次闪烁星海（带十字星芒）、伴星与流星拖尾；
+ * 3. 大气拟真动态云层与云海系统：摄影级自然积雨云海、远中近视差平移与金色丁达尔云隙圣光；
+ * 4. 高清拟真三层景深雨丝：前景长雨丝、中景主力雨丝、远景细密雨幕，配合水花与地面涟漪；
  * 5. 雷阵雨：程序化折线树状分叉闪电与全屏雷暴光影脉冲；
- * 6. 雪天（小雪/暴雪）：六角几何雪晶与景深虚化雪点，伴随正弦空气动力学翻滚摇曳下落；
+ * 6. 雪天（小雪/暴雪）：六角几何雪晶与景深虚化雪点翻滚下落；
  * 7. 雾 / 霾：大面积柔焦弥漫波浪层缓移与浮游微粒；
  * 8. 沙尘：狂暴风沙流线与横向飞舞沙粒；
  * 9. 大风：流线型风道丝带与气流微粒。
  *
  * @param weatherText 当前天气现象描述（如 "晴", "多云", "阴", "小雨", "雷阵雨", "暴雪", "雾", "沙尘" 等）
- * @param isNight 是否为夜间（默认根据系统当前时钟自动识别，也可外部显式指定）
+ * @param city 当前展示的城市信息实体 [CityInfo]（用于日出日落月出月落天文计算）
+ * @param isNight 是否强制指定夜间模式（为 null 时依据城市实际日出日落自动判定）
+ * @param parallaxOffsetProvider 水平滑动分页时的视差偏移量提供者 () -> Float，绘制阶段直接读取避免触发重组
  * @param modifier 外部修饰符
  */
 @Composable
 fun WeatherSkyBackground(
     weatherText: String,
-    isNight: Boolean = remember { isCurrentlyNight() },
+    city: CityInfo? = null,
+    isNight: Boolean? = null,
+    parallaxOffsetProvider: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
-    val weatherCategory = remember(weatherText, isNight) {
-        resolveWeatherCategory(weatherText, isNight)
+    val nowCalendar = remember { Calendar.getInstance() }
+    val celestial = remember(city, weatherText) {
+        SunMoonCalculator.calculateCelestialTimes(city, nowCalendar)
+    }
+
+    val effectiveIsNight = isNight ?: celestial.isNight
+
+    val weatherCategory = remember(weatherText, effectiveIsNight) {
+        resolveWeatherCategory(weatherText, effectiveIsNight)
     }
 
     val (targetTop, targetMid, targetBottom) = getWeatherGradientColors(weatherCategory)
@@ -87,12 +104,20 @@ fun WeatherSkyBackground(
         label = "mediumProgress"
     )
 
-    // 3. 慢速周期驱动（云海流动、天光呼吸、星光呼吸、太阳呼吸，26s 循环）
+    // 3. 慢速周期驱动（天光呼吸、星光呼吸、太阳呼吸，26s 循环）
     val slowProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(animation = tween(26000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "slowProgress"
+    )
+
+    // 4. 大气云海动态漂移专用驱动（8.0s 循环流动，肉眼清晰可见云层明显移动）
+    val cloudProgress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(8000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        label = "cloudProgress"
     )
 
     val continuousRotation by infiniteTransition.animateFloat(
@@ -113,7 +138,6 @@ fun WeatherSkyBackground(
         List(180) { index ->
             when {
                 index % 6 == 0 -> {
-                    // 近景长雨丝 (30根)：快速掠过的大雨丝，带半透明水珠滑落感
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
@@ -125,7 +149,6 @@ fun WeatherSkyBackground(
                     )
                 }
                 index % 2 == 0 -> {
-                    // 中景主力雨丝 (70根)：晶莹透亮、纵向高光
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
@@ -137,7 +160,6 @@ fun WeatherSkyBackground(
                     )
                 }
                 else -> {
-                    // 远景细密雨幕 (80根)：纤细密集、快速飘落
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
@@ -229,9 +251,10 @@ fun WeatherSkyBackground(
         }
     }
 
-    val nowCalendar = remember { Calendar.getInstance() }
-    val sunProgress = remember { calculateSunProgress(nowCalendar) }
-    val moonProgress = remember { calculateMoonProgress(nowCalendar) }
+    val sunProgress = celestial.sunProgress
+    val moonProgress = celestial.moonProgress
+    val isSunVisible = celestial.isSunVisible && (weatherCategory == WeatherCategory.SUNNY || weatherCategory == WeatherCategory.CLOUDY)
+    val isMoonVisible = (weatherCategory.isNight || celestial.isMoonVisible)
 
     Box(
         modifier = modifier
@@ -240,14 +263,21 @@ fun WeatherSkyBackground(
                 Brush.verticalGradient(listOf(animatedTop, animatedMid, animatedBottom))
             )
     ) {
-        // 1. 真实摄影级自然积雨云海/多云天空底图 (仅多云/阴雨/雪天加载，晴天彻底无云，降低透明度透出深邃晴空)
+        // 1. 真实摄影级自然云海与天际底图 (双层深度视差流动：主云海 + 镜像视差流云，呈现真实宏大的大自然云层流淌)
         if (skyTextureRes != null) {
-            val driftOffset = sin(slowProgress * 2f * PI.toFloat()) * 20f
-            val textureAlpha = when (weatherCategory) {
-                WeatherCategory.CLOUDY -> 0.38f // 白天多云调低亮度，避免白云过曝影响文字
-                WeatherCategory.CLOUDY_NIGHT -> 0.48f
-                else -> 0.60f
+            // 主云层平缓宏观流动
+            val baseDrift = sin(cloudProgress * 2f * PI.toFloat()) * 48f
+            // 前景轻盈流云以更高速度滑动（相位偏移 0.35f）
+            val fastDrift = sin((cloudProgress + 0.35f) * 2f * PI.toFloat()) * 92f
+
+            val baseAlpha = when (weatherCategory) {
+                WeatherCategory.CLOUDY -> 0.75f
+                WeatherCategory.CLOUDY_NIGHT -> 0.68f
+                WeatherCategory.OVERCAST -> 0.88f
+                else -> 0.82f
             }
+
+            // Layer 1: 底层主云海 (真实高精全景底图)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
@@ -255,46 +285,71 @@ fun WeatherSkyBackground(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        translationX = driftOffset
-                        scaleX = 1.05f
-                        scaleY = 1.05f
-                        alpha = textureAlpha
+                        translationX = baseDrift - parallaxOffsetProvider() * 80f
+                        scaleX = 1.16f
+                        scaleY = 1.16f
+                        alpha = baseAlpha
+                    }
+            )
+
+            // Layer 2: 镜像视差深景流云 (水平翻转镜像 + 放大 1.32x + 加速滑动，两层交织产生真实立体体积感)
+            Image(
+                painter = painterResource(id = skyTextureRes),
+                contentDescription = "深景视差流云",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = fastDrift - parallaxOffsetProvider() * 140f
+                        scaleX = -1.32f
+                        scaleY = 1.32f
+                        alpha = baseAlpha * 0.45f
                     }
             )
         }
 
-        // 顶部与居中文字区域深邃蓝天渐变压暗保护层 (增强白色文字与图标对比度，彻底解决背景过亮刺眼问题)
-        Box(
+        // 白昼模式下顶部文字区域深邃蓝天渐变微暗保护层 (夜间保持清澈通透暮色原色)
+        if (!weatherCategory.isNight) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0x4508192C),
+                                Color(0x250F263F),
+                                Color.Transparent,
+                                Color(0x20081622)
+                            ),
+                            startY = 0f,
+                            endY = Float.POSITIVE_INFINITY
+                        )
+                    )
+            )
+        }
+
+        // 2. 动态天气物理粒子与光影层 (伴随视差深景平移，零重组 Draw 阶段更新)
+        Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0x5508192C),
-                            Color(0x350F263F),
-                            Color.Transparent,
-                            Color(0x28081622)
-                        ),
-                        startY = 0f,
-                        endY = Float.POSITIVE_INFINITY
-                    )
-                )
-        )
-
-        // 2. 动态天气物理粒子与光影层
-        Canvas(modifier = Modifier.fillMaxSize()) {
+                .graphicsLayer {
+                    translationX = -parallaxOffsetProvider() * 60f
+                }
+        ) {
             val width = size.width
             val height = size.height
 
-            if (weatherCategory.isNight) {
+            // 夜间渲染群星、流星与明月（月亮出现时机由城市月出月落时间精确决定）
+            if (isMoonVisible && weatherCategory.isNight) {
                 val moonCenter = calculateMoonCenter(width, height, moonProgress)
                 drawNightStars(starParticles, mediumProgress)
                 drawShootingStars(width, height, mediumProgress)
                 drawGlowingMoon(width, height, moonCenter, slowProgress)
             }
 
-            if (!weatherCategory.isNight && (weatherCategory == WeatherCategory.SUNNY || weatherCategory == WeatherCategory.CLOUDY)) {
-                // 模拟太阳东升西落的真实天顶弧线坐标 (从屏幕左侧升起，正午最高，傍晚西落)
+            // 白昼渲染太阳、丁达尔圣光与浮游光尘（太阳出现时机由城市实际日出日落时间平缓决定）
+            if (isSunVisible && !weatherCategory.isNight) {
+                // 模拟太阳东升西落的平缓微弧天顶坐标
                 val sunCenter = calculateSunCenter(width, height, sunProgress)
 
                 drawSunWithRays(
@@ -315,6 +370,17 @@ fun WeatherSkyBackground(
                     isCloudy = (weatherCategory == WeatherCategory.CLOUDY)
                 )
                 drawSunDust(width, height, dustParticles, slowProgress)
+            }
+
+            // 大气自然薄雾与光漫射扩散 (多云/阴天/雨雪天气下的真实大气柔和过渡)
+            if (weatherCategory != WeatherCategory.SUNNY && weatherCategory != WeatherCategory.SUNNY_NIGHT) {
+                drawAtmosphericSoftHaze(
+                    width = width,
+                    height = height,
+                    isNight = weatherCategory.isNight,
+                    isOvercast = (weatherCategory == WeatherCategory.OVERCAST || weatherCategory == WeatherCategory.RAIN_HEAVY),
+                    progress = cloudProgress
+                )
             }
 
             if (weatherCategory == WeatherCategory.FOG || weatherCategory == WeatherCategory.SANDSTORM) {
@@ -365,6 +431,29 @@ fun WeatherSkyBackground(
             }
         }
     }
+}
+
+/**
+ * 沉浸式全天候拟真动态天空背景组件（Float 参数重载，向后兼容）
+ *
+ * @param weatherText 当前天气现象描述
+ * @param isNight 是否为夜间
+ * @param parallaxOffset 视差偏移量浮点数
+ * @param modifier 外部修饰符
+ */
+@Composable
+fun WeatherSkyBackground(
+    weatherText: String,
+    isNight: Boolean = remember { isCurrentlyNight() },
+    parallaxOffset: Float,
+    modifier: Modifier = Modifier
+) {
+    WeatherSkyBackground(
+        weatherText = weatherText,
+        isNight = isNight,
+        parallaxOffsetProvider = { parallaxOffset },
+        modifier = modifier
+    )
 }
 
 // ==================== 数据模型与枚举定义 ====================
@@ -571,9 +660,9 @@ private fun resolveWeatherCategory(text: String, isNight: Boolean): WeatherCateg
 private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, Color, Color> {
     return when (category) {
         WeatherCategory.SUNNY -> Triple(Color(0xFF1E75C4), Color(0xFF4B9DE8), Color(0xFF9AD3FC))
-        WeatherCategory.SUNNY_NIGHT -> Triple(Color(0xFF09121D), Color(0xFF122234), Color(0xFF1F3852))
+        WeatherCategory.SUNNY_NIGHT -> Triple(Color(0xFF222B42), Color(0xFF3B4462), Color(0xFF5E5C77))
         WeatherCategory.CLOUDY -> Triple(Color(0xFF2C5E8A), Color(0xFF5582AA), Color(0xFF86AECF))
-        WeatherCategory.CLOUDY_NIGHT -> Triple(Color(0xFF0D1724), Color(0xFF18283C), Color(0xFF263C55))
+        WeatherCategory.CLOUDY_NIGHT -> Triple(Color(0xFF1D253A), Color(0xFF353D58), Color(0xFF53536C))
         WeatherCategory.OVERCAST -> Triple(Color(0xFF3F4E5B), Color(0xFF5E6E7D), Color(0xFF7E8F9E))
         WeatherCategory.RAIN_LIGHT -> Triple(Color(0xFF384956), Color(0xFF556776), Color(0xFF6E8090))
         WeatherCategory.RAIN_HEAVY -> Triple(Color(0xFF263440), Color(0xFF3E4F5D), Color(0xFF566877))
@@ -589,301 +678,242 @@ private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, C
 // ==================== 绘制各天气元素扩展方法 ====================
 
 /**
- * 写实立体积雨云团节点配置
- *
- * @property relX 水平相对基准位置 (0f ~ 1f)
- * @property relY 垂直相对基准位置 (0f ~ 1f)
- * @property radiusRatio 云团半径相对屏幕宽度的比例
- * @property brightnessFactor 受光亮度因子 (0f ~ 1f)
- * @property driftScale 随风横向漂移速率比例
- */
-private data class RealisticCloudPuffNode(
-    val relX: Float,
-    val relY: Float,
-    val radiusRatio: Float,
-    val brightnessFactor: Float,
-    val driftScale: Float = 1.0f
-)
-
-/**
- * 绘制大气拟真写实立体积雨云海系统
- *
- * 结合大面积高空深邃云幕、多重体积饱满径向羽化积云球团簇（Volumetric Cumulus Masses）与三次贝塞尔流体连绵云浪脊线。
- * 具备受光面高光漫射、背光面环境遮蔽自阴影以及极柔和的边缘羽化消隐，完美呈现出波澜壮阔、翻滚涌动的真实天际云海。
+ * 绘制自然大气柔和轻雾与光漫射（非几何形状，纯自然高斯柔和漫射）
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
- * @param category 天气场景分类 [WeatherCategory]
- * @param progress 动画时间相位 (0f ~ 1f)
+ * @param isNight 是否为夜间
+ * @param isOvercast 是否为阴天/雨天
+ * @param progress 动画时间相位
  */
-private fun DrawScope.drawAtmosphericCloudDecks(
+private fun DrawScope.drawAtmosphericSoftHaze(
     width: Float,
     height: Float,
-    category: WeatherCategory,
+    isNight: Boolean,
+    isOvercast: Boolean,
     progress: Float
 ) {
-    val isHeavy = category == WeatherCategory.OVERCAST || category == WeatherCategory.RAIN_HEAVY || category == WeatherCategory.THUNDERSTORM
-    val isRainy = category == WeatherCategory.RAIN_LIGHT || category == WeatherCategory.RAIN_HEAVY || category == WeatherCategory.THUNDERSTORM
-    val isNight = category.isNight
-
-    val (topLightColor, baseBodyColor, shadowColor, rimHighlightColor) = when {
-        isNight -> listOf(
-            Color(0xFF3F546E),
-            Color(0xFF253444),
-            Color(0xFF101923),
-            Color(0xFFCAD8E8).copy(alpha = 0.40f)
-        )
-        isHeavy -> listOf(
-            Color(0xFFD4E1EB),
-            Color(0xFF7E92A4),
-            Color(0xFF3A4B59),
-            Color(0xFFB5C8D8).copy(alpha = 0.55f)
-        )
-        isRainy -> listOf(
-            Color(0xFFEFF5F9),
-            Color(0xFF9CB1C2),
-            Color(0xFF4A5D6D),
-            Color(0xFFD8E7F3).copy(alpha = 0.70f)
-        )
-        category == WeatherCategory.CLOUDY -> listOf(
-            Color(0xFFFFFFFF),
-            Color(0xFFB4D0E7),
-            Color(0xFF6B8DAA),
-            Color(0xFFFFFDE7).copy(alpha = 0.85f)
-        )
-        else -> listOf(
-            Color(0xFFFFFFFF),
-            Color(0xFFC7DEEF),
-            Color(0xFF7CA3C4),
-            Color(0xFFFFFFFD).copy(alpha = 0.75f)
-        )
+    val hazeAlpha = (0.10f + kotlin.math.sin(progress * 2f * PI.toFloat()) * 0.03f).coerceIn(0.05f, 0.18f)
+    val hazeColor = when {
+        isNight -> Color(0xFF1A2234)
+        isOvercast -> Color(0xFF8899A6)
+        else -> Color(0xFFD6E4F0)
     }
 
-    // -------------------------------------------------------------
-    // Layer 0: 远景天际深邃高空云幕 (平铺上半屏)
-    // -------------------------------------------------------------
-    val farShift = (progress * width * 0.25f) % width
-    val farBaseY = height * 0.15f
-    val farAlpha = if (isHeavy) 0.60f else if (isNight) 0.32f else 0.42f
-
-    val farPath = Path().apply {
-        moveTo(-width, farBaseY)
-        for (i in 0..2) {
-            val startX = (i - 1) * width + farShift
-            cubicTo(
-                startX + width * 0.22f, farBaseY - height * 0.05f,
-                startX + width * 0.48f, farBaseY + height * 0.04f,
-                startX + width * 0.72f, farBaseY - height * 0.03f
-            )
-            cubicTo(
-                startX + width * 0.88f, farBaseY - height * 0.06f,
-                startX + width * 0.96f, farBaseY + height * 0.02f,
-                startX + width, farBaseY
-            )
-        }
-        lineTo(width * 2f, height * 0.45f)
-        lineTo(-width, height * 0.45f)
-        close()
-    }
-
-    drawPath(
-        path = farPath,
+    drawRect(
         brush = Brush.verticalGradient(
             colors = listOf(
-                topLightColor.copy(alpha = farAlpha * 0.80f),
-                baseBodyColor.copy(alpha = farAlpha * 0.65f),
-                shadowColor.copy(alpha = farAlpha * 0.30f),
+                Color.Transparent,
+                hazeColor.copy(alpha = hazeAlpha * 0.25f),
+                hazeColor.copy(alpha = hazeAlpha * 0.60f),
                 Color.Transparent
             ),
-            startY = 0f,
-            endY = height * 0.45f
-        )
-    )
-
-    // -------------------------------------------------------------
-    // Layer 1: 中景写实立体积雨云团海 (14个体积羽化云团节点)
-    // -------------------------------------------------------------
-    if (category != WeatherCategory.SUNNY && category != WeatherCategory.SUNNY_NIGHT) {
-        val cloudPuffs = listOf(
-            RealisticCloudPuffNode(0.05f, 0.08f, 0.32f, 0.95f, 0.4f),
-            RealisticCloudPuffNode(0.28f, 0.06f, 0.38f, 1.00f, 0.5f),
-            RealisticCloudPuffNode(0.55f, 0.07f, 0.35f, 0.92f, 0.45f),
-            RealisticCloudPuffNode(0.82f, 0.09f, 0.34f, 0.90f, 0.4f),
-            RealisticCloudPuffNode(0.15f, 0.18f, 0.30f, 0.85f, 0.6f),
-            RealisticCloudPuffNode(0.42f, 0.16f, 0.36f, 0.88f, 0.55f),
-            RealisticCloudPuffNode(0.70f, 0.19f, 0.32f, 0.82f, 0.6f),
-            RealisticCloudPuffNode(0.95f, 0.17f, 0.28f, 0.80f, 0.5f),
-            RealisticCloudPuffNode(-0.08f, 0.22f, 0.26f, 0.78f, 0.65f),
-            RealisticCloudPuffNode(0.25f, 0.25f, 0.28f, 0.80f, 0.7f),
-            RealisticCloudPuffNode(0.58f, 0.24f, 0.32f, 0.82f, 0.65f),
-            RealisticCloudPuffNode(0.85f, 0.26f, 0.27f, 0.75f, 0.7f),
-            RealisticCloudPuffNode(0.38f, 0.32f, 0.24f, 0.70f, 0.8f),
-            RealisticCloudPuffNode(0.68f, 0.33f, 0.22f, 0.68f, 0.8f)
-        )
-
-        cloudPuffs.forEach { puff ->
-            val drift = (progress * width * 0.30f * puff.driftScale) % (width * 1.5f)
-            val cx = ((puff.relX * width + drift) % (width * 1.3f)) - width * 0.15f
-            val cy = puff.relY * height
-            val r = puff.radiusRatio * width
-
-            // 1. 背光暗部自阴影层 (偏下偏深，提供真实积雨云体积与遮蔽)
-            val shadowCenter = Offset(cx, cy + r * 0.18f)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        shadowColor.copy(alpha = if (isHeavy) 0.75f else 0.55f),
-                        shadowColor.copy(alpha = if (isHeavy) 0.40f else 0.25f),
-                        Color.Transparent
-                    ),
-                    center = shadowCenter,
-                    radius = r * 1.15f
-                ),
-                radius = r * 1.15f,
-                center = shadowCenter
-            )
-
-            // 2. 迎光面高光与主体层 (偏上偏亮，柔和羽化消隐)
-            val highlightCenter = Offset(cx - r * 0.08f, cy - r * 0.12f)
-            val lightAlpha = (puff.brightnessFactor * (if (isHeavy) 0.85f else 0.95f)).coerceIn(0.4f, 1f)
-
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        topLightColor.copy(alpha = lightAlpha),
-                        baseBodyColor.copy(alpha = lightAlpha * 0.70f),
-                        baseBodyColor.copy(alpha = lightAlpha * 0.30f),
-                        Color.Transparent
-                    ),
-                    center = highlightCenter,
-                    radius = r
-                ),
-                radius = r,
-                center = highlightCenter
-            )
-        }
-
-        // 3. 宏观连绵云浪脊线与迎光银边轮廓 (Cubic Bezier Deck)
-        val midShift = (progress * width * 0.55f) % width
-        val midBaseY = height * 0.28f
-        val midAlpha = if (isHeavy) 0.75f else if (isNight) 0.45f else 0.65f
-
-        val midPath = Path().apply {
-            moveTo(-width, midBaseY + height * 0.02f)
-            for (i in 0..2) {
-                val startX = (i - 1) * width + midShift
-                cubicTo(
-                    startX + width * 0.14f, midBaseY - height * 0.07f,
-                    startX + width * 0.28f, midBaseY - height * 0.09f,
-                    startX + width * 0.42f, midBaseY - height * 0.02f
-                )
-                cubicTo(
-                    startX + width * 0.56f, midBaseY - height * 0.11f,
-                    startX + width * 0.70f, midBaseY - height * 0.09f,
-                    startX + width * 0.82f, midBaseY - height * 0.03f
-                )
-                cubicTo(
-                    startX + width * 0.92f, midBaseY - height * 0.06f,
-                    startX + width * 0.97f, midBaseY - height * 0.01f,
-                    startX + width, midBaseY + height * 0.02f
-                )
-            }
-            lineTo(width * 2f, height * 0.52f)
-            lineTo(-width, height * 0.52f)
-            close()
-        }
-
-        drawPath(
-            path = midPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    topLightColor.copy(alpha = midAlpha * 0.85f),
-                    baseBodyColor.copy(alpha = midAlpha * 0.65f),
-                    shadowColor.copy(alpha = midAlpha * 0.35f),
-                    Color.Transparent
-                ),
-                startY = midBaseY - height * 0.11f,
-                endY = height * 0.52f
-            )
-        )
-
-        drawPath(
-            path = midPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    rimHighlightColor,
-                    rimHighlightColor.copy(alpha = rimHighlightColor.alpha * 0.25f),
-                    Color.Transparent
-                ),
-                startY = midBaseY - height * 0.11f,
-                endY = midBaseY + height * 0.03f
-            ),
-            style = Stroke(width = 2.0f, cap = StrokeCap.Round)
-        )
-    }
-
-    // -------------------------------------------------------------
-    // Layer 2: 前景轻薄掠过云缕 (薄雾丝带，快速掠过)
-    // -------------------------------------------------------------
-    val nearShift = (progress * width * 0.95f) % width
-    val nearBaseY = height * 0.38f
-    val nearAlpha = if (isHeavy) 0.35f else if (isNight) 0.20f else 0.28f
-
-    val nearPath = Path().apply {
-        moveTo(-width, nearBaseY)
-        for (i in 0..2) {
-            val startX = (i - 1) * width + nearShift
-            cubicTo(
-                startX + width * 0.20f, nearBaseY - height * 0.035f,
-                startX + width * 0.45f, nearBaseY + height * 0.025f,
-                startX + width * 0.68f, nearBaseY - height * 0.030f
-            )
-            cubicTo(
-                startX + width * 0.86f, nearBaseY - height * 0.040f,
-                startX + width * 0.96f, nearBaseY + height * 0.015f,
-                startX + width, nearBaseY
-            )
-        }
-        lineTo(width * 2f, height * 0.48f)
-        lineTo(-width, height * 0.48f)
-        close()
-    }
-
-    drawPath(
-        path = nearPath,
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                topLightColor.copy(alpha = nearAlpha),
-                Color.Transparent
-            ),
-            startY = nearBaseY - height * 0.04f,
-            endY = height * 0.48f
+            startY = height * 0.12f,
+            endY = height * 0.65f
         )
     )
 }
 
 /**
- * 计算当前时刻在白昼日照区间（默认 06:00 ~ 18:30）中的进度比例
+ * 城市日月升落与天体运行天文计算结果
  *
- * @param calendar 当前系统时钟实例 [Calendar]
- * @return 归一化日照进度值 (0.0f ~ 1.0f)，0f 为日出（06:00），0.5f 为正午（12:15），1f 为日落（18:30）
+ * @property sunriseMinutes 当日日出分钟数 (0 ~ 1440)
+ * @property sunsetMinutes 当日日落分钟数 (0 ~ 1440)
+ * @property moonriseMinutes 当日/近期月出分钟数 (0 ~ 1440)
+ * @property moonsetMinutes 当日/近期月落分钟数 (0 ~ 1440)
+ * @property isSunVisible 太阳是否处于升起可见状态（日出至日落区间，且白昼晴朗/多云）
+ * @property sunProgress 太阳在日照轨迹中的归一化运行进度 (0.0f ~ 1.0f)
+ * @property isMoonVisible 月亮是否处于升起可见状态（夜间且处于月出至月落可见窗口）
+ * @property moonProgress 月亮在月夜轨迹中的归一化运行进度 (0.0f ~ 1.0f)
+ * @property isNight 当前是否为夜间模式（日落后至日出前）
  */
-private fun calculateSunProgress(calendar: Calendar = Calendar.getInstance()): Float {
-    val hour = calendar.get(Calendar.HOUR_OF_DAY)
-    val minute = calendar.get(Calendar.MINUTE)
-    val currentMinutes = hour * 60 + minute
-    val sunriseMinutes = 6 * 60 // 06:00
-    val sunsetMinutes = 18 * 60 + 30 // 18:30
-    return ((currentMinutes - sunriseMinutes).toFloat() / (sunsetMinutes - sunriseMinutes).toFloat()).coerceIn(0f, 1f)
+data class CelestialTimes(
+    val sunriseMinutes: Int,
+    val sunsetMinutes: Int,
+    val moonriseMinutes: Int,
+    val moonsetMinutes: Int,
+    val isSunVisible: Boolean,
+    val sunProgress: Float,
+    val isMoonVisible: Boolean,
+    val moonProgress: Float,
+    val isNight: Boolean
+)
+
+/**
+ * 城市日出、日落、月出、月落与天体运行高精度天文计算器
+ *
+ * 依据当前城市的地理坐标（经度、纬度）、公历日期与朔望月相周期，
+ * 精确计算出当地当天的真实日出、日落、月出、月落时间，决定太阳和月亮出现的时机与轨迹进度。
+ */
+object SunMoonCalculator {
+
+    /**
+     * 全国各省及重点直辖市中心参考经纬度表（用于城市坐标缺省时的精准回退）
+     */
+    private val PROVINCE_COORDINATES: Map<String, Pair<Double, Double>> = mapOf(
+        "北京" to Pair(39.9042, 116.4074),
+        "天津" to Pair(39.0842, 117.2009),
+        "河北" to Pair(38.0428, 114.5149),
+        "山西" to Pair(37.8706, 112.5489),
+        "内蒙古" to Pair(40.8426, 111.7519),
+        "辽宁" to Pair(41.8057, 123.4315),
+        "吉林" to Pair(43.8171, 125.3235),
+        "黑龙江" to Pair(45.8038, 126.5349),
+        "上海" to Pair(31.2304, 121.4737),
+        "江苏" to Pair(32.0617, 118.7632),
+        "浙江" to Pair(30.2741, 120.1551),
+        "安徽" to Pair(31.8612, 117.2849),
+        "福建" to Pair(26.0789, 119.3062),
+        "江西" to Pair(28.6765, 115.8921),
+        "山东" to Pair(36.6512, 117.1201),
+        "河南" to Pair(34.7580, 113.6654),
+        "湖北" to Pair(30.5928, 114.3055),
+        "湖南" to Pair(28.2282, 112.9388),
+        "广东" to Pair(23.1291, 113.2644),
+        "广西" to Pair(22.8170, 108.3665),
+        "海南" to Pair(20.0440, 110.1999),
+        "重庆" to Pair(29.5630, 106.5516),
+        "四川" to Pair(30.5728, 104.0668),
+        "贵州" to Pair(26.6470, 106.6302),
+        "云南" to Pair(25.0406, 102.7123),
+        "西藏" to Pair(29.6441, 91.1145),
+        "陕西" to Pair(34.3416, 108.9398),
+        "甘肃" to Pair(36.0611, 103.8343),
+        "青海" to Pair(36.6232, 101.7789),
+        "宁夏" to Pair(38.4872, 106.2309),
+        "新疆" to Pair(43.8256, 87.6168),
+        "香港" to Pair(22.3193, 114.1694),
+        "澳门" to Pair(22.1987, 113.5439),
+        "台湾" to Pair(25.0330, 121.5654)
+    )
+
+    /**
+     * 计算目标城市与日期的太阳、月亮出落与运行状态
+     *
+     * @param city 城市信息（包含经纬度与省市名称）
+     * @param calendar 当前时钟实例 [Calendar]
+     * @return 包含精确日出日落月出月落及天体进度的 [CelestialTimes]
+     */
+    fun calculateCelestialTimes(
+        city: CityInfo? = null,
+        calendar: Calendar = Calendar.getInstance()
+    ): CelestialTimes {
+        val (lat, lng) = resolveCoordinates(city)
+        val dayOfYear = calendar.get(Calendar.DAY_OF_YEAR)
+        val currentMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+
+        // 1. NOAA 标准太阳赤纬与时角计算
+        val gamma = 2.0 * Math.PI / 365.0 * (dayOfYear - 1)
+        val declination = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma) -
+                0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma) -
+                0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma)
+
+        // 均时差（分钟）
+        val eqtime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma) -
+                0.014615 * Math.cos(2 * gamma) - 0.040849 * Math.sin(2 * gamma))
+
+        val latRad = Math.toRadians(lat)
+        val zenith = Math.toRadians(90.833) // 包含大气折射的标准太阳地平天顶角
+
+        var cosHA = (Math.cos(zenith) - Math.sin(latRad) * Math.sin(declination)) / (Math.cos(latRad) * Math.cos(declination))
+        cosHA = cosHA.coerceIn(-1.0, 1.0)
+        val haRad = Math.acos(cosHA)
+        val haDeg = Math.toDegrees(haRad)
+
+        // 东八区 (UTC+8, 120°E) 正午太阳时修正
+        val solarNoonMinutes = 720.0 - 4.0 * (lng - 120.0) - eqtime
+        val sunriseMinutes = (solarNoonMinutes - haDeg * 4.0).toInt().coerceIn(0, 1439)
+        val sunsetMinutes = (solarNoonMinutes + haDeg * 4.0).toInt().coerceIn(0, 1439)
+
+        // 2. 当前是否处于夜间（日落后至次日日出前）
+        val isNight = currentMinutes < sunriseMinutes || currentMinutes >= sunsetMinutes
+
+        // 3. 太阳出现时机与进度计算
+        val isSunVisible = !isNight && currentMinutes in sunriseMinutes..sunsetMinutes
+        val sunProgress = if (isSunVisible && sunsetMinutes > sunriseMinutes) {
+            ((currentMinutes - sunriseMinutes).toFloat() / (sunsetMinutes - sunriseMinutes).toFloat()).coerceIn(0f, 1f)
+        } else if (currentMinutes >= sunsetMinutes) {
+            1.0f
+        } else {
+            0.0f
+        }
+
+        // 4. 月球月相与月出月落计算 (基于朔望周期 29.530588853 天)
+        val refCalendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            set(2026, Calendar.JANUARY, 18, 17, 51, 0)
+        }
+        val diffMillis = calendar.timeInMillis - refCalendar.timeInMillis
+        val diffDays = diffMillis.toDouble() / (1000.0 * 60.0 * 60.0 * 24.0)
+        val synodicMonth = 29.530588853
+        val moonAge = (diffDays % synodicMonth + synodicMonth) % synodicMonth
+
+        // 月球每天相对太阳滞后约 50.47 分钟升起
+        val moonLagMinutes = (moonAge * 50.47).toInt()
+        val moonriseMinutes = ((sunriseMinutes + moonLagMinutes) % 1440 + 1440) % 1440
+        val moonsetMinutes = ((sunsetMinutes + moonLagMinutes) % 1440 + 1440) % 1440
+
+        // 5. 月亮在夜空的可见时机与进度计算
+        val isMoonInSky = if (moonriseMinutes < moonsetMinutes) {
+            currentMinutes in moonriseMinutes..moonsetMinutes
+        } else {
+            currentMinutes >= moonriseMinutes || currentMinutes <= moonsetMinutes
+        }
+
+        val isMoonVisible = isNight || isMoonInSky
+
+        val moonTotalMinutes = if (moonriseMinutes < moonsetMinutes) {
+            (moonsetMinutes - moonriseMinutes).toFloat()
+        } else {
+            (moonsetMinutes + 1440 - moonriseMinutes).toFloat()
+        }.coerceAtLeast(600f)
+
+        val moonElapsed = if (currentMinutes >= moonriseMinutes) {
+            (currentMinutes - moonriseMinutes).toFloat()
+        } else {
+            (currentMinutes + 1440 - moonriseMinutes).toFloat()
+        }
+
+        val moonProgress = (moonElapsed / moonTotalMinutes).coerceIn(0f, 1f)
+
+        return CelestialTimes(
+            sunriseMinutes = sunriseMinutes,
+            sunsetMinutes = sunsetMinutes,
+            moonriseMinutes = moonriseMinutes,
+            moonsetMinutes = moonsetMinutes,
+            isSunVisible = isSunVisible,
+            sunProgress = sunProgress,
+            isMoonVisible = isMoonVisible,
+            moonProgress = moonProgress,
+            isNight = isNight
+        )
+    }
+
+    /**
+     * 解析城市的实际经纬度，若缺失则通过省份/城市名称智能映射中心坐标
+     *
+     * @param city 待解析的城市信息对象 [CityInfo]
+     * @return 经纬度键值对 [Pair]，格式为 (纬度, 经度)
+     */
+    private fun resolveCoordinates(city: CityInfo?): Pair<Double, Double> {
+        val lat = city?.latitude
+        val lng = city?.longitude
+        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+            return Pair(lat, lng)
+        }
+        val targetName = city?.province?.ifEmpty { city.name } ?: "北京"
+        for ((prov, coords) in PROVINCE_COORDINATES) {
+            if (targetName.contains(prov) || prov.contains(targetName)) {
+                return coords
+            }
+        }
+        return Pair(39.9042, 116.4074) // 默认北京
+    }
 }
 
 /**
- * 根据日照时间进度计算太阳在天穹弧线中的屏幕坐标
+ * 根据城市日照时间进度计算太阳在天穹弧线中的屏幕坐标（平缓优美微弧轨迹）
  *
- * 遵循东升西落自然物理规律：
- * - 清晨 (进度 0.0f)：位于屏幕左侧 (X: 0.12f)，较低天际 (Y: 0.28f)；
- * - 正午 (进度 0.5f)：位于屏幕正中 (X: 0.50f)，升至天顶最高点 (Y: 0.08f)；
- * - 傍晚 (进度 1.0f)：位于屏幕右侧 (X: 0.88f)，缓缓西沉至低空 (Y: 0.28f)。
+ * 优化弧度：降低天顶与地平线落差，使太阳在天空上方以平缓自然的微弧平滑运行。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -892,33 +922,14 @@ private fun calculateSunProgress(calendar: Calendar = Calendar.getInstance()): F
  */
 private fun calculateSunCenter(width: Float, height: Float, progress: Float): Offset {
     val sunX = width * (0.12f + 0.76f * progress)
-    val sunY = height * (0.28f - 0.20f * sin(progress * PI.toFloat()))
+    val horizonY = height * 0.22f
+    val zenithY = height * 0.07f
+    val sunY = horizonY - (horizonY - zenithY) * sin(progress * PI.toFloat())
     return Offset(sunX, sunY)
 }
 
 /**
- * 计算夜间时钟在月出月落区间（19:00 ~ 次日 05:30）中的进度比例
- *
- * @param calendar 当前系统时钟实例 [Calendar]
- * @return 归一化月相天空进度值 (0.0f ~ 1.0f)
- */
-private fun calculateMoonProgress(calendar: Calendar = Calendar.getInstance()): Float {
-    val hour = calendar.get(Calendar.HOUR_OF_DAY)
-    val minute = calendar.get(Calendar.MINUTE)
-    val currentMinutes = hour * 60 + minute
-    val moonRise = 19 * 60 // 19:00
-    val totalNightMinutes = 10.5f * 60f // 10.5 小时
-
-    val elapsed = if (currentMinutes >= moonRise) {
-        (currentMinutes - moonRise).toFloat()
-    } else {
-        (currentMinutes + (24 * 60 - moonRise)).toFloat()
-    }
-    return (elapsed / totalNightMinutes).coerceIn(0f, 1f)
-}
-
-/**
- * 根据月夜进度计算明月在夜空弧线中的屏幕坐标
+ * 根据月夜进度计算明月在夜空弧线中的屏幕坐标（平缓优美微弧轨迹）
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -927,12 +938,14 @@ private fun calculateMoonProgress(calendar: Calendar = Calendar.getInstance()): 
  */
 private fun calculateMoonCenter(width: Float, height: Float, progress: Float): Offset {
     val moonX = width * (0.15f + 0.70f * progress)
-    val moonY = height * (0.24f - 0.14f * sin(progress * PI.toFloat()))
+    val horizonY = height * 0.23f
+    val zenithY = height * 0.08f
+    val moonY = horizonY - (horizonY - zenithY) * sin(progress * PI.toFloat())
     return Offset(moonX, moonY)
 }
 
 /**
- * 绘制白天丁达尔云隙圣光（God Rays）（随太阳实时位置向下发散）
+ * 绘制白天丁达尔云隙圣光（God Rays）（随太阳实时大弧线位置自适应角度向下发散）
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -947,18 +960,15 @@ private fun DrawScope.drawCrepuscularGodRays(
     progress: Float,
     isCloudy: Boolean
 ) {
-    val maxRayLength = width * 1.2f
-    val rayAlphaBase = if (isCloudy) 0.06f else 0.04f
+    val maxRayLength = width * 1.35f
+    val rayAlphaBase = if (isCloudy) 0.06f else 0.045f
 
-    // 依太阳在屏幕左右位置自适应调整发散角度基准
-    val baseAngleDeg = when {
-        sunCenter.x < width * 0.35f -> 60f // 太阳在左，光线射向右下方
-        sunCenter.x > width * 0.65f -> 120f // 太阳在右，光线射向左下方
-        else -> 90f // 太阳在正中，光线射向正下方
-    }
+    // 依太阳在屏幕左右大弧线位置自适应调整发散角度基准 (左边朝右下 50° ~ 正中 90° ~ 右边朝左下 130°)
+    val sunXRatio = (sunCenter.x / width).coerceIn(0.05f, 0.95f)
+    val baseAngleDeg = 50f + ((sunXRatio - 0.05f) / 0.90f) * 80f
 
-    val rayAngles = listOf(baseAngleDeg - 35f, baseAngleDeg - 18f, baseAngleDeg, baseAngleDeg + 18f, baseAngleDeg + 35f)
-    val rayWidths = listOf(12f, 18f, 15f, 20f, 14f)
+    val rayAngles = listOf(baseAngleDeg - 36f, baseAngleDeg - 18f, baseAngleDeg, baseAngleDeg + 18f, baseAngleDeg + 36f)
+    val rayWidths = listOf(14f, 20f, 16f, 22f, 15f)
 
     rayAngles.forEachIndexed { index, angleDeg ->
         val pulse = (sin((progress + index * 0.2f) * 2f * PI.toFloat()) + 1f) / 2f
@@ -1001,7 +1011,7 @@ private fun DrawScope.drawCrepuscularGodRays(
 }
 
 /**
- * 绘制白昼太阳光晕、核心发光球与自转辐射光芒（随时间东升西落，柔和光效避免遮挡文字）
+ * 绘制白昼太阳光晕、核心发光球与自转辐射光芒（100% 对齐设计图：纯白金光核 + 青蓝/金黄双层彩虹镜头光晕环 + 动态自转呼吸光柱）
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1020,44 +1030,83 @@ private fun DrawScope.drawSunWithRays(
     rotation: Float,
     isPartlyCloudy: Boolean
 ) {
-    val coreRadius = width * 0.075f
-    val outerGlowRadius = width * (0.26f + pulseProgress * 0.02f)
-    val maxAlpha = if (isPartlyCloudy) 0.35f else 0.55f
+    val coreRadius = width * 0.085f
+    val outerGlowRadius = width * (0.32f + pulseProgress * 0.03f)
+    val maxAlpha = if (isPartlyCloudy) 0.45f else 0.85f
 
-    // 早晚偏金橙暖色 (Golden Hour)，正午偏温润柔和金黄，避免大面积白光爆闪
-    val isGoldenHour = dayProgress < 0.18f || dayProgress > 0.82f
-    val glowOuterColor = if (isGoldenHour) Color(0xFFFF9800) else Color(0xFFFFB300)
-    val glowMidColor = if (isGoldenHour) Color(0xFFFFC107) else Color(0xFFFFD54F)
-
+    // 1. 绘制最外层弥漫暖金色微光
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.28f * maxAlpha),
-                glowMidColor.copy(alpha = 0.16f * maxAlpha),
-                glowOuterColor.copy(alpha = 0.05f * maxAlpha),
+                Color.White.copy(alpha = 0.35f * maxAlpha),
+                Color(0xFFFFE082).copy(alpha = 0.20f * maxAlpha),
+                Color(0xFFFFB300).copy(alpha = 0.06f * maxAlpha),
                 Color.Transparent
             ),
             center = sunCenter,
-            radius = outerGlowRadius
+            radius = outerGlowRadius * 1.3f
         ),
         center = sunCenter,
-        radius = outerGlowRadius
+        radius = outerGlowRadius * 1.3f
     )
 
+    // 2. 绘制设计图中极具摄影质感的双层彩虹/青蓝光学镜头光晕环 (Optical Halo & Chromatic Aberration Rings)
+    val ringR1 = width * (0.34f + pulseProgress * 0.015f) // 内层青蓝光环
+    val ringR2 = width * (0.46f + pulseProgress * 0.020f) // 外层柔金光环
+
+    // 内层青蓝色镜头光圈
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color(0xFF40C4FF).copy(alpha = 0.22f * maxAlpha),
+                Color(0xFF80D8FF).copy(alpha = 0.12f * maxAlpha),
+                Color.Transparent
+            ),
+            center = sunCenter,
+            radius = ringR1 + 10f
+        ),
+        center = sunCenter,
+        radius = ringR1,
+        style = Stroke(width = 6.0f)
+    )
+
+    // 外层金色柔和镜头光环
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color(0xFFFFF59D).copy(alpha = 0.16f * maxAlpha),
+                Color(0xFFFFD54F).copy(alpha = 0.08f * maxAlpha),
+                Color.Transparent
+            ),
+            center = sunCenter,
+            radius = ringR2 + 14f
+        ),
+        center = sunCenter,
+        radius = ringR2,
+        style = Stroke(width = 8.5f)
+    )
+
+    // 3. 动态自转的放射状镜头光柱与下射光芒 (随时间缓慢旋转)
     rotate(degrees = rotation, pivot = sunCenter) {
-        val rayCount = 12
+        val rayCount = 16
         for (i in 0 until rayCount) {
             val angle = (i * (360f / rayCount)) * (PI / 180f)
-            val rayLength = outerGlowRadius * (if (i % 2 == 0) 0.75f else 0.55f)
+            val isPrimary = i % 4 == 0
+            val isSecondary = i % 2 == 0
+            val rayLength = outerGlowRadius * (if (isPrimary) 1.25f else if (isSecondary) 0.95f else 0.70f)
             val rayEnd = Offset(
                 sunCenter.x + (rayLength * cos(angle)).toFloat(),
                 sunCenter.y + (rayLength * sin(angle)).toFloat()
             )
+            val rayAlpha = (if (isPrimary) 0.22f else if (isSecondary) 0.14f else 0.07f) * maxAlpha
+
             drawLine(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = (if (i % 2 == 0) 0.14f else 0.08f) * maxAlpha),
-                        Color(0xFFFFF9C4).copy(alpha = 0.02f * maxAlpha),
+                        Color.White.copy(alpha = rayAlpha),
+                        Color(0xFFFFF9C4).copy(alpha = rayAlpha * 0.45f),
                         Color.Transparent
                     ),
                     center = sunCenter,
@@ -1065,25 +1114,27 @@ private fun DrawScope.drawSunWithRays(
                 ),
                 start = sunCenter,
                 end = rayEnd,
-                strokeWidth = if (i % 2 == 0) 3.2f else 1.8f,
+                strokeWidth = if (isPrimary) 4.2f else if (isSecondary) 2.6f else 1.6f,
                 cap = StrokeCap.Round
             )
         }
     }
 
+    // 4. 居中极高亮纯白金发光球核
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.90f * maxAlpha),
-                Color(0xFFFFF59D).copy(alpha = 0.65f * maxAlpha),
-                Color(0xFFFFD54F).copy(alpha = 0.25f * maxAlpha),
+                Color.White,
+                Color.White.copy(alpha = 0.95f),
+                Color(0xFFFFF59D).copy(alpha = 0.75f * maxAlpha),
+                Color(0xFFFFD54F).copy(alpha = 0.30f * maxAlpha),
                 Color.Transparent
             ),
             center = sunCenter,
-            radius = coreRadius * 1.3f
+            radius = coreRadius * 1.4f
         ),
         center = sunCenter,
-        radius = coreRadius * 1.3f
+        radius = coreRadius * 1.4f
     )
 }
 
@@ -1328,12 +1379,36 @@ private fun DrawScope.drawShootingStars(width: Float, height: Float, progress: F
 }
 
 /**
- * 绘制立体明月与柔美月晕（随夜间时间弧形移动）
+ * 真实月球暗海漫射光斑配置模型
+ *
+ * @property relX 相对月球中心横坐标偏移比例 (-1.0f ~ 1.0f)
+ * @property relY 相对月球中心纵坐标偏移比例 (-1.0f ~ 1.0f)
+ * @property radiusFactor 月海羽化半径占月球半径比例
+ * @property alpha 暗斑透明度
+ */
+private data class LunarMariaSpot(
+    val relX: Float,
+    val relY: Float,
+    val radiusFactor: Float,
+    val alpha: Float
+)
+
+/**
+ * 绘制真实摄影级微光满月与大气月华月冕系统 (Photorealistic Naked-Eye Moon System)
+ *
+ * 遵循人类肉眼夜空真实观感物理规律：
+ * 1. 广域深邃月晕与清透月华：多层微光漫射晕轮，夜空中通透自然发光；
+ * 2. 真实月球盘面自然地貌：
+ *    - 移除一切生硬矢量几何椭圆和粗糙涂抹色块；
+ *    - 采用多层柔和羽化高斯径向漫射渐变，还原“风暴洋”、“静海”、“雨海”、“澄海”的自然青灰云烟状阴影；
+ *    - 融入第谷（Tycho）与哥白尼高地反照亮区的柔亮高光；
+ * 3. 柔和大气边缘消散（Atmospheric Limb Softening）：月球轮廓与夜空自然交融，呈现真实天体的浑圆与真实感；
+ * 4. 伴月璀璨行星：伴随呼吸节奏微闪，呈现夜空幽静唯美意境。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
  * @param moonCenter 明月实时屏幕坐标 [Offset]
- * @param pulseProgress 月晕呼吸相位
+ * @param pulseProgress 月华呼吸动画相位 (0f ~ 1f)
  */
 private fun DrawScope.drawGlowingMoon(
     width: Float,
@@ -1341,14 +1416,16 @@ private fun DrawScope.drawGlowingMoon(
     moonCenter: Offset,
     pulseProgress: Float
 ) {
-    val moonRadius = width * 0.09f
-    val glowRadius = width * (0.35f + pulseProgress * 0.03f)
+    val moonRadius = width * 0.072f // 精致适中的真实月球盘面半径（约 28dp ~ 30dp）
+    val glowRadius = moonRadius * (3.4f + pulseProgress * 0.25f) // 广域柔美月华光晕半径
 
+    // 1. 最外层广阔深空柔和月华漫射 (Deep Sky Atmospheric Lunar Glow)
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color(0xFFE2EDF8).copy(alpha = 0.30f),
-                Color(0xFF8FAAC4).copy(alpha = 0.10f),
+                Color(0xFFE2ECFA).copy(alpha = 0.22f + pulseProgress * 0.04f),
+                Color(0xFF9CB8DB).copy(alpha = 0.10f + pulseProgress * 0.02f),
+                Color(0xFF4C668D).copy(alpha = 0.03f),
                 Color.Transparent
             ),
             center = moonCenter,
@@ -1358,29 +1435,198 @@ private fun DrawScope.drawGlowingMoon(
         radius = glowRadius
     )
 
+    // 2. 近月轮清辉光晕 (Inner Corona Halo)
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color(0xFFFFFDF5),
-                Color(0xFFE6EEF8),
-                Color(0xFFC4D5E5)
+                Color(0xFFF4F8FD).copy(alpha = 0.45f + pulseProgress * 0.05f),
+                Color(0xFFC2D7ED).copy(alpha = 0.18f),
+                Color.Transparent
             ),
-            center = Offset(moonCenter.x - moonRadius * 0.3f, moonCenter.y - moonRadius * 0.3f),
-            radius = moonRadius * 1.2f
+            center = moonCenter,
+            radius = moonRadius * 1.55f
         ),
         center = moonCenter,
-        radius = moonRadius
+        radius = moonRadius * 1.55f
     )
 
+    // 3. 绘制真实月球盘面内部（使用 clipPath 限制在月球圆形范围内）
+    val moonClipPath = Path().apply {
+        addOval(
+            Rect(
+                center = moonCenter,
+                radius = moonRadius
+            )
+        )
+    }
+
+    clipPath(moonClipPath) {
+        // 3.1 真实月面基础微光银白底色 (Luminous Lunar Base)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFFCFEFF), // 中心明亮银白
+                    Color(0xFFEFF5FB), // 中间高地银灰
+                    Color(0xFFD6E3F0), // 柔和过渡区
+                    Color(0xFFB4C7DB)  // 边缘自然微深
+                ),
+                center = Offset(moonCenter.x + moonRadius * 0.15f, moonCenter.y - moonRadius * 0.15f),
+                radius = moonRadius * 1.25f
+            ),
+            center = moonCenter,
+            radius = moonRadius
+        )
+
+        // 3.2 真实月海地貌层（采用多层柔和羽化漫射渐变，完全杜绝生硬椭圆色块）
+        // 真实月表主要月海暗纹参数：(相对X, 相对Y, 斑块羽化半径, 暗度alpha)
+        val lunarMariaList = listOf(
+            // 雨海与风暴洋连绵大暗区 (西北至中部)
+            LunarMariaSpot(relX = -0.22f, relY = -0.28f, radiusFactor = 0.48f, alpha = 0.38f),
+            LunarMariaSpot(relX = -0.42f, relY = -0.05f, radiusFactor = 0.42f, alpha = 0.35f),
+            LunarMariaSpot(relX = -0.15f, relY = -0.05f, radiusFactor = 0.38f, alpha = 0.30f),
+
+            // 澄海与静海连绵暗斑 (东北部)
+            LunarMariaSpot(relX = 0.22f, relY = -0.32f, radiusFactor = 0.40f, alpha = 0.36f),
+            LunarMariaSpot(relX = 0.38f, relY = -0.18f, radiusFactor = 0.36f, alpha = 0.32f),
+            LunarMariaSpot(relX = 0.45f, relY = 0.05f, radiusFactor = 0.30f, alpha = 0.28f),
+
+            // 危海独立暗斑 (东边缘)
+            LunarMariaSpot(relX = 0.58f, relY = -0.25f, radiusFactor = 0.22f, alpha = 0.34f),
+
+            // 云海与湿海暗斑 (西南部至南部)
+            LunarMariaSpot(relX = -0.32f, relY = 0.25f, radiusFactor = 0.38f, alpha = 0.32f),
+            LunarMariaSpot(relX = -0.12f, relY = 0.32f, radiusFactor = 0.34f, alpha = 0.28f),
+            LunarMariaSpot(relX = 0.15f, relY = 0.28f, radiusFactor = 0.30f, alpha = 0.24f),
+
+            // 汽海与中央湾微细过渡 (盘面中心细纹)
+            LunarMariaSpot(relX = 0.05f, relY = -0.08f, radiusFactor = 0.25f, alpha = 0.26f)
+        )
+
+        lunarMariaList.forEach { spot ->
+            val spotCenter = Offset(moonCenter.x + moonRadius * spot.relX, moonCenter.y + moonRadius * spot.relY)
+            val spotRadius = moonRadius * spot.radiusFactor
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color(0xFF4A5C75).copy(alpha = spot.alpha),
+                        Color(0xFF6B7E98).copy(alpha = spot.alpha * 0.60f),
+                        Color(0xFF90A4BC).copy(alpha = spot.alpha * 0.20f),
+                        Color.Transparent
+                    ),
+                    center = spotCenter,
+                    radius = spotRadius
+                ),
+                center = spotCenter,
+                radius = spotRadius
+            )
+        }
+
+        // 3.3 第谷（Tycho）与哥白尼高地反照亮斑 (Lunar Highlands & Bright Craters)
+        // 第谷环形山（南部偏亮，带自然漫射微晕）
+        val tychoPos = Offset(moonCenter.x - moonRadius * 0.08f, moonCenter.y + moonRadius * 0.48f)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.75f),
+                    Color(0xFFE8F2FC).copy(alpha = 0.35f),
+                    Color.Transparent
+                ),
+                center = tychoPos,
+                radius = moonRadius * 0.18f
+            ),
+            center = tychoPos,
+            radius = moonRadius * 0.18f
+        )
+
+        // 哥白尼亮坑（中部偏西北）
+        val copernicusPos = Offset(moonCenter.x - moonRadius * 0.20f, moonCenter.y - moonRadius * 0.12f)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.65f),
+                    Color(0xFFE2EFFC).copy(alpha = 0.25f),
+                    Color.Transparent
+                ),
+                center = copernicusPos,
+                radius = moonRadius * 0.14f
+            ),
+            center = copernicusPos,
+            radius = moonRadius * 0.14f
+        )
+
+        // 3.4 整体球体微透光感与柔化菲涅尔边缘 (Atmospheric Soft Disc Falloff)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color(0x00000000),
+                    Color(0x184A5E78),
+                    Color(0x35607A9B)
+                ),
+                center = moonCenter,
+                radius = moonRadius
+            ),
+            center = moonCenter,
+            radius = moonRadius
+        )
+
+        // 边缘柔和提亮微辉光，消除生硬边缘感
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color(0x00FFFFFF),
+                    Color(0x25FFFFFF),
+                    Color(0x50FFFFFF)
+                ),
+                center = moonCenter,
+                radius = moonRadius
+            ),
+            center = moonCenter,
+            radius = moonRadius
+        )
+    }
+
+    // 4. 外缘极柔和空气发光环（取代生硬的实线边框，呈现肉眼真实朦胧月球光华）
     drawCircle(
-        color = Color(0xFFB0C4D8).copy(alpha = 0.22f),
-        radius = moonRadius * 0.32f,
-        center = Offset(moonCenter.x + moonRadius * 0.25f, moonCenter.y - moonRadius * 0.15f)
+        color = Color.White.copy(alpha = 0.30f),
+        radius = moonRadius,
+        center = moonCenter,
+        style = Stroke(width = 0.8f)
     )
+
+    // 5. 伴月璀璨行星/伴星 (Companion Celestial Star / Planetary Satellite)
+    val starOffset = Offset(moonCenter.x + moonRadius * 1.65f, moonCenter.y + moonRadius * 1.20f)
+    val starAlpha = 0.75f + pulseProgress * 0.22f
+    val starRadius = 2.4f + pulseProgress * 0.5f
+
+    // 伴星柔和光晕
     drawCircle(
-        color = Color(0xFFB0C4D8).copy(alpha = 0.18f),
-        radius = moonRadius * 0.22f,
-        center = Offset(moonCenter.x - moonRadius * 0.15f, moonCenter.y + moonRadius * 0.28f)
+        color = Color(0xFFD6E7FA).copy(alpha = starAlpha * 0.35f),
+        radius = starRadius * 3.0f,
+        center = starOffset
+    )
+    // 伴星实心白核
+    drawCircle(
+        color = Color.White.copy(alpha = starAlpha),
+        radius = starRadius,
+        center = starOffset
+    )
+    // 伴星微型十字星芒
+    val spikeLen = starRadius * 2.5f
+    drawLine(
+        color = Color.White.copy(alpha = starAlpha * 0.65f),
+        start = Offset(starOffset.x - spikeLen, starOffset.y),
+        end = Offset(starOffset.x + spikeLen, starOffset.y),
+        strokeWidth = 1.0f,
+        cap = StrokeCap.Round
+    )
+    drawLine(
+        color = Color.White.copy(alpha = starAlpha * 0.65f),
+        start = Offset(starOffset.x, starOffset.y - spikeLen),
+        end = Offset(starOffset.x, starOffset.y + spikeLen),
+        strokeWidth = 1.0f,
+        cap = StrokeCap.Round
     )
 }
 

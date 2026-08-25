@@ -63,8 +63,12 @@ data class WeatherUiState(
     val isCityManagementOpen: Boolean = false,
     val showSourceDialog: Boolean = false,
     val showAddCityDialog: Boolean = false,
+    val isDailyChartMode: Boolean = true,
     val locationDisplayMode: com.weather.app.model.LocationDisplayMode = com.weather.app.model.LocationDisplayMode.LANDMARK,
-    val showLocationSettings: Boolean = false
+    val showLocationSettings: Boolean = false,
+    val autoUpdateIntervalMinutes: Int = 60,
+    val autoUpdateIntervalHours: Int = 1,
+    val showIntervalDialog: Boolean = false
 ) {
     /**
      * 获取当前选中的城市实体
@@ -107,15 +111,37 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val activeSource = repository.getActiveDataSource().getSourceInfo()
         val sources = repository.getAvailableSources()
         val savedCities = repository.getSavedCities()
+        val isDailyChart = repository.isDailyChartMode()
+        val locationMode = repository.getLocationDisplayMode()
+        val intervalMinutes = repository.getAutoUpdateIntervalMinutes()
+
+        // 预加载各城市持久化天气快照缓存，保障冷启动秒开
+        val initialCache = mutableMapOf<String, WeatherData>()
+        savedCities.forEach { city ->
+            val cached = repository.getCachedWeatherData(city)
+            if (cached != null) {
+                initialCache[city.code.ifEmpty { city.name }] = cached
+                initialCache[city.name] = cached
+            }
+        }
 
         _uiState.update {
             it.copy(
                 currentSource = activeSource,
                 availableSources = sources,
                 savedCities = savedCities,
-                currentCityIndex = 0
+                currentCityIndex = 0,
+                isDailyChartMode = isDailyChart,
+                locationDisplayMode = locationMode,
+                autoUpdateIntervalMinutes = intervalMinutes,
+                autoUpdateIntervalHours = (intervalMinutes / 60).coerceAtLeast(0),
+                weatherCache = initialCache,
+                isLoading = initialCache.isEmpty()
             )
         }
+
+        // 注册/更新后台省电定时自动更新任务 (WorkManager)
+        com.weather.app.worker.WeatherAutoUpdateScheduler.scheduleAutoUpdate(application, intervalMinutes)
 
         // 启动时自动定位并预加载城市天气
         autoLocateAndPreload()
@@ -285,6 +311,21 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * 撤销删除并在指定位置恢复城市
+     *
+     * @param city 待恢复的城市对象 [CityInfo]
+     * @param index 恢复插入的原位置索引
+     */
+    fun restoreCity(city: CityInfo, index: Int) {
+        viewModelScope.launch {
+            val updated = repository.insertCity(index, city)
+            _uiState.update {
+                it.copy(savedCities = updated)
+            }
+        }
+    }
+
+    /**
      * 切换当前激活的天气数据源并重新加载所有城市天气
      *
      * @param sourceId 目标天气源标识符（如 "cma"）
@@ -398,12 +439,72 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 切换定位展示模式（地标/乡镇/街道 或 附近区县）
+     * 切换定位展示模式（地标/乡镇/街道 或 附近区县）并持久化保存，同时即时重新解析定位城市名称
      *
      * @param mode 定位展示模式枚举 [com.weather.app.model.LocationDisplayMode]
      */
     fun setLocationDisplayMode(mode: com.weather.app.model.LocationDisplayMode) {
         _uiState.update { it.copy(locationDisplayMode = mode) }
+        viewModelScope.launch {
+            val updatedCities = repository.updateLocationDisplayMode(mode)
+            _uiState.update { it.copy(savedCities = updatedCities) }
+            // 自动刷新更新后的定位城市天气
+            val autoCity = updatedCities.firstOrNull { it.isAutoLocated }
+            if (autoCity != null) {
+                val result = repository.fetchWeather(autoCity)
+                result.onSuccess { data ->
+                    val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[autoCity.code.ifEmpty { autoCity.name }] = data
+                    cache[autoCity.name] = data
+                    _uiState.update { it.copy(weatherCache = cache) }
+                }
+            }
+        }
+    }
+
+    /**
+     * 切换近日天气展示模式（趋势折线图表 或 逐日温差列表）并持久化保存
+     *
+     * @param isChartMode true 为趋势折线图表模式，false 为逐日温差列表模式
+     */
+    fun setDailyChartMode(isChartMode: Boolean) {
+        _uiState.update { it.copy(isDailyChartMode = isChartMode) }
+        repository.setDailyChartMode(isChartMode)
+    }
+
+    /**
+     * 控制“更新间隔”设置弹窗的显示与隐藏
+     *
+     * @param show 是否显示更新间隔弹窗
+     */
+    fun showIntervalDialog(show: Boolean) {
+        _uiState.update { it.copy(showIntervalDialog = show) }
+    }
+
+    /**
+     * 设置并持久化新的自动更新间隔时间（分钟），同时更新后台 WorkManager 省电调度任务
+     *
+     * @param minutes 更新间隔分钟数（0 为无/关闭，30、60、120、360、720、1440）
+     */
+    fun setAutoUpdateIntervalMinutes(minutes: Int) {
+        repository.setAutoUpdateIntervalMinutes(minutes)
+        _uiState.update {
+            it.copy(
+                autoUpdateIntervalMinutes = minutes,
+                autoUpdateIntervalHours = (minutes / 60).coerceAtLeast(0),
+                showIntervalDialog = false
+            )
+        }
+        com.weather.app.worker.WeatherAutoUpdateScheduler.scheduleAutoUpdate(getApplication(), minutes)
+    }
+
+    /**
+     * 设置并持久化新的自动更新间隔时间（小时）兼容方法
+     *
+     * @param hours 更新间隔小时数（1、2、6、12、24）
+     */
+    fun setAutoUpdateInterval(hours: Int) {
+        setAutoUpdateIntervalMinutes(hours * 60)
     }
 
     /**

@@ -1,33 +1,30 @@
 package com.weather.app.ui
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBackIosNew
-import androidx.compose.material3.Divider
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,181 +36,129 @@ import androidx.compose.ui.unit.sp
 import com.weather.app.model.LocationDisplayMode
 
 /**
- * 定位设置全屏界面组件
+ * 定位设置底部面板组件
  *
- * 100% 精准对齐设计图：纯黑深色背景、左上角“< 定位设置”标题栏、圆角设置卡片及单选 Radio 切换。
+ * 采用与城市管理页面一致的 80% 半透明磨砂深灰蓝底色，
+ * 原生支持全屏沉浸式状态栏与底部安全区，提供平滑自底而上的手势交互与视觉体验。
  *
- * @param visible 是否展开显示
  * @param currentMode 当前生效的定位展示模式 [LocationDisplayMode]
  * @param onModeSelected 选中某一定位展示模式时的回调
- * @param onBackClick 点击顶部返回按钮或物理返回键时的回调
+ * @param onDismiss 关闭底部面板时的回调
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationSettingsScreen(
-    visible: Boolean,
     currentMode: LocationDisplayMode,
     onModeSelected: (LocationDisplayMode) -> Unit,
-    onBackClick: () -> Unit
+    onDismiss: () -> Unit
 ) {
-    // 拦截物理返回键与侧滑手势
-    BackHandler(enabled = visible) {
-        onBackClick()
-    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInHorizontally(initialOffsetX = { it }),
-        exit = slideOutHorizontally(targetOffsetX = { it })
+    val options = listOf(
+        LocationDisplayMode.LANDMARK,
+        LocationDisplayMode.DISTRICT
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xE6182230), // 90% 不透明磨砂深灰蓝底色
+        scrimColor = Color.Transparent,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color.White.copy(alpha = 0.35f)
+            )
+        }
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF121212)) // 深色背景
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 4.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-            ) {
-                // 顶部导航栏：< 定位设置
-                Row(
+            // 1. 弹窗头部标题与副标题
+            Text(
+                text = "定位设置",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color.White
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "选择主页定位城市名称的展示级别与颗粒度",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.65f)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 2. 模式选项列表
+            options.forEach { mode ->
+                val isSelected = mode == currentMode
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) Color(0x402563EB) else Color(0x18FFFFFF),
+                    border = BorderStroke(
+                        0.6.dp,
+                        if (isSelected) Color(0xFF60A5FA).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.08f)
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            onModeSelected(mode)
+                        }
                 ) {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBackIosNew,
-                            contentDescription = "返回",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = mode.title,
+                                fontSize = 16.sp,
+                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                                color = Color.White
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = mode.example,
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.65f)
+                            )
+                        }
+
+                        if (isSelected) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF2563EB)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "当前选中",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    Text(
-                        text = "定位设置",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 定位展示模式单选设置卡片 (圆角 16dp)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF262628))
-                ) {
-                    // 选项 1：展示附近地标/乡镇/街道
-                    LocationSettingOptionRow(
-                        title = LocationDisplayMode.LANDMARK.title,
-                        subtitle = LocationDisplayMode.LANDMARK.example,
-                        isSelected = currentMode == LocationDisplayMode.LANDMARK,
-                        onClick = { onModeSelected(LocationDisplayMode.LANDMARK) }
-                    )
-
-                    // 分割线
-                    Divider(
-                        color = Color(0x1AFFFFFF),
-                        thickness = 0.6.dp,
-                        modifier = Modifier.padding(start = 16.dp)
-                    )
-
-                    // 选项 2：展示附近区县
-                    LocationSettingOptionRow(
-                        title = LocationDisplayMode.DISTRICT.title,
-                        subtitle = LocationDisplayMode.DISTRICT.example,
-                        isSelected = currentMode == LocationDisplayMode.DISTRICT,
-                        onClick = { onModeSelected(LocationDisplayMode.DISTRICT) }
-                    )
                 }
             }
-        }
-    }
-}
 
-/**
- * 定位设置单选行条目
- *
- * @param title 标题文案
- * @param subtitle 副标题说明文案（如 "例：xx大厦"）
- * @param isSelected 是否处于选中状态
- * @param onClick 点击事件回调
- */
-@Composable
-private fun LocationSettingOptionRow(
-    title: String,
-    subtitle: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Normal
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = subtitle,
-                color = Color.White.copy(alpha = 0.55f),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Normal
-            )
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // 单选框 (选中为蓝底白心，未选中为灰色圆圈)
-        CustomRadioButton(isSelected = isSelected)
-    }
-}
-
-/**
- * 自定义高颜值单选指示圆圈组件（100% 对齐设计图）
- *
- * @param isSelected 是否选中
- */
-@Composable
-private fun CustomRadioButton(
-    isSelected: Boolean
-) {
-    val activeBlue = Color(0xFF2979FF)
-
-    Box(
-        modifier = Modifier
-            .size(22.dp)
-            .border(
-                width = 2.dp,
-                color = if (isSelected) activeBlue else Color.White.copy(alpha = 0.40f),
-                shape = CircleShape
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(activeBlue)
-            )
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }

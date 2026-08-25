@@ -3,12 +3,14 @@ package com.weather.app.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.weather.app.datasource.ProvinceItem
 import com.weather.app.datasource.WeatherDataSource
 import com.weather.app.datasource.WeatherDataSourceManager
 import com.weather.app.location.AppLocationManager
 import com.weather.app.model.CityInfo
+import com.weather.app.model.CityInfoJsonAdapter
 import com.weather.app.model.WeatherData
 import com.weather.app.model.WeatherSourceInfo
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +32,10 @@ class WeatherRepository(
 ) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences("weather_prefs", Context.MODE_PRIVATE)
-    private val gson = Gson()
+    private val gson: Gson = GsonBuilder()
+        .registerTypeAdapter(CityInfo::class.java, CityInfoJsonAdapter())
+        .setLenient()
+        .create()
 
     companion object {
         private const val KEY_SOURCE_ID = "active_source_id"
@@ -39,6 +44,122 @@ class WeatherRepository(
         private const val KEY_LAST_CITY_NAME = "last_city_name"
         private const val KEY_LAST_CITY_PROVINCE = "last_city_province"
         private const val KEY_LAST_IS_AUTO = "last_city_is_auto"
+        private const val KEY_IS_DAILY_CHART_MODE = "is_daily_chart_mode"
+        private const val KEY_LOCATION_DISPLAY_MODE = "location_display_mode"
+        private const val KEY_UPDATE_INTERVAL_HOURS = "update_interval_hours"
+        private const val KEY_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
+    }
+
+    /**
+     * 获取天气自动更新间隔时间（分钟数）
+     *
+     * @return 自动更新间隔分钟数（0 为无/关闭，30、60、120、360、720、1440）
+     */
+    fun getAutoUpdateIntervalMinutes(): Int {
+        if (prefs.contains(KEY_UPDATE_INTERVAL_MINUTES)) {
+            return prefs.getInt(KEY_UPDATE_INTERVAL_MINUTES, 60)
+        }
+        val legacyHours = prefs.getInt(KEY_UPDATE_INTERVAL_HOURS, 1)
+        return legacyHours * 60
+    }
+
+    /**
+     * 持久化设置天气自动更新间隔时间（分钟数）
+     *
+     * @param minutes 自动更新间隔分钟数（0 为无/关闭）
+     */
+    fun setAutoUpdateIntervalMinutes(minutes: Int) {
+        prefs.edit()
+            .putInt(KEY_UPDATE_INTERVAL_MINUTES, minutes)
+            .putInt(KEY_UPDATE_INTERVAL_HOURS, (minutes / 60).coerceAtLeast(0))
+            .apply()
+    }
+
+    /**
+     * 获取天气自动更新间隔时间（小时）兼容接口
+     *
+     * @return 自动更新间隔小时数
+     */
+    fun getAutoUpdateIntervalHours(): Int {
+        return (getAutoUpdateIntervalMinutes() / 60).coerceAtLeast(0)
+    }
+
+    /**
+     * 持久化设置天气自动更新间隔时间（小时）兼容接口
+     *
+     * @param hours 自动更新间隔小时数
+     */
+    fun setAutoUpdateIntervalHours(hours: Int) {
+        setAutoUpdateIntervalMinutes(hours * 60)
+    }
+
+    /**
+     * 获取近日天气是否为趋势图表模式
+     *
+     * @return true 为折线趋势图表模式，false 为逐日温差列表模式，默认 true
+     */
+    fun isDailyChartMode(): Boolean {
+        return prefs.getBoolean(KEY_IS_DAILY_CHART_MODE, true)
+    }
+
+    /**
+     * 持久化保存近日天气展示模式
+     *
+     * @param isChartMode true 为折线趋势图表模式，false 为逐日温差列表模式
+     */
+    fun setDailyChartMode(isChartMode: Boolean) {
+        prefs.edit().putBoolean(KEY_IS_DAILY_CHART_MODE, isChartMode).apply()
+    }
+
+    /**
+     * 获取定位名称展示模式
+     *
+     * @return 当前生效的定位展示模式 [com.weather.app.model.LocationDisplayMode]
+     */
+    fun getLocationDisplayMode(): com.weather.app.model.LocationDisplayMode {
+        val name = prefs.getString(KEY_LOCATION_DISPLAY_MODE, com.weather.app.model.LocationDisplayMode.LANDMARK.name)
+        return try {
+            com.weather.app.model.LocationDisplayMode.valueOf(name ?: com.weather.app.model.LocationDisplayMode.LANDMARK.name)
+        } catch (e: Exception) {
+            com.weather.app.model.LocationDisplayMode.LANDMARK
+        }
+    }
+
+    /**
+     * 持久化保存定位展示模式
+     *
+     * @param mode 定位展示模式 [com.weather.app.model.LocationDisplayMode]
+     */
+    fun setLocationDisplayMode(mode: com.weather.app.model.LocationDisplayMode) {
+        prefs.edit().putString(KEY_LOCATION_DISPLAY_MODE, mode.name).apply()
+    }
+
+    /**
+     * 持久化缓存指定城市的最新天气快照数据
+     *
+     * @param city 城市信息 [CityInfo]
+     * @param data 最新聚合天气数据 [WeatherData]
+     */
+    fun saveCachedWeatherData(city: CityInfo, data: WeatherData) {
+        val key = "weather_cache_${city.code.ifEmpty { city.name }}"
+        val json = gson.toJson(data)
+        prefs.edit().putString(key, json).apply()
+    }
+
+    /**
+     * 获取指定城市的持久化离线天气快照缓存
+     *
+     * @param city 城市信息 [CityInfo]
+     * @return 缓存的天气数据 [WeatherData]，若不存在返回 null
+     */
+    fun getCachedWeatherData(city: CityInfo): WeatherData? {
+        val key = "weather_cache_${city.code.ifEmpty { city.name }}"
+        val json = prefs.getString(key, null) ?: return null
+        return try {
+            gson.fromJson(json, WeatherData::class.java)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**
@@ -85,8 +206,10 @@ class WeatherRepository(
         if (!json.isNullOrEmpty()) {
             try {
                 val type = object : TypeToken<List<CityInfo>>() {}.type
-                val list: List<CityInfo> = gson.fromJson(json, type)
-                if (list.isNotEmpty()) return list
+                val list: List<CityInfo>? = gson.fromJson(json, type)
+                if (!list.isNullOrEmpty()) {
+                    return list.map { it.sanitize() }
+                }
             } catch (_: Exception) {}
         }
         // 初始默认城市列表
@@ -105,7 +228,8 @@ class WeatherRepository(
      * @param cities 待保存的城市列表 [CityInfo]
      */
     fun saveSavedCities(cities: List<CityInfo>) {
-        val json = gson.toJson(cities)
+        val safeList = cities.map { it.sanitize() }
+        val json = gson.toJson(safeList)
         prefs.edit().putString(KEY_SAVED_CITIES, json).apply()
     }
 
@@ -116,9 +240,10 @@ class WeatherRepository(
      * @return 更新后的完整城市列表
      */
     fun addCity(city: CityInfo): List<CityInfo> {
+        val safeCity = city.sanitize()
         val current = getSavedCities().toMutableList()
-        if (current.none { it.name == city.name || (it.code.isNotEmpty() && it.code == city.code) }) {
-            current.add(city)
+        if (current.none { it.name == safeCity.name || (safeCity.code.isNotEmpty() && it.code == safeCity.code) }) {
+            current.add(safeCity)
             saveSavedCities(current)
         }
         return current
@@ -131,12 +256,31 @@ class WeatherRepository(
      * @return 更新后的完整城市列表
      */
     fun removeCity(city: CityInfo): List<CityInfo> {
+        val safeCity = city.sanitize()
         val current = getSavedCities().toMutableList()
-        current.removeAll { it.name == city.name && it.code == city.code }
+        current.removeAll { it.name == safeCity.name && it.code == safeCity.code }
         if (current.isEmpty()) {
             current.add(CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true))
         }
         saveSavedCities(current)
+        return current
+    }
+
+    /**
+     * 在指定位置恢复/插入城市（支持删除后撤销恢复）
+     *
+     * @param index 插入目标索引
+     * @param city 待恢复的城市信息 [CityInfo]
+     * @return 更新后的完整城市列表
+     */
+    fun insertCity(index: Int, city: CityInfo): List<CityInfo> {
+        val safeCity = city.sanitize()
+        val current = getSavedCities().toMutableList()
+        val safeIndex = index.coerceIn(0, current.size)
+        if (current.none { it.name == safeCity.name && it.code == safeCity.code }) {
+            current.add(safeIndex, safeCity)
+            saveSavedCities(current)
+        }
         return current
     }
 
@@ -147,12 +291,13 @@ class WeatherRepository(
      * @return 更新后的城市列表
      */
     fun updateAutoLocatedCity(locatedCity: CityInfo): List<CityInfo> {
+        val safeCity = locatedCity.sanitize()
         val current = getSavedCities().toMutableList()
         val existingIndex = current.indexOfFirst { it.isAutoLocated }
         if (existingIndex != -1) {
-            current[existingIndex] = locatedCity.copy(isAutoLocated = true)
+            current[existingIndex] = safeCity.copy(isAutoLocated = true)
         } else {
-            current.add(0, locatedCity.copy(isAutoLocated = true))
+            current.add(0, safeCity.copy(isAutoLocated = true))
         }
         saveSavedCities(current)
         return current
@@ -161,29 +306,22 @@ class WeatherRepository(
     /**
      * 执行自动定位并加载定位所在城市天气
      *
-     * 优先尝试设备原生 GPS/基站网络定位与逆地理编码匹配，失败或未授权时无缝回退至数据源网络 IP 定位。
+     * 遵循当前定位设置展示模式（地标/街道 或 区县），优先尝试设备原生 GPS/基站网络定位与逆地理编码匹配。
      *
      * @return 包含聚合天气数据 [WeatherData] 的结果 [Result]
      */
     suspend fun autoLocateAndFetchWeather(): Result<WeatherData> = withContext(Dispatchers.IO) {
         val currentSource = getActiveDataSource()
+        val displayMode = getLocationDisplayMode()
 
         // 1. 尝试使用设备 GPS / 网络定位
         var locatedCity: CityInfo? = null
         if (locationManager.hasLocationPermission()) {
             val location = locationManager.getCurrentLocation()
             if (location != null) {
-                val geocodedCity = locationManager.reverseGeocode(location.latitude, location.longitude)
+                val geocodedCity = locationManager.reverseGeocode(location.latitude, location.longitude, displayMode)
                 if (geocodedCity != null) {
-                    val searchResult = currentSource.searchCities(geocodedCity.name)
-                    val matchedCity = searchResult.getOrNull()?.firstOrNull()
-                    if (matchedCity != null) {
-                        locatedCity = matchedCity.copy(
-                            latitude = location.latitude,
-                            longitude = location.longitude,
-                            isAutoLocated = true
-                        )
-                    }
+                    locatedCity = geocodedCity
                 }
             }
         }
@@ -200,6 +338,43 @@ class WeatherRepository(
 
         // 4. 获取目标城市的天气数据
         currentSource.getWeather(targetCity)
+    }
+
+    /**
+     * 切换定位展示模式并立即重新解析更新已保存的定位城市名称
+     *
+     * @param mode 新的定位展示模式 [com.weather.app.model.LocationDisplayMode]
+     * @return 更新后的已保存城市列表 [List]
+     */
+    suspend fun updateLocationDisplayMode(mode: com.weather.app.model.LocationDisplayMode): List<CityInfo> = withContext(Dispatchers.IO) {
+        setLocationDisplayMode(mode)
+        val currentCities = getSavedCities().toMutableList()
+        val autoIndex = currentCities.indexOfFirst { it.isAutoLocated }
+        if (autoIndex != -1) {
+            val currentAuto = currentCities[autoIndex]
+            val lat = currentAuto.latitude
+            val lon = currentAuto.longitude
+            var updated: CityInfo? = null
+            if (lat != null && lon != null) {
+                val geocoded = locationManager.reverseGeocode(lat, lon, mode)
+                if (geocoded != null) {
+                    updated = currentAuto.copy(
+                        name = geocoded.name,
+                        district = geocoded.district,
+                        landmark = geocoded.landmark,
+                        parentCity = geocoded.parentCity,
+                        province = if (currentAuto.province.isEmpty()) geocoded.province else currentAuto.province
+                    )
+                }
+            }
+            if (updated == null) {
+                val newName = currentAuto.getDisplayName(mode)
+                updated = currentAuto.copy(name = newName)
+            }
+            currentCities[autoIndex] = updated.sanitize()
+            saveSavedCities(currentCities)
+        }
+        currentCities
     }
 
     /**

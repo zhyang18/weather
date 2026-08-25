@@ -74,6 +74,9 @@ dependencies {
     // 协程支持
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
+    // 后台定期刷新与省电调度 (WorkManager)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     // 图片加载 (Coil)
     implementation("io.coil-kt:coil-compose:2.6.0")
 

@@ -37,7 +37,15 @@ fun HeroWeatherView(
 
     val maxT = todayForecast?.maxTemperature?.toInt() ?: current.temperature.toInt()
     val minT = todayForecast?.minTemperature?.toInt() ?: (current.temperature.toInt() - 7)
-    val aqiText = if (aqi != null) "空气${aqi.qualityText}" else "空气优"
+    val aqiText = if (aqi != null && aqi.qualityText.isNotEmpty() && aqi.qualityText != "-") "空气${aqi.qualityText}" else "空气优"
+
+    // 当实时实况 weatherText 缺失或为 "-" 时，自动取当天预测详情的天气现象
+    val displayWeatherText = when {
+        current.weatherText.isNotEmpty() && current.weatherText != "-" && current.weatherText != "无" && current.weatherText != "9999" -> current.weatherText
+        todayForecast?.dayWeatherText?.isNotEmpty() == true && todayForecast.dayWeatherText != "-" && todayForecast.dayWeatherText != "9999" -> todayForecast.dayWeatherText
+        todayForecast?.nightWeatherText?.isNotEmpty() == true && todayForecast.nightWeatherText != "-" && todayForecast.nightWeatherText != "9999" -> todayForecast.nightWeatherText
+        else -> "多云"
+    }
 
     Column(
         modifier = modifier
@@ -45,12 +53,12 @@ fun HeroWeatherView(
             .padding(top = 16.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 巨幅温度数字 (仅当前温度保留加粗，增强阴影保护)
+        // 巨幅主温度展示（常规字重不加粗，字号小一号至 92sp，带清晰立体文字阴影）
         Text(
             text = "${current.temperature.toInt()}°",
             style = TextStyle(
-                fontSize = 96.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 92.sp,
+                fontWeight = FontWeight.Light,
                 color = Color.White,
                 shadow = Shadow(
                     color = Color.Black.copy(alpha = 0.38f),
@@ -81,7 +89,7 @@ fun HeroWeatherView(
 
         // 空气质量与天气描述 (常规字重，增强阴影)
         Text(
-            text = "$aqiText  ${current.weatherText}",
+            text = "$aqiText  $displayWeatherText",
             style = TextStyle(
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Normal,

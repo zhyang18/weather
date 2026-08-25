@@ -1,5 +1,6 @@
 package com.weather.app.datasource.cma
 
+import okhttp3.ResponseBody
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -12,40 +13,41 @@ import retrofit2.http.Query
 interface CmaApiService {
 
     /**
-     * 根据城市或站点标识编码查询完整天气数据
+     * 根据城市或站点标识编码查询完整天气数据（返回原始响应体，支持高容错清洗解析）
      *
-     * @param stationId 站点代码（如 "Wqsps", "54511" 等）
-     * @return 中央气象台完整天气响应实体 [CmaWeatherResponse]
+     * @param stationId 站点代码（如 "Wqsps", "54511", "59493" 等）
+     * @return 原始网络响应数据体 [ResponseBody]
      */
     @GET("rest/weather")
     suspend fun getWeather(
         @Query("stationid") stationId: String
-    ): CmaWeatherResponse
+    ): ResponseBody
 
     /**
      * 根据客户端出口网络 IP 进行自动归属地定位
      *
-     * @return 自动识别定位出的城市响应实体 [CmaPositionResponse]
+     * @return 原始网络响应数据体 [ResponseBody]
      */
     @GET("rest/position")
-    suspend fun getPosition(): CmaPositionResponse
+    suspend fun getPosition(): ResponseBody
 
     /**
      * 获取全国所有 34 个省份及直辖市列表
      *
-     * @return 全国省份列表数据 [CmaProvinceResponse]
+     * @return 原始网络响应数据体 [ResponseBody]
      */
     @GET("rest/province/all")
-    suspend fun getAllProvinces(): List<CmaProvinceResponse>
+    suspend fun getAllProvinces(): ResponseBody
 
     /**
      * 根据省份编码获取下辖所有城市与区县站点
      *
      * @param provinceCode 省份代码（如 "ABJ", "AJS" 等）
-     * @return 该省下辖城市列表 [CmaCityResponse]
+     * @return 原始网络响应数据体 [ResponseBody]
      */
     @GET("rest/province/{code}")
     suspend fun getCitiesInProvince(
         @Path("code") provinceCode: String
-    ): List<CmaCityResponse>
+    ): ResponseBody
 }
+

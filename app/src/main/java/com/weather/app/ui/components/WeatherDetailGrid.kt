@@ -50,13 +50,16 @@ import kotlin.math.sin
  * 严格遵循真实数据原则：所有卡片必须由气象台返回的真实数据字段构建；
  * 若某项数据缺失或为无效值（9999/空），则该卡片直接不渲染展示，杜绝假数据。
  * 所有卡片高度保持严格一致（152.dp），除主界面的当前温度外其余文字均不加粗。
+ * 底部依次展示数据来源、气象观测发布时间与上次刷新时间。
  *
  * @param weatherData 聚合天气数据模型 [WeatherData]
+ * @param lastUpdatedText 上次刷新时间说明文本（如 "上次刷新 15:53"）
  * @param modifier 外部修饰符
  */
 @Composable
 fun WeatherDetailGrid(
     weatherData: WeatherData,
+    lastUpdatedText: String = "",
     modifier: Modifier = Modifier
 ) {
     val current = weatherData.current
@@ -123,13 +126,32 @@ fun WeatherDetailGrid(
             }
         }
 
-        // 底部真实数据来源与发布时刻
+        // 底部版本号、真实数据来源、发布时刻与上次刷新时间
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 10.dp, bottom = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val versionName = androidx.compose.runtime.remember(context) {
+                try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+                } catch (e: Exception) {
+                    "1.0.0"
+                }
+            }
+
+            // 版本号展示 (取值 versionName)
+            Text(
+                text = "版本号 v$versionName",
+                color = Color.White.copy(alpha = 0.50f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal
+            )
+
+            Spacer(modifier = Modifier.height(3.dp))
+
             Text(
                 text = "数据源自 ${weatherData.sourceName} 官方气象实况",
                 color = Color.White.copy(alpha = 0.65f),
@@ -140,6 +162,15 @@ fun WeatherDetailGrid(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "气象观测发布时间：${current.publishTime}",
+                    color = Color.White.copy(alpha = 0.45f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+            if (lastUpdatedText.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = lastUpdatedText,
                     color = Color.White.copy(alpha = 0.45f),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Normal
@@ -287,7 +318,56 @@ private fun FeelsLikeRealCard(
 // ==================== 3. 真实风向风速罗盘卡片 ====================
 
 /**
- * 真实风向风力罗盘卡片组件（100% 精确对齐设计图：外圈密集刻度与北东南西 + 居中深色表盘“2 级” + 贯穿式圆球箭尾与导向箭头）
+ * 解析气象风向描述文本并转换为屏幕 Canvas 极坐标系下的指针指向角度（单位：度）
+ *
+ * 屏幕极坐标系规范：0° 为东（右，+X），90° 为南（下，+Y），180° 为西（左，-X），270° 为北（上，-Y）。
+ * 指针箭头指示当前风向所在的方位：
+ * - 东南风：箭头指向东南（45°，右下方），箭尾圆点在西北（225°，左上方）；
+ * - 东北风：箭头指向东北（315°，右上方），箭尾圆点在西南（135°，左下方）；
+ * - 西南风：箭头指向西南（135°，左下方），箭尾圆点在东北（315°，右上方）；
+ * - 西北风：箭头指向西北（225°，左上方），箭尾圆点在东南（45°，右下方）；
+ * - 北风：箭头指向北（270°，正上方），箭尾圆点在南（90°，正下方）；
+ * - 南风：箭头指向南（90°，正下方），箭尾圆点在北（270°，正上方）；
+ * - 东风：箭头指向东（0°，正右方），箭尾圆点在西（180°，正左方）；
+ * - 西风：箭头指向西（180°，正左方），箭尾圆点在东（0°，正右方）。
+ *
+ * @param direction 风向文本描述（例如 "东南风"、"西北偏北" 或 "45°"）
+ * @return 屏幕极坐标系下指针指向角度（0f ~ 360f）
+ */
+fun parseWindDirectionAngle(direction: String): Float {
+    val clean = direction.trim()
+    val degreeMatch = Regex("(\\d+(?:\\.\\d+)?)").find(clean)
+    if (degreeMatch != null && clean.contains("°")) {
+        val metDegree = degreeMatch.groupValues[1].toFloatOrNull()
+        if (metDegree != null) {
+            // 气象角度转换屏幕风向角度: (metDegree - 90°) % 360°
+            return (metDegree - 90f + 360f) % 360f
+        }
+    }
+
+    return when {
+        clean.contains("东北偏北") || clean.contains("北偏东") -> 292.5f
+        clean.contains("东北偏东") || clean.contains("东偏北") -> 337.5f
+        clean.contains("东南偏东") || clean.contains("东偏南") -> 22.5f
+        clean.contains("东南偏南") || clean.contains("南偏东") -> 67.5f
+        clean.contains("西南偏南") || clean.contains("南偏西") -> 112.5f
+        clean.contains("西南偏西") || clean.contains("西偏南") -> 157.5f
+        clean.contains("西北偏西") || clean.contains("西偏北") -> 202.5f
+        clean.contains("西北偏北") || clean.contains("北偏西") -> 247.5f
+        clean.contains("东南") -> 45f   // 东南 (右下方)
+        clean.contains("东北") -> 315f  // 东北 (右上方)
+        clean.contains("西南") -> 135f  // 西南 (左下方)
+        clean.contains("西北") -> 225f  // 西北 (左上方)
+        clean.contains("偏北") || clean.contains("北风") || clean.endsWith("北") -> 270f  // 北 (正上方)
+        clean.contains("偏南") || clean.contains("南风") || clean.endsWith("南") -> 90f   // 南 (正下方)
+        clean.contains("偏东") || clean.contains("东风") || clean.endsWith("东") -> 0f    // 东 (正右方)
+        clean.contains("偏西") || clean.contains("西风") || clean.endsWith("西") -> 180f  // 西 (正左方)
+        else -> 270f // 默认微风/无持续风向指向北
+    }
+}
+
+/**
+ * 真实风向风力罗盘卡片组件（100% 精确对齐设计图：外圈密集刻度与北东南西 + 居中覆盖式深色表盘“2 级” + 贯穿式加大加粗圆球箭尾与导向箭头）
  *
  * @param current 当前实时气象数据模型 [CurrentWeather]
  * @param modifier 外部修饰符
@@ -309,19 +389,8 @@ private fun WindRealCard(
 
     val displayDirection = if (current.windDirection.isNotEmpty()) current.windDirection else "无持续风向"
 
-    // 解析风向对应角度（气象风向定义：风吹来的方向）
-    // 箭头指示风吹去的去向：吹去角度 = 吹来角度 + 180°
-    val windAngleDeg = when {
-        displayDirection.contains("西北") -> 135f // 西北风吹向东南
-        displayDirection.contains("东北") -> 225f // 东北风吹向西南
-        displayDirection.contains("西南") -> 45f  // 西南风吹向东北
-        displayDirection.contains("东南") -> 315f // 东南风吹向西北
-        displayDirection.contains("北") -> 90f   // 北风吹向南
-        displayDirection.contains("南") -> 270f  // 南风吹向北
-        displayDirection.contains("东") -> 180f  // 东风吹向西
-        displayDirection.contains("西") -> 0f    // 西风吹向东
-        else -> 135f
-    }
+    // 解析风向对应角度（指针箭头准确指示当前风向所在方位）
+    val windAngleDeg = parseWindDirectionAngle(displayDirection)
 
     val windAdvice = when (powerLevel) {
         0, 1, 2 -> "$displayDirection，轻拂过脸颊"
@@ -339,68 +408,83 @@ private fun WindRealCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(72.dp),
+                    .height(82.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Canvas(modifier = Modifier.size(72.dp)) {
+                Canvas(modifier = Modifier.size(82.dp)) {
                     val r = size.width / 2f
                     val c = Offset(r, r)
 
-                    // 1. 外圈 40 根放射状刻度线 (加粗加长，避开北、东、南、西四个文字方位)
+                    // 1. 外圈 40 根放射状刻度线 (放大至 82dp，刻度长 18.5f，线宽 4.5f，避开北、东、南、西四个文字方位)
                     for (i in 0 until 40) {
                         val angleDeg = i * 9f
                         // 避开 0°(东), 90°(南), 180°(西), 270°(北) 四个文字正切点
-                        if (angleDeg % 90f !in 81f..99f && angleDeg % 90f !in 0f..9f && angleDeg % 90f !in 171f..180f) {
+                        if (angleDeg % 90f !in 76f..104f && angleDeg % 90f !in 0f..14f && angleDeg % 90f !in 166f..180f) {
                             val angleRad = angleDeg * (PI.toFloat() / 180f)
-                            val p1 = Offset(c.x + (r - 1f) * cos(angleRad), c.y + (r - 1f) * sin(angleRad))
-                            val p2 = Offset(c.x + (r - 8.5f) * cos(angleRad), c.y + (r - 8.5f) * sin(angleRad))
+                            val p1 = Offset(c.x + (r - 0.5f) * cos(angleRad), c.y + (r - 0.5f) * sin(angleRad))
+                            val p2 = Offset(c.x + (r - 18.5f) * cos(angleRad), c.y + (r - 18.5f) * sin(angleRad))
                             drawLine(
-                                color = Color.White.copy(alpha = 0.45f),
+                                color = Color.White.copy(alpha = 0.80f),
                                 start = p1,
                                 end = p2,
-                                strokeWidth = 2.2f,
+                                strokeWidth = 4.5f,
                                 cap = StrokeCap.Round
                             )
                         }
                     }
 
-                    // 2. 居中深色半透明圆形表盘底衬 (实心圆盘)
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.15f),
-                        radius = r * 0.56f,
-                        center = c
-                    )
-
-                    // 3. 贯穿式白色风向指示箭头 (箭尾大白球 + 贯穿线 + 导向粗三角形)
+                    // 2. 贯穿式加大加粗高清晰风向指示指针 (箭尾大白球 + 加粗贯穿主线 + 加大立体导向箭头)
                     val rad = windAngleDeg * (PI.toFloat() / 180f)
                     val oppRad = (windAngleDeg + 180f) * (PI.toFloat() / 180f)
 
-                    val startPt = Offset(c.x + (r * 0.82f) * cos(oppRad), c.y + (r * 0.82f) * sin(oppRad))
-                    val endPt = Offset(c.x + (r * 0.88f) * cos(rad), c.y + (r * 0.88f) * sin(rad))
+                    val startPt = Offset(c.x + (r * 0.88f) * cos(oppRad), c.y + (r * 0.88f) * sin(oppRad))
+                    val endPt = Offset(c.x + (r * 0.94f) * cos(rad), c.y + (r * 0.94f) * sin(rad))
 
-                    // 贯穿实心线 (加粗)
+                    // 底层柔和立体阴影 (线宽 9.5f)
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.35f),
+                        start = Offset(startPt.x, startPt.y + 2f),
+                        end = Offset(endPt.x, endPt.y + 2f),
+                        strokeWidth = 9.5f,
+                        cap = StrokeCap.Round
+                    )
+
+                    // 贯穿实心主干指针 (继续加粗至 9.0f)
                     drawLine(
                         color = Color.White,
                         start = startPt,
                         end = endPt,
-                        strokeWidth = 2.8f,
+                        strokeWidth = 9.0f,
                         cap = StrokeCap.Round
                     )
 
-                    // 箭尾实心大白圆点
+                    // 箭尾实心大白圆点 (加大加粗至半径 12.5f)
+                    drawCircle(
+                        color = Color.Black.copy(alpha = 0.30f),
+                        radius = 13.5f,
+                        center = Offset(startPt.x, startPt.y + 2f)
+                    )
                     drawCircle(
                         color = Color.White,
-                        radius = 4.8f,
+                        radius = 12.5f,
                         center = startPt
                     )
 
-                    // 导向实心粗三角形箭头
-                    val arrowLen = 9.5f
-                    val arrowAngle1 = rad + 148f * (PI.toFloat() / 180f)
-                    val arrowAngle2 = rad - 148f * (PI.toFloat() / 180f)
+                    // 导向实心粗大三角形箭头 (加大加粗至长 28.0f)
+                    val arrowLen = 28.0f
+                    val arrowAngle1 = rad + 150f * (PI.toFloat() / 180f)
+                    val arrowAngle2 = rad - 150f * (PI.toFloat() / 180f)
 
                     val a1 = Offset(endPt.x + arrowLen * cos(arrowAngle1), endPt.y + arrowLen * sin(arrowAngle1))
                     val a2 = Offset(endPt.x + arrowLen * cos(arrowAngle2), endPt.y + arrowLen * sin(arrowAngle2))
+
+                    val arrowShadowPath = Path().apply {
+                        moveTo(endPt.x, endPt.y + 2f)
+                        lineTo(a1.x, a1.y + 2f)
+                        lineTo(a2.x, a2.y + 2f)
+                        close()
+                    }
+                    drawPath(path = arrowShadowPath, color = Color.Black.copy(alpha = 0.35f))
 
                     val arrowPath = Path().apply {
                         moveTo(endPt.x, endPt.y)
@@ -409,38 +493,49 @@ private fun WindRealCard(
                         close()
                     }
                     drawPath(path = arrowPath, color = Color.White)
+
+                    // 3. 居中覆盖在指针上方的不透明磨砂渐变圆形表盘底衬 (中间较亮向外渐变，遮盖穿过中心的指针线，让中间文字清晰悬浮)
+                    val centerCircleRadius = r * 0.48f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFF384B63), // 中间较亮，柔和磨砂高光质感
+                                Color(0xFF243244), // 中部平滑过渡
+                                Color(0xFF16202D)  // 外圈深沉不透明深灰蓝底色
+                            ),
+                            center = c,
+                            radius = centerCircleRadius
+                        ),
+                        radius = centerCircleRadius,
+                        center = c
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.20f),
+                        radius = centerCircleRadius,
+                        center = c,
+                        style = Stroke(width = 1.2f)
+                    )
                 }
 
                 // 外圈四方位文字 (北、东、南、西)
-                Box(modifier = Modifier.size(72.dp)) {
-                    Text(text = "北", color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, modifier = Modifier.align(Alignment.TopCenter))
-                    Text(text = "东", color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterEnd))
-                    Text(text = "南", color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter))
-                    Text(text = "西", color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterStart))
+                Box(modifier = Modifier.size(82.dp)) {
+                    Text(text = "北", color = Color.White.copy(alpha = 0.95f), fontSize = 10.sp, fontWeight = FontWeight.Normal, modifier = Modifier.align(Alignment.TopCenter))
+                    Text(text = "东", color = Color.White.copy(alpha = 0.95f), fontSize = 10.sp, fontWeight = FontWeight.Normal, modifier = Modifier.align(Alignment.CenterEnd))
+                    Text(text = "南", color = Color.White.copy(alpha = 0.95f), fontSize = 10.sp, fontWeight = FontWeight.Normal, modifier = Modifier.align(Alignment.BottomCenter))
+                    Text(text = "西", color = Color.White.copy(alpha = 0.95f), fontSize = 10.sp, fontWeight = FontWeight.Normal, modifier = Modifier.align(Alignment.CenterStart))
                 }
 
-                // 居中大字风级数字与单位 (如 2 级)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "$powerLevel",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Normal,
-                        lineHeight = 24.sp
-                    )
-                    Text(
-                        text = "级",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                }
+                // 居中大字风级数字 (纯数字展示，去除单位，清晰悬浮于圆盘中央)
+                Text(
+                    text = "$powerLevel",
+                    color = Color.White,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.align(Alignment.Center)
+                )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
                 text = windAdvice,
@@ -527,10 +622,10 @@ private fun PressureRealCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(72.dp),
+                    .height(82.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Canvas(modifier = Modifier.size(72.dp)) {
+                Canvas(modifier = Modifier.size(82.dp)) {
                     val r = size.width / 2f
                     val c = Offset(r, r)
 
@@ -541,27 +636,27 @@ private fun PressureRealCard(
                     val sweepProgressAngle = progress * totalSweepDeg
                     val activeTickThreshold = (progress * tickCount).toInt()
 
-                    // 1. 绘制激活区域的扇形半透明高亮弧带 (加宽加亮)
+                    // 1. 绘制激活区域的扇形半透明高亮弧带 (放大至 82dp，弧带宽 18.0f)
                     if (sweepProgressAngle > 0f) {
                         drawArc(
-                            color = Color.White.copy(alpha = 0.20f),
+                            color = Color.White.copy(alpha = 0.25f),
                             startAngle = startAngleDeg,
                             sweepAngle = sweepProgressAngle,
                             useCenter = false,
                             topLeft = Offset(5f, 5f),
                             size = Size(size.width - 10f, size.height - 10f),
-                            style = Stroke(width = 9.5f, cap = StrokeCap.Butt)
+                            style = Stroke(width = 18.0f, cap = StrokeCap.Butt)
                         )
                     }
 
-                    // 2. 绘制 32 根放射状加粗加长刻度线
+                    // 2. 绘制 32 根放射状加粗加长刻度线 (加长至 20.0f，激活加粗至 5.0f)
                     for (i in 0..tickCount) {
                         val angleDeg = startAngleDeg + (i.toFloat() / tickCount.toFloat()) * totalSweepDeg
                         val angleRad = angleDeg * (PI.toFloat() / 180f)
 
                         val isActive = i <= activeTickThreshold
-                        val tickColor = if (isActive) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.25f)
-                        val tickLen = 9.0f
+                        val tickColor = if (isActive) Color.White.copy(alpha = 0.98f) else Color.White.copy(alpha = 0.35f)
+                        val tickLen = 20.0f
 
                         val p1 = Offset(c.x + (r - 0.5f) * cos(angleRad), c.y + (r - 0.5f) * sin(angleRad))
                         val p2 = Offset(c.x + (r - 0.5f - tickLen) * cos(angleRad), c.y + (r - 0.5f - tickLen) * sin(angleRad))
@@ -570,22 +665,22 @@ private fun PressureRealCard(
                             color = tickColor,
                             start = p1,
                             end = p2,
-                            strokeWidth = if (isActive) 2.5f else 1.8f,
+                            strokeWidth = if (isActive) 5.0f else 3.5f,
                             cap = StrokeCap.Round
                         )
                     }
 
-                    // 3. 绘制当前气压纯白圆角胶囊短粗指针 (明显加粗加长，突出于圆弧内外)
+                    // 3. 绘制当前气压纯白圆角胶囊短粗指针 (加粗至 8.0f，明显加长突出)
                     val curAngleDeg = startAngleDeg + sweepProgressAngle
                     val curAngleRad = curAngleDeg * (PI.toFloat() / 180f)
-                    val needleP1 = Offset(c.x + (r + 3.0f) * cos(curAngleRad), c.y + (r + 3.0f) * sin(curAngleRad))
-                    val needleP2 = Offset(c.x + (r - 11.0f) * cos(curAngleRad), c.y + (r - 11.0f) * sin(curAngleRad))
+                    val needleP1 = Offset(c.x + (r + 6.5f) * cos(curAngleRad), c.y + (r + 6.5f) * sin(curAngleRad))
+                    val needleP2 = Offset(c.x + (r - 21.0f) * cos(curAngleRad), c.y + (r - 21.0f) * sin(curAngleRad))
 
                     drawLine(
                         color = Color.White,
                         start = needleP1,
                         end = needleP2,
-                        strokeWidth = 4.2f,
+                        strokeWidth = 8.0f,
                         cap = StrokeCap.Round
                     )
                 }
@@ -599,20 +694,20 @@ private fun PressureRealCard(
                     Text(
                         text = "$pressureHpa",
                         color = Color.White,
-                        fontSize = 24.sp,
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.Normal,
-                        lineHeight = 24.sp
+                        lineHeight = 26.sp
                     )
                     Text(
                         text = "百帕",
-                        color = Color.White.copy(alpha = 0.80f),
+                        color = Color.White.copy(alpha = 0.85f),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Normal
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
                 text = pressureAdvice,

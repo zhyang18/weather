@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -153,17 +154,17 @@ fun MinutelyPrecipitationCard(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 真实降雨强度柱状走势图 (紧凑调低高度)
+        // 真实降雨强度柱状走势图 (适当调高高度，彻底消除下方时间文字被切割的问题)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp)
+                .height(68.dp)
         ) {
             // 左侧 Y 轴刻度标签 (大 / 中 / 小)
             Column(
                 modifier = Modifier
                     .width(18.dp)
-                    .height(38.dp),
+                    .height(40.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -175,11 +176,16 @@ fun MinutelyPrecipitationCard(
             Spacer(modifier = Modifier.width(4.dp))
 
             // 图表主体：基准虚线 + 降雨垂直柱 + 底部时间刻度
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(38.dp)
+                        .height(40.dp)
                 ) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val w = size.width
@@ -222,18 +228,20 @@ fun MinutelyPrecipitationCard(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // X 轴时间刻度分布 (5 个时间戳)
+                // X 轴时间刻度分布 (5 个时间戳，预留充裕垂直空间与行高)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     timeLabels.forEach { timeStr ->
                         Text(
                             text = timeStr,
                             color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            lineHeight = 14.sp
                         )
                     }
                 }

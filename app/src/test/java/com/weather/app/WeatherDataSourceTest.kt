@@ -107,4 +107,168 @@ class WeatherDataSourceTest {
         assertNotNull(xianData?.current)
         assertTrue(xianData!!.dailyForecasts.isNotEmpty())
     }
+
+    /**
+     * 测试旧版缺省 district、landmark、parentCity 字段的 JSON 反序列化与 copy 安全性
+     */
+    @Test
+    fun testLegacyCityInfoGsonDeserializationAndCopy() {
+        val legacyJson = """{"code":"RfjCI","name":"西安","province":"陕西省","isAutoLocated":false}"""
+
+        // 1. 使用未注册适配器的原始 Gson 进行反序列化（模拟历史持久化遗留对象）
+        val rawGson = com.google.gson.Gson()
+        val rawCity = rawGson.fromJson(legacyJson, CityInfo::class.java)
+
+        // 验证 sanitize 能清洗掉 null 字段并安全执行 copy
+        val safeCity = rawCity.sanitize()
+        assertEquals("", safeCity.district)
+        assertEquals("", safeCity.landmark)
+        assertEquals("", safeCity.parentCity)
+        val copied = safeCity.copy(province = "陕西省")
+        assertEquals("西安", copied.name)
+        assertEquals("陕西省 · 西安", safeCity.getFullDisplayName())
+
+        // 2. 使用注册了 CityInfoJsonAdapter 的 Gson 进行反序列化
+        val configuredGson = com.google.gson.GsonBuilder()
+            .registerTypeAdapter(CityInfo::class.java, com.weather.app.model.CityInfoJsonAdapter())
+            .create()
+        val adapterCity = configuredGson.fromJson(legacyJson, CityInfo::class.java)
+        assertNotNull(adapterCity.district)
+        assertEquals("", adapterCity.district)
+        val adapterCopied = adapterCity.copy(province = "陕西省")
+        assertEquals("西安", adapterCopied.name)
+    }
+
+    /**
+     * 测试使用包含历史遗留字段缺失的 CityInfo 实例请求西安天气
+     */
+    @Test
+    fun testWeatherFetchWithLegacyCityInfo() = runBlocking {
+        val dataSource = CmaWeatherDataSource()
+        val legacyJson = """{"code":"RfjCI","name":"西安","province":"陕西省","isAutoLocated":false}"""
+        val rawGson = com.google.gson.Gson()
+        val rawCity = rawGson.fromJson(legacyJson, CityInfo::class.java)
+
+        val result = dataSource.getWeather(rawCity)
+        assertTrue("Fetch with legacy city failed: ${result.exceptionOrNull()?.message}", result.isSuccess)
+        val weatherData = result.getOrNull()
+        assertNotNull(weatherData)
+        assertEquals("西安", weatherData?.city?.name)
+    }
+
+    /**
+     * 测试定位展示模式下地标模式仅展示纯净最后一级名称与区县模式展示区县
+     */
+    @Test
+    fun testExtractLastLevelNameAndLandmarkDisplayMode() {
+        val autoCity = CityInfo(
+            code = "Wqsps",
+            name = "软件谷",
+            province = "江苏省",
+            isAutoLocated = true,
+            district = "雨花台区",
+            landmark = "软件谷",
+            parentCity = "南京"
+        )
+
+        // 1. 地标/乡镇/街道模式：仅展示最后一级名称（软件谷）
+        assertEquals("软件谷", autoCity.getDisplayName(com.weather.app.model.LocationDisplayMode.LANDMARK))
+
+        // 2. 区县模式：展示所属区县（雨花台区）
+        assertEquals("雨花台区", autoCity.getDisplayName(com.weather.app.model.LocationDisplayMode.DISTRICT))
+
+        // 3. 手动添加城市（非自动定位）：始终展示原始城市名
+        val manualCity = CityInfo(
+            code = "RfjCI",
+            name = "西安",
+            province = "陕西省",
+            isAutoLocated = false
+        )
+        assertEquals("西安", manualCity.getDisplayName(com.weather.app.model.LocationDisplayMode.LANDMARK))
+        assertEquals("西安", manualCity.getDisplayName(com.weather.app.model.LocationDisplayMode.DISTRICT))
+
+        // 4. 复合冗长地标智能精简测试
+        val longLandmarkCity = CityInfo(
+            code = "Wqsps",
+            name = "南大光电工程研究院龙港科技园",
+            province = "江苏省",
+            isAutoLocated = true,
+            district = "江宁区",
+            landmark = "南大光电工程研究院龙港科技园",
+            parentCity = "南京"
+        )
+        assertEquals("龙港科技园", longLandmarkCity.getDisplayName(com.weather.app.model.LocationDisplayMode.LANDMARK))
+        assertEquals("江宁区", longLandmarkCity.getDisplayName(com.weather.app.model.LocationDisplayMode.DISTRICT))
+    }
+
+    /**
+     * 测试各类逆地理编码复杂冗长地名与微观噪音的智能精简算法
+     */
+    @Test
+    fun testSimplifyLandmarkName() {
+        assertEquals("龙港科技园", com.weather.app.model.simplifyLandmarkName("南大光电工程研究院龙港科技园"))
+        assertEquals("软件研发大楼", com.weather.app.model.simplifyLandmarkName("南京大学金陵学院软件研发大楼"))
+        assertEquals("龙港科技园", com.weather.app.model.simplifyLandmarkName("秣陵街道江宁开发区龙港科技园"))
+        assertEquals("龙港科技园", com.weather.app.model.simplifyLandmarkName("高新南一路108号龙港科技园"))
+        assertEquals("紫峰大厦", com.weather.app.model.simplifyLandmarkName("南京软件谷(紫峰大厦)"))
+        assertEquals("龙港科技园", com.weather.app.model.simplifyLandmarkName("龙港科技园东门"))
+        assertEquals("软件谷", com.weather.app.model.simplifyLandmarkName("软件谷"))
+    }
+
+    /**
+     * 测试气象风向文本解析与罗盘指针指向角度计算准确性
+     */
+    @Test
+    fun testParseWindDirectionAngle() {
+        // 北风指向北 (270°)
+        assertEquals(270f, com.weather.app.ui.components.parseWindDirectionAngle("北风"), 0.1f)
+        assertEquals(270f, com.weather.app.ui.components.parseWindDirectionAngle("偏北风"), 0.1f)
+
+        // 南风指向南 (90°)
+        assertEquals(90f, com.weather.app.ui.components.parseWindDirectionAngle("南风"), 0.1f)
+        assertEquals(90f, com.weather.app.ui.components.parseWindDirectionAngle("偏南风"), 0.1f)
+
+        // 东风指向东 (0°)
+        assertEquals(0f, com.weather.app.ui.components.parseWindDirectionAngle("东风"), 0.1f)
+
+        // 西风指向西 (180°)
+        assertEquals(180f, com.weather.app.ui.components.parseWindDirectionAngle("西风"), 0.1f)
+
+        // 东南风指向东南 (45°)
+        assertEquals(45f, com.weather.app.ui.components.parseWindDirectionAngle("东南风"), 0.1f)
+
+        // 东北风指向东北 (315°)
+        assertEquals(315f, com.weather.app.ui.components.parseWindDirectionAngle("东北风"), 0.1f)
+
+        // 西南风指向西南 (135°)
+        assertEquals(135f, com.weather.app.ui.components.parseWindDirectionAngle("西南风"), 0.1f)
+
+        // 西北风指向西北 (225°)
+        assertEquals(225f, com.weather.app.ui.components.parseWindDirectionAngle("西北风"), 0.1f)
+    }
+
+    /**
+     * 测试中央气象台对台湾省高雄市（real 与 passedchart 为空字符串）的容错请求与解析
+     */
+    @Test
+    fun testKaohsiungWeatherFetch() = runBlocking {
+        val dataSource = CmaWeatherDataSource()
+        val kaohsiungCity = CityInfo(
+            code = "Urwjw",
+            name = "高雄",
+            province = "台湾省",
+            isAutoLocated = false
+        )
+
+        val result = dataSource.getWeather(kaohsiungCity)
+        assertTrue("Fetch Kaohsiung weather failed: ${result.exceptionOrNull()?.message}", result.isSuccess)
+        val weatherData = result.getOrNull()
+        assertNotNull(weatherData)
+        assertEquals("高雄", weatherData?.city?.name)
+        assertTrue(weatherData?.dailyForecasts?.isNotEmpty() == true)
+        assertTrue(weatherData?.hourlyForecasts?.isNotEmpty() == true)
+    }
 }
+
+
+

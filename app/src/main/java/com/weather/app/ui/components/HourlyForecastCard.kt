@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -105,18 +106,18 @@ fun HourlyForecastCard(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 小时级横向滚动条 (默认首屏完整展示 6 组数据，高度紧凑精致)
+        // 小时级横向滚动条 (默认首屏完整展示 6 组数据，图标在时间与温度之间严格上下居中)
         if (hourlyList.isNotEmpty()) {
             LazyRow(
-                modifier = Modifier.height(72.dp),
+                modifier = Modifier.height(82.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // 当前时刻单元
                 item {
                     HourlyColumnItem(
                         timeLabel = "现在",
-                        weatherEmoji = WeatherIcons.getWeatherEmoji(current.weatherText),
+                        weatherText = current.weatherText,
                         rainProb = if (current.precipitation > 0.0) "${(current.precipitation * 20).toInt().coerceAtMost(99)}%" else null,
                         tempText = "${current.temperature.toInt()}°"
                     )
@@ -129,7 +130,7 @@ fun HourlyForecastCard(
 
                     HourlyColumnItem(
                         timeLabel = if (hourText.length >= 5) "${hourText.substring(0, 2)}时" else hourText,
-                        weatherEmoji = if (item.rain > 0.0) "🌧️" else "⛅",
+                        weatherText = if (item.rain > 0.0) "小雨" else current.weatherText,
                         rainProb = rainProb,
                         tempText = "${item.temperature.toInt()}°"
                     )
@@ -140,28 +141,27 @@ fun HourlyForecastCard(
 }
 
 /**
- * 逐时预报单列展示单元（紧凑高度且槽位固定，首屏完整容纳 6 列）
+ * 逐时预报单列展示单元（图标在时间与温度之间严格上下居中对齐）
  *
  * @param timeLabel 时间标签（如 "现在", "16时"）
- * @param weatherEmoji 天气图标符号
+ * @param weatherText 天气现象文本
  * @param rainProb 降水概率百分比文本 (如 "90%")
  * @param tempText 温度标签 (如 "32°")
  */
 @Composable
 private fun HourlyColumnItem(
     timeLabel: String,
-    weatherEmoji: String,
+    weatherText: String,
     rainProb: String?,
     tempText: String
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier
-            .width(48.dp)
-            .height(72.dp)
+            .width(50.dp)
+            .height(82.dp)
     ) {
-        // 1. 时间标签 (行高恒定)
+        // 1. 时间标签 (顶部对齐)
         Text(
             text = timeLabel,
             color = Color.White.copy(alpha = 0.85f),
@@ -169,35 +169,38 @@ private fun HourlyColumnItem(
             fontWeight = FontWeight.Normal
         )
 
-        // 2. 天气图标 (固定 20dp 容器)
-        androidx.compose.foundation.layout.Box(
-            modifier = Modifier.size(20.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = weatherEmoji,
-                fontSize = 16.sp
-            )
-        }
-
-        // 3. 降水概率槽位 (严格固定 12dp 槽位，无论是否有降水，高度绝对恒定)
-        androidx.compose.foundation.layout.Box(
+        // 2. 中间天气图标与降水概率容器：在时间与温度之间绝对上下垂直居中
+        Box(
             modifier = Modifier
-                .width(48.dp)
-                .height(12.dp),
+                .weight(1f)
+                .fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
-            if (rainProb != null) {
-                Text(
-                    text = rainProb,
-                    color = Color(0xFF64B5F6),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Normal
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // 天气矢量动态图标
+                WeatherDynamicIcon(
+                    weatherText = weatherText,
+                    size = 22.dp
                 )
+
+                // 降水概率标签 (如 99%)
+                if (rainProb != null) {
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Text(
+                        text = rainProb,
+                        color = Color(0xFF64B5F6),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Normal,
+                        lineHeight = 11.sp
+                    )
+                }
             }
         }
 
-        // 4. 温度数值 (行高恒定，常规字重)
+        // 3. 底部温度数值 (常规字重，底部对齐)
         Text(
             text = tempText,
             color = Color.White,
