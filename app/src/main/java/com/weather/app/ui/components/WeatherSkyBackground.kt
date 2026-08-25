@@ -18,6 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -59,7 +61,7 @@ import kotlin.random.Random
  * 7. 雾 / 霾：大面积柔焦弥漫波浪层缓移与浮游微粒；
  * 8. 沙尘：狂暴风沙流线与横向飞舞沙粒；
  * 9. 大风：流线型风道丝带与气流微粒。
- * 10. 滑动完成加载动效：滑动停靠完成后触发由近到远（1.18x -> 1.00x）的镜头景深推开加载仪式感。
+ * 10. 切页加载动效：仅在左右切换城市停靠后触发（先 100ms 快速渐隐旧背景，再 1.30x 近景推远至 1.00x，同城上下滑动不误触）。
  *
  * @param weatherText 当前天气现象描述（如 "晴", "多云", "阴", "小雨", "雷阵雨", "暴雪", "雾", "沙尘" 等）
  * @param city 当前展示的城市信息实体 [CityInfo]（用于日出日落月出月落天文计算）
@@ -94,15 +96,38 @@ fun WeatherSkyBackground(
     val animatedMid by animateColorAsState(targetValue = targetMid, animationSpec = tween(durationMillis = 800), label = "midColor")
     val animatedBottom by animateColorAsState(targetValue = targetBottom, animationSpec = tween(durationMillis = 800), label = "bottomColor")
 
-    // 滑动完成停靠后，自适应立即触发由近到远的缓释深景推镜加载展开动效 (3000ms 优雅减速推远：1.12f -> 1.00f, 0.65f -> 1.0f)
+    // 两阶段加载动效驱动 (仅当切实切换到新城市停靠后触发，主页同城上下滑动完全不误触)：
+    // 阶段 1：快速渐隐上一个天气动态背景 (100ms 极速瞬滑淡出)
+    // 阶段 2：新天气背景以 1.30x 近景入场，在 3000ms 内由近及远优雅推远至 1.00x 开阔全景
+    val fadeAnim = remember { Animatable(1f) }
     val entranceAnim = remember { Animatable(1f) }
-    LaunchedEffect(city?.code, city?.name, weatherCategory, isScrollInProgress) {
+    var lastSettledCityKey by remember { mutableStateOf<String?>(null) }
+    val currentCityKey = remember(city?.code, city?.name, weatherCategory) {
+        "${city?.code}_${city?.name}_$weatherCategory"
+    }
+
+    LaunchedEffect(currentCityKey, isScrollInProgress) {
         if (!isScrollInProgress) {
-            entranceAnim.snapTo(0f)
-            entranceAnim.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
-            )
+            if (lastSettledCityKey != null && lastSettledCityKey != currentCityKey) {
+                // 城市或天气发生实际切换时，触发两阶段加载动效
+                // 1. 快速渐隐上一天气动态背景 (100ms)
+                fadeAnim.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(durationMillis = 100, easing = LinearEasing)
+                )
+                // 2. 重置并触发 1.30x 由近到远的 3000ms 镜头景深推远加载展开动效
+                entranceAnim.snapTo(0f)
+                fadeAnim.snapTo(1f)
+                entranceAnim.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
+                )
+            } else if (lastSettledCityKey == null) {
+                // 初次进场初始化
+                entranceAnim.snapTo(1f)
+                fadeAnim.snapTo(1f)
+            }
+            lastSettledCityKey = currentCityKey
         }
     }
 
@@ -296,9 +321,10 @@ fun WeatherSkyBackground(
             }
 
             val entranceProgress = entranceAnim.value
-            // 滑动停靠后由近到远轻快推远加载展开 (近景 1.12x -> 远景全貌 1.00x)
-            val entranceZoom = 1.0f + (1f - entranceProgress) * 0.12f
-            val entranceAlpha = 0.65f + 0.35f * entranceProgress
+            val fadeFactor = fadeAnim.value
+            // 滑动停靠后由近到远优雅推远加载展开 (近景 1.30x -> 远景全貌 1.00x)
+            val entranceZoom = 1.0f + (1f - entranceProgress) * 0.30f
+            val entranceAlpha = (0.15f + 0.85f * entranceProgress).coerceIn(0f, 1f) * fadeFactor
 
             // Layer 1: 底层主云海 (超屏尺寸 1.35x，由近到远推镜加载展开)
             Image(
@@ -325,7 +351,7 @@ fun WeatherSkyBackground(
                     .fillMaxSize()
                     .graphicsLayer {
                         val offset = parallaxOffsetProvider()
-                        val layerZoom = 1.0f + (1f - entranceProgress) * 0.15f
+                        val layerZoom = 1.0f + (1f - entranceProgress) * 0.35f
                         translationX = fastDrift - offset * 140f
                         scaleX = -1.50f * layerZoom
                         scaleY = 1.50f * layerZoom
@@ -354,15 +380,15 @@ fun WeatherSkyBackground(
             )
         }
 
-        // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，滑动停靠后伴随由近到远镜头加载展开)
+        // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，滑动停靠后伴随 1.30x 由近到远镜头加载展开)
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     val offset = parallaxOffsetProvider()
                     val entranceProgress = entranceAnim.value
-                    val entranceZoom = 1.0f + (1f - entranceProgress) * 0.10f
-                    val entranceAlpha = 0.60f + 0.40f * entranceProgress
+                    val entranceZoom = 1.0f + (1f - entranceProgress) * 0.28f
+                    val entranceAlpha = (0.15f + 0.85f * entranceProgress).coerceIn(0f, 1f) * fadeAnim.value
                     translationX = -offset * 60f
                     scaleX = entranceZoom
                     scaleY = entranceZoom
