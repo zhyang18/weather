@@ -651,18 +651,12 @@ private fun resolveWeatherCategory(text: String, isNight: Boolean): WeatherCateg
  * @param category 天气场景分类 [WeatherCategory]
  * @return 包含顶部、中部、底部颜色的 [Triple]
  */
-/**
- * 根据天气分类获取三段自然大气渐变色（顶部、中部、底部）
- *
- * @param category 天气场景分类 [WeatherCategory]
- * @return 包含顶部、中部、底部颜色的 [Triple]
- */
 private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, Color, Color> {
     return when (category) {
         WeatherCategory.SUNNY -> Triple(Color(0xFF1E75C4), Color(0xFF4B9DE8), Color(0xFF9AD3FC))
-        WeatherCategory.SUNNY_NIGHT -> Triple(Color(0xFF222B42), Color(0xFF3B4462), Color(0xFF5E5C77))
+        WeatherCategory.SUNNY_NIGHT -> Triple(Color(0xFF2C3254), Color(0xFF4D5685), Color(0xFF6E78A8))
         WeatherCategory.CLOUDY -> Triple(Color(0xFF2C5E8A), Color(0xFF5582AA), Color(0xFF86AECF))
-        WeatherCategory.CLOUDY_NIGHT -> Triple(Color(0xFF1D253A), Color(0xFF353D58), Color(0xFF53536C))
+        WeatherCategory.CLOUDY_NIGHT -> Triple(Color(0xFF262C4A), Color(0xFF454E78), Color(0xFF636D96))
         WeatherCategory.OVERCAST -> Triple(Color(0xFF3F4E5B), Color(0xFF5E6E7D), Color(0xFF7E8F9E))
         WeatherCategory.RAIN_LIGHT -> Triple(Color(0xFF384956), Color(0xFF556776), Color(0xFF6E8090))
         WeatherCategory.RAIN_HEAVY -> Triple(Color(0xFF263440), Color(0xFF3E4F5D), Color(0xFF566877))
@@ -920,10 +914,10 @@ private fun calculateSunCenter(width: Float, height: Float, progress: Float): Of
  * 根据城市夜幕月行进度计算明月在夜空弧线中的屏幕坐标（微弧自然天际线）
  *
  * 坐标精调：
- * - 傍晚入夜 (progress ≈ 0.0)：屏幕偏左侧上空 (X ≈ 0.18f * width, Y ≈ 0.15f * height) 升起；
- * - 午夜当空 (progress ≈ 0.5)：夜空天顶最高点 (X ≈ 0.50f * width, Y ≈ 0.08f * height) 高悬；
- * - 黎明破晓 (progress ≈ 1.0)：屏幕偏右侧天际 (X ≈ 0.82f * width, Y ≈ 0.15f * height) 缓缓西落。
- * 避开顶部状态栏与中央大温度文字，视野清晰优美。
+ * - 傍晚入夜 (progress ≈ 0.0 ~ 0.12)：屏幕偏左侧天际 (X ≈ 0.10f ~ 0.18f * width, Y ≈ 0.15f * height) 升起；
+ * - 午夜当空 (progress ≈ 0.50)：夜空天顶最高点 (X ≈ 0.51f * width, Y ≈ 0.08f * height) 高悬；
+ * - 黎明破晓 (progress ≈ 0.88 ~ 1.00)：屏幕偏右侧天际 (X ≈ 0.85f ~ 0.92f * width, Y ≈ 0.15f * height) 缓缓西落。
+ * 避开顶部状态栏与中央大温度文字，视野清晰舒展。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -931,7 +925,7 @@ private fun calculateSunCenter(width: Float, height: Float, progress: Float): Of
  * @return 明月中心屏幕坐标 [Offset]
  */
 private fun calculateMoonCenter(width: Float, height: Float, progress: Float): Offset {
-    val moonX = width * (0.18f + 0.64f * progress)
+    val moonX = width * (0.10f + 0.82f * progress)
     val horizonY = height * 0.15f
     val zenithY = height * 0.08f
     val moonY = horizonY - (horizonY - zenithY) * sin(progress * PI.toFloat())
@@ -1388,15 +1382,28 @@ private data class LunarMariaSpot(
 )
 
 /**
- * 绘制真实摄影级微光满月与大气月华月冕系统 (Photorealistic Naked-Eye Moon System - Night Softened)
+ * 真实月球环形山辐射纹配置模型
  *
- * 遵循人类肉眼夜空真实观感物理规律与夜间护眼明暗比：
- * 1. 广域深邃月晕与清透月华：微光柔和漫射，不刺眼；
- * 2. 真实月球盘面自然地貌：
- *    - 底色调整为舒适温润的微暗银蓝灰；
- *    - 采用多层柔和羽化高斯径向漫射渐变，还原“风暴洋”、“静海”、“雨海”、“澄海”的自然青灰云烟状阴影；
- *    - 融入第谷（Tycho）与哥白尼高地反照亮区的柔光点缀；
- * 3. 柔和大气边缘消散（Atmospheric Limb Softening）：月球轮廓与深邃夜空浑然一体；
+ * @property startRel 辐射纹起点相对月心偏移
+ * @property endRel 辐射纹终点相对月心偏移
+ * @property alpha 辐射纹光度
+ */
+private data class LunarRayLine(
+    val startRel: Offset,
+    val endRel: Offset,
+    val alpha: Float
+)
+
+/**
+ * 绘制真实摄影级清晰微光满月与大气月华月冕系统 (Photorealistic High-Definition Moon System)
+ *
+ * 遵循人类肉眼夜空真实观感物理规律与高清细节呈现：
+ * 1. 广域深邃月晕与清透月华：微光柔和漫射，夜空中晶莹通透；
+ * 2. 真实月球盘面高清地貌：
+ *    - 核心月海（雨海、风暴洋、澄海、静海、危海、云海、冷海等）清晰起伏；
+ *    - 第谷（Tycho）环形山亮核与 4 条纤细辐射光纹清晰可见；
+ *    - 哥白尼（Copernicus）、开普勒与阿里斯塔克斯高反照亮斑点缀；
+ * 3. 清晰立体轮廓与菲涅尔微光：月球边缘圆润清晰，深邃夜空浑然一体；
  * 4. 伴月璀璨行星：伴随夜空呼吸静谧微闪。
  *
  * @param width 画面宽度 (px)
@@ -1410,15 +1417,15 @@ private fun DrawScope.drawGlowingMoon(
     moonCenter: Offset,
     pulseProgress: Float
 ) {
-    val moonRadius = width * 0.070f // 精致适中的真实月球盘面半径（约 26dp ~ 28dp）
+    val moonRadius = width * 0.076f // 清晰精致的真实月球盘面半径（约 30dp ~ 32dp）
     val glowRadius = moonRadius * (3.0f + pulseProgress * 0.20f) // 广域柔美月华光晕半径
 
-    // 1. 最外层广阔深空柔和月华漫射 (Deep Sky Atmospheric Lunar Glow - 柔和微暗)
+    // 1. 最外层广阔深空柔和月华漫射 (Deep Sky Atmospheric Lunar Glow)
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color(0xFFB8CEE8).copy(alpha = 0.13f + pulseProgress * 0.02f),
-                Color(0xFF7595BF).copy(alpha = 0.06f + pulseProgress * 0.01f),
+                Color(0xFFB8CEE8).copy(alpha = 0.12f + pulseProgress * 0.02f),
+                Color(0xFF7595BF).copy(alpha = 0.05f + pulseProgress * 0.01f),
                 Color(0xFF384B66).copy(alpha = 0.02f),
                 Color.Transparent
             ),
@@ -1429,19 +1436,19 @@ private fun DrawScope.drawGlowingMoon(
         radius = glowRadius
     )
 
-    // 2. 近月轮清辉光晕 (Inner Corona Halo - 柔和银蓝)
+    // 2. 近月轮清辉光晕 (Inner Corona Halo)
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color(0xFFDEE9F5).copy(alpha = 0.28f + pulseProgress * 0.03f),
-                Color(0xFF9FB7D4).copy(alpha = 0.10f),
+                Color(0xFFDEE9F5).copy(alpha = 0.24f + pulseProgress * 0.03f),
+                Color(0xFF9FB7D4).copy(alpha = 0.08f),
                 Color.Transparent
             ),
             center = moonCenter,
-            radius = moonRadius * 1.45f
+            radius = moonRadius * 1.40f
         ),
         center = moonCenter,
-        radius = moonRadius * 1.45f
+        radius = moonRadius * 1.40f
     )
 
     // 3. 绘制真实月球盘面内部（使用 clipPath 限制在月球圆形范围内）
@@ -1455,45 +1462,45 @@ private fun DrawScope.drawGlowingMoon(
     }
 
     clipPath(moonClipPath) {
-        // 3.1 真实月面基础微光银灰底色 (柔和微暗基调，夜间不刺眼)
+        // 3.1 真实月面基础微光银灰底色 (清晰温润，夜间护眼)
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    Color(0xFFD6E2EE), // 中心微光银蓝灰
-                    Color(0xFFC0D0E0), // 中间高地银灰
-                    Color(0xFFA6BACF), // 柔和深灰过渡区
-                    Color(0xFF8094AA)  // 边缘自然暗色
+                    Color(0xFFE4EDF7), // 中心微亮银蓝白
+                    Color(0xFFCAD8E8), // 中间高地银灰
+                    Color(0xFFAABDD2), // 柔和过渡区
+                    Color(0xFF869AB2)  // 边缘自然微深
                 ),
-                center = Offset(moonCenter.x + moonRadius * 0.15f, moonCenter.y - moonRadius * 0.15f),
+                center = Offset(moonCenter.x + moonRadius * 0.12f, moonCenter.y - moonRadius * 0.12f),
                 radius = moonRadius * 1.25f
             ),
             center = moonCenter,
             radius = moonRadius
         )
 
-        // 3.2 真实月海地貌层（采用多层柔和羽化漫射渐变，完全杜绝生硬椭圆色块）
-        // 真实月表主要月海暗纹参数：(相对X, 相对Y, 斑块羽化半径, 暗度alpha)
+        // 3.2 真实月海地貌层（核心暗盆地 + 细部月湾，层次分明清晰可见）
         val lunarMariaList = listOf(
-            // 雨海与风暴洋连绵大暗区 (西北至中部)
-            LunarMariaSpot(relX = -0.22f, relY = -0.28f, radiusFactor = 0.48f, alpha = 0.45f),
-            LunarMariaSpot(relX = -0.42f, relY = -0.05f, radiusFactor = 0.42f, alpha = 0.42f),
-            LunarMariaSpot(relX = -0.15f, relY = -0.05f, radiusFactor = 0.38f, alpha = 0.36f),
-
-            // 澄海与静海连绵暗斑 (东北部)
-            LunarMariaSpot(relX = 0.22f, relY = -0.32f, radiusFactor = 0.40f, alpha = 0.42f),
-            LunarMariaSpot(relX = 0.38f, relY = -0.18f, radiusFactor = 0.36f, alpha = 0.38f),
-            LunarMariaSpot(relX = 0.45f, relY = 0.05f, radiusFactor = 0.30f, alpha = 0.34f),
-
-            // 危海独立暗斑 (东边缘)
-            LunarMariaSpot(relX = 0.58f, relY = -0.25f, radiusFactor = 0.22f, alpha = 0.40f),
-
-            // 云海与湿海暗斑 (西南部至南部)
-            LunarMariaSpot(relX = -0.32f, relY = 0.25f, radiusFactor = 0.38f, alpha = 0.38f),
-            LunarMariaSpot(relX = -0.12f, relY = 0.32f, radiusFactor = 0.34f, alpha = 0.34f),
-            LunarMariaSpot(relX = 0.15f, relY = 0.28f, radiusFactor = 0.30f, alpha = 0.30f),
-
-            // 汽海与中央湾微细过渡 (盘面中心细纹)
-            LunarMariaSpot(relX = 0.05f, relY = -0.08f, radiusFactor = 0.25f, alpha = 0.32f)
+            // 雨海 (Mare Imbrium - 西北部大暗盆地)
+            LunarMariaSpot(relX = -0.22f, relY = -0.26f, radiusFactor = 0.38f, alpha = 0.58f),
+            // 风暴洋 (Oceanus Procellarum - 西侧广大暗区)
+            LunarMariaSpot(relX = -0.45f, relY = -0.05f, radiusFactor = 0.36f, alpha = 0.52f),
+            LunarMariaSpot(relX = -0.38f, relY = 0.12f, radiusFactor = 0.32f, alpha = 0.48f),
+            // 澄海 (Mare Serenitatis - 东北偏北暗盆)
+            LunarMariaSpot(relX = 0.20f, relY = -0.30f, radiusFactor = 0.32f, alpha = 0.55f),
+            // 静海 (Mare Tranquillitatis - 东北部大暗海)
+            LunarMariaSpot(relX = 0.35f, relY = -0.12f, radiusFactor = 0.34f, alpha = 0.52f),
+            // 丰富海 (Mare Fecunditatis - 东部暗海)
+            LunarMariaSpot(relX = 0.46f, relY = 0.08f, radiusFactor = 0.28f, alpha = 0.46f),
+            // 危海 (Mare Crisium - 东边缘独立清晰暗圆形)
+            LunarMariaSpot(relX = 0.60f, relY = -0.22f, radiusFactor = 0.18f, alpha = 0.56f),
+            // 云海与湿海 (Mare Nubium & Humorum - 西南暗区)
+            LunarMariaSpot(relX = -0.28f, relY = 0.26f, radiusFactor = 0.30f, alpha = 0.50f),
+            LunarMariaSpot(relX = -0.46f, relY = 0.30f, radiusFactor = 0.22f, alpha = 0.44f),
+            // 汽海与中央湾 (Sinus Medii - 盘面中心细纹地貌)
+            LunarMariaSpot(relX = 0.02f, relY = -0.05f, radiusFactor = 0.22f, alpha = 0.48f),
+            // 冷海 (Mare Frigoris - 北部弧状狭长暗带)
+            LunarMariaSpot(relX = -0.05f, relY = -0.55f, radiusFactor = 0.28f, alpha = 0.45f),
+            LunarMariaSpot(relX = 0.25f, relY = -0.52f, radiusFactor = 0.24f, alpha = 0.42f)
         )
 
         lunarMariaList.forEach { spot ->
@@ -1502,9 +1509,9 @@ private fun DrawScope.drawGlowingMoon(
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFF324155).copy(alpha = spot.alpha),
-                        Color(0xFF4A5C75).copy(alpha = spot.alpha * 0.65f),
-                        Color(0xFF6E829B).copy(alpha = spot.alpha * 0.25f),
+                        Color(0xFF2A384A).copy(alpha = spot.alpha),
+                        Color(0xFF3F5268).copy(alpha = spot.alpha * 0.70f),
+                        Color(0xFF627790).copy(alpha = spot.alpha * 0.30f),
                         Color.Transparent
                     ),
                     center = spotCenter,
@@ -1515,63 +1522,89 @@ private fun DrawScope.drawGlowingMoon(
             )
         }
 
-        // 3.3 第谷（Tycho）与哥白尼高地反照亮斑 (Lunar Highlands & Bright Craters - 柔光点缀)
-        // 第谷环形山（南部偏亮，柔和漫射微晕）
+        // 3.3 第谷（Tycho）环形山清晰辐射纹系 (Tycho Crater & Ray System)
         val tychoPos = Offset(moonCenter.x - moonRadius * 0.08f, moonCenter.y + moonRadius * 0.48f)
+        val tychoRays = listOf(
+            LunarRayLine(Offset(-0.08f, 0.48f), Offset(-0.25f, 0.15f), 0.35f),
+            LunarRayLine(Offset(-0.08f, 0.48f), Offset(0.12f, 0.10f), 0.30f),
+            LunarRayLine(Offset(-0.08f, 0.48f), Offset(-0.35f, 0.52f), 0.28f),
+            LunarRayLine(Offset(-0.08f, 0.48f), Offset(0.20f, 0.62f), 0.25f)
+        )
+        tychoRays.forEach { ray ->
+            drawLine(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFFFFFFFF).copy(alpha = ray.alpha),
+                        Color(0xFFD8E6F5).copy(alpha = ray.alpha * 0.4f),
+                        Color.Transparent
+                    ),
+                    start = Offset(moonCenter.x + moonRadius * ray.startRel.x, moonCenter.y + moonRadius * ray.startRel.y),
+                    end = Offset(moonCenter.x + moonRadius * ray.endRel.x, moonCenter.y + moonRadius * ray.endRel.y)
+                ),
+                start = Offset(moonCenter.x + moonRadius * ray.startRel.x, moonCenter.y + moonRadius * ray.startRel.y),
+                end = Offset(moonCenter.x + moonRadius * ray.endRel.x, moonCenter.y + moonRadius * ray.endRel.y),
+                strokeWidth = 1.0f,
+                cap = StrokeCap.Round
+            )
+        }
+
+        // 第谷高反照亮核心
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    Color(0xFFEAF1F8).copy(alpha = 0.50f),
-                    Color(0xFFC8D7E6).copy(alpha = 0.22f),
+                    Color(0xFFFFFFFF).copy(alpha = 0.75f),
+                    Color(0xFFD6E6F8).copy(alpha = 0.35f),
                     Color.Transparent
                 ),
                 center = tychoPos,
-                radius = moonRadius * 0.18f
+                radius = moonRadius * 0.14f
             ),
             center = tychoPos,
-            radius = moonRadius * 0.18f
+            radius = moonRadius * 0.14f
+        )
+        drawCircle(
+            color = Color(0xFFFFFFFF).copy(alpha = 0.85f),
+            radius = moonRadius * 0.035f,
+            center = tychoPos
         )
 
-        // 哥白尼亮坑（中部偏西北）
-        val copernicusPos = Offset(moonCenter.x - moonRadius * 0.20f, moonCenter.y - moonRadius * 0.12f)
+        // 哥白尼环形山（Copernicus - 中偏西北部清晰亮斑）
+        val copernicusPos = Offset(moonCenter.x - moonRadius * 0.20f, moonCenter.y - moonRadius * 0.10f)
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    Color(0xFFE2ECF7).copy(alpha = 0.45f),
-                    Color(0xFFBDCEE0).copy(alpha = 0.18f),
+                    Color(0xFFFFFFFF).copy(alpha = 0.65f),
+                    Color(0xFFD4E4F5).copy(alpha = 0.28f),
                     Color.Transparent
                 ),
                 center = copernicusPos,
-                radius = moonRadius * 0.14f
+                radius = moonRadius * 0.12f
             ),
             center = copernicusPos,
-            radius = moonRadius * 0.14f
+            radius = moonRadius * 0.12f
+        )
+        drawCircle(
+            color = Color(0xFFFFFFFF).copy(alpha = 0.75f),
+            radius = moonRadius * 0.030f,
+            center = copernicusPos
         )
 
-        // 3.4 整体球体暗角与夜空深度融合层 (Atmospheric Soft Disc Falloff)
+        // 开普勒与阿里斯塔克斯亮斑 (Kepler & Aristarchus)
+        val aristarchusPos = Offset(moonCenter.x - moonRadius * 0.44f, moonCenter.y - moonRadius * 0.24f)
+        drawCircle(
+            color = Color(0xFFFFFFFF).copy(alpha = 0.70f),
+            radius = moonRadius * 0.028f,
+            center = aristarchusPos
+        )
+
+        // 3.4 球体暗角与夜空深度立体融合层
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
                     Color.Transparent,
                     Color(0x00000000),
-                    Color(0x28233244),
-                    Color(0x55192433)
-                ),
-                center = moonCenter,
-                radius = moonRadius
-            ),
-            center = moonCenter,
-            radius = moonRadius
-        )
-
-        // 边缘柔和微弱反射光，消除生硬边缘
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color(0x00FFFFFF),
-                    Color(0x15FFFFFF),
-                    Color(0x35FFFFFF)
+                    Color(0x221E2C3D),
+                    Color(0x48162230)
                 ),
                 center = moonCenter,
                 radius = moonRadius
@@ -1581,18 +1614,26 @@ private fun DrawScope.drawGlowingMoon(
         )
     }
 
-    // 4. 外缘极柔和微光环（轻盈空气感）
+    // 4. 外缘清晰纯净微光轮廓（晶莹立体感，清晰划分夜空与月盘边缘）
     drawCircle(
-        color = Color.White.copy(alpha = 0.20f),
+        brush = Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.45f),
+                Color(0xFFC8DCF0).copy(alpha = 0.25f),
+                Color(0xFF7690AD).copy(alpha = 0.15f)
+            ),
+            start = Offset(moonCenter.x + moonRadius * 0.8f, moonCenter.y - moonRadius * 0.8f),
+            end = Offset(moonCenter.x - moonRadius * 0.8f, moonCenter.y + moonRadius * 0.8f)
+        ),
         radius = moonRadius,
         center = moonCenter,
-        style = Stroke(width = 0.8f)
+        style = Stroke(width = 0.9f)
     )
 
     // 5. 伴月璀璨行星/伴星 (Companion Celestial Star / Planetary Satellite - 宁静闪烁)
-    val starOffset = Offset(moonCenter.x + moonRadius * 1.65f, moonCenter.y + moonRadius * 1.20f)
-    val starAlpha = 0.60f + pulseProgress * 0.18f
-    val starRadius = 2.2f + pulseProgress * 0.4f
+    val starOffset = Offset(moonCenter.x + moonRadius * 1.60f, moonCenter.y + moonRadius * 1.15f)
+    val starAlpha = 0.65f + pulseProgress * 0.18f
+    val starRadius = 2.4f + pulseProgress * 0.4f
 
     // 伴星柔和光晕
     drawCircle(
