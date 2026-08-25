@@ -118,17 +118,19 @@ fun WeatherScreen(
     }
 
     val currentCity = uiState.getCurrentCity()
-    val currentWeather = uiState.getCurrentWeather()
-    val weatherText = currentWeather?.current?.weatherText ?: "多云"
-
-    // 顶部栏随当前页平滑展示对应城市名称
+    // 顶部栏与天气背景随当前分页平滑展示对应城市与天气
     val displayedCity = uiState.savedCities.getOrNull(pagerState.currentPage) ?: currentCity
+    val displayedWeather = uiState.weatherCache[displayedCity.code]
+        ?: uiState.weatherCache[displayedCity.name]
+        ?: uiState.getCurrentWeather()
+    val weatherText = displayedWeather?.current?.weatherText ?: "多云"
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 沉浸式动态真实天气天空背景 (通过 Lambda 提供视差，在绘制阶段消费，避免触碰高频重组)
+        // 沉浸式动态真实天气天空背景 (滑动完成停靠后触发由近到远的镜头景深加载展开动效)
         WeatherSkyBackground(
             weatherText = weatherText,
             city = displayedCity,
+            isScrollInProgress = pagerState.isScrollInProgress,
             parallaxOffsetProvider = { pagerState.currentPageOffsetFraction }
         )
 

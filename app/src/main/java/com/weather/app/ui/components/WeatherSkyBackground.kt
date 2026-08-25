@@ -1,6 +1,8 @@
 package com.weather.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -13,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -56,10 +59,12 @@ import kotlin.random.Random
  * 7. 雾 / 霾：大面积柔焦弥漫波浪层缓移与浮游微粒；
  * 8. 沙尘：狂暴风沙流线与横向飞舞沙粒；
  * 9. 大风：流线型风道丝带与气流微粒。
+ * 10. 滑动完成加载动效：滑动停靠完成后触发由近到远（1.18x -> 1.00x）的镜头景深推开加载仪式感。
  *
  * @param weatherText 当前天气现象描述（如 "晴", "多云", "阴", "小雨", "雷阵雨", "暴雪", "雾", "沙尘" 等）
  * @param city 当前展示的城市信息实体 [CityInfo]（用于日出日落月出月落天文计算）
  * @param isNight 是否强制指定夜间模式（为 null 时依据城市实际日出日落自动判定）
+ * @param isScrollInProgress 当前水平分页手势是否处于滑动中
  * @param parallaxOffsetProvider 水平滑动分页时的视差偏移量提供者 () -> Float，绘制阶段直接读取避免触发重组
  * @param modifier 外部修饰符
  */
@@ -68,6 +73,7 @@ fun WeatherSkyBackground(
     weatherText: String,
     city: CityInfo? = null,
     isNight: Boolean? = null,
+    isScrollInProgress: Boolean = false,
     parallaxOffsetProvider: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
@@ -84,9 +90,21 @@ fun WeatherSkyBackground(
 
     val (targetTop, targetMid, targetBottom) = getWeatherGradientColors(weatherCategory)
 
-    val animatedTop by animateColorAsState(targetValue = targetTop, animationSpec = tween(durationMillis = 900), label = "topColor")
-    val animatedMid by animateColorAsState(targetValue = targetMid, animationSpec = tween(durationMillis = 900), label = "midColor")
-    val animatedBottom by animateColorAsState(targetValue = targetBottom, animationSpec = tween(durationMillis = 900), label = "bottomColor")
+    val animatedTop by animateColorAsState(targetValue = targetTop, animationSpec = tween(durationMillis = 800), label = "topColor")
+    val animatedMid by animateColorAsState(targetValue = targetMid, animationSpec = tween(durationMillis = 800), label = "midColor")
+    val animatedBottom by animateColorAsState(targetValue = targetBottom, animationSpec = tween(durationMillis = 800), label = "bottomColor")
+
+    // 滑动完成停靠后，自适应立即触发由近到远的缓释深景推镜加载展开动效 (3000ms 优雅减速推远：1.12f -> 1.00f, 0.65f -> 1.0f)
+    val entranceAnim = remember { Animatable(1f) }
+    LaunchedEffect(city?.code, city?.name, weatherCategory, isScrollInProgress) {
+        if (!isScrollInProgress) {
+            entranceAnim.snapTo(0f)
+            entranceAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
+            )
+        }
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "dynamicWeatherTransition")
 
@@ -263,7 +281,7 @@ fun WeatherSkyBackground(
                 Brush.verticalGradient(listOf(animatedTop, animatedMid, animatedBottom))
             )
     ) {
-        // 1. 真实摄影级自然云海与天际底图 (双层深度视差流动：主云海 + 镜像视差流云，呈现真实宏大的大自然云层流淌)
+        // 1. 真实摄影级自然云海与天际底图 (双层深度视差流动与滑动停靠后由近到远镜头加载)
         if (skyTextureRes != null) {
             // 主云层平缓宏观流动
             val baseDrift = sin(cloudProgress * 2f * PI.toFloat()) * 48f
@@ -277,7 +295,12 @@ fun WeatherSkyBackground(
                 else -> 0.82f
             }
 
-            // Layer 1: 底层主云海 (真实高精全景底图)
+            val entranceProgress = entranceAnim.value
+            // 滑动停靠后由近到远轻快推远加载展开 (近景 1.12x -> 远景全貌 1.00x)
+            val entranceZoom = 1.0f + (1f - entranceProgress) * 0.12f
+            val entranceAlpha = 0.65f + 0.35f * entranceProgress
+
+            // Layer 1: 底层主云海 (超屏尺寸 1.35x，由近到远推镜加载展开)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
@@ -285,14 +308,15 @@ fun WeatherSkyBackground(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        translationX = baseDrift - parallaxOffsetProvider() * 80f
-                        scaleX = 1.16f
-                        scaleY = 1.16f
-                        alpha = baseAlpha
+                        val offset = parallaxOffsetProvider()
+                        translationX = baseDrift - offset * 80f
+                        scaleX = 1.35f * entranceZoom
+                        scaleY = 1.35f * entranceZoom
+                        alpha = baseAlpha * entranceAlpha
                     }
             )
 
-            // Layer 2: 镜像视差深景流云 (水平翻转镜像 + 放大 1.32x + 加速滑动，两层交织产生真实立体体积感)
+            // Layer 2: 镜像视差深景流云 (超屏尺寸 1.50x，更高幅度由近到远推镜加载)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "深景视差流云",
@@ -300,10 +324,12 @@ fun WeatherSkyBackground(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        translationX = fastDrift - parallaxOffsetProvider() * 140f
-                        scaleX = -1.32f
-                        scaleY = 1.32f
-                        alpha = baseAlpha * 0.45f
+                        val offset = parallaxOffsetProvider()
+                        val layerZoom = 1.0f + (1f - entranceProgress) * 0.15f
+                        translationX = fastDrift - offset * 140f
+                        scaleX = -1.50f * layerZoom
+                        scaleY = 1.50f * layerZoom
+                        alpha = baseAlpha * 0.45f * entranceAlpha
                     }
             )
         }
@@ -328,12 +354,19 @@ fun WeatherSkyBackground(
             )
         }
 
-        // 2. 动态天气物理粒子与光影层 (伴随视差深景平移，零重组 Draw 阶段更新)
+        // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，滑动停靠后伴随由近到远镜头加载展开)
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    translationX = -parallaxOffsetProvider() * 60f
+                    val offset = parallaxOffsetProvider()
+                    val entranceProgress = entranceAnim.value
+                    val entranceZoom = 1.0f + (1f - entranceProgress) * 0.10f
+                    val entranceAlpha = 0.60f + 0.40f * entranceProgress
+                    translationX = -offset * 60f
+                    scaleX = entranceZoom
+                    scaleY = entranceZoom
+                    alpha = entranceAlpha
                 }
         ) {
             val width = size.width
