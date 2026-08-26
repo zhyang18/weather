@@ -2030,8 +2030,8 @@ private fun DrawScope.drawGlowingMoon(
  * 绘制月相晨昏线曲面阴影与高细腻度渐进微偏移暮光漫射层
  *
  * 严格基于天体几何正交投影规律，采用半椭圆晨昏线（Terminator）曲面路径、
- * 8 级平滑微偏移渐进半透明阶梯阴影与高斯级物理光学羽化描边，彻底消除生硬切割感，
- * 呈现如同真实天体摄影般由浅入深、温润漫射的月牙弧度与自然地貌地球照（Earthshine）。
+ * 16 级高密度平滑微偏移渐进半透明阶梯阴影与 5 级高斯级物理光学羽化描边；
+ * 昏暗部分采用温润通透的深空半透明度（非死黑遮罩），保留月球暗面自然地貌与达芬奇地球照（Earthshine）。
  *
  * @param moonCenter 月球在屏幕上的中心坐标 [Offset]
  * @param moonRadius 月球圆盘半径 (px)
@@ -2042,19 +2042,27 @@ private fun DrawScope.drawLunarPhaseShadow(
     moonRadius: Float,
     phase: Float
 ) {
-    // 加大晨昏线暮光羽化过渡带宽（占月球半径约 24%，实现宽阔细腻的物理光影漫射）
-    val featherPx = moonRadius * 0.24f
+    // 宽幅晨昏线暮光羽化过渡带宽（占月球半径约 48%，实现宽阔柔润的物理光影漫射）
+    val featherPx = moonRadius * 0.48f
 
-    // 8 级高细腻度渐进半透明微偏移曲面阴影层（从外缘极微弱的漫射暮光平滑递进至核心暗部）
+    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（通透深空蓝黑半透明，核心暗部最高不透明度约 78%，绝非全黑死黑）
     val shadowLayers = listOf(
-        Pair(featherPx * 1.00f, Color(0x18080C14)), // 1. 极外缘微弱漫射光晕
-        Pair(featherPx * 0.85f, Color(0x22080C14)), // 2. 外层暮光漫射
-        Pair(featherPx * 0.70f, Color(0x30080C14)), // 3. 次外层柔焦过渡
-        Pair(featherPx * 0.55f, Color(0x42070A10)), // 4. 中外层自然过渡
-        Pair(featherPx * 0.40f, Color(0x5A06090E)), // 5. 中层阴影渗透
-        Pair(featherPx * 0.25f, Color(0x7505080D)), // 6. 次内层半影沉降
-        Pair(featherPx * 0.12f, Color(0x9804060B)), // 7. 近核心深色沉降
-        Pair(0f,                Color(0xFA030508))  // 8. 核心本影沉降区（保留 2% 自然地球照轮廓）
+        Pair(featherPx * 1.00f, Color(0x0A0B101E)), // 1. 极外缘若隐若现漫射微晕
+        Pair(featherPx * 0.92f, Color(0x120B101E)), // 2. 外缘极弱暮光
+        Pair(featherPx * 0.84f, Color(0x1C0B101E)), // 3. 外层暮光漫射
+        Pair(featherPx * 0.76f, Color(0x270B101E)), // 4. 次外层柔焦过渡
+        Pair(featherPx * 0.68f, Color(0x340A0F1C)), // 5. 暮光渐浓层
+        Pair(featherPx * 0.60f, Color(0x430A0F1C)), // 6. 中外层自然过渡
+        Pair(featherPx * 0.52f, Color(0x54090E1A)), // 7. 中层阴影渗透
+        Pair(featherPx * 0.44f, Color(0x66090E1A)), // 8. 中层温润递进
+        Pair(featherPx * 0.36f, Color(0x79080D18)), // 9. 中内层阴影加深
+        Pair(featherPx * 0.28f, Color(0x8D080D18)), // 10. 次内层半影沉降
+        Pair(featherPx * 0.21f, Color(0xA0070B16)), // 11. 近核心深色沉降
+        Pair(featherPx * 0.15f, Color(0xB2070B16)), // 12. 核心深色聚拢
+        Pair(featherPx * 0.10f, Color(0xBE060A14)), // 13. 深邃半影过渡
+        Pair(featherPx * 0.06f, Color(0xC6060A14)), // 14. 核心深影层
+        Pair(featherPx * 0.03f, Color(0xCC050912)), // 15. 核心致密半透层
+        Pair(0f,                Color(0xD0050912))  // 16. 核心暗面通透沉降区（~81% 半透明，底质地貌与夜空清晰透射）
     )
 
     shadowLayers.forEach { (offset, color) ->
@@ -2062,11 +2070,13 @@ private fun DrawScope.drawLunarPhaseShadow(
         drawPath(path = path, color = color)
     }
 
-    // 沿晨昏线半椭圆曲率绘制 3 层柔焦漫射描边，彻底柔化交界线，实现无缝连续光学过渡
+    // 沿晨昏线半椭圆曲率绘制 5 层不同宽度的柔焦漫射描边，实现像素级无缝连续光学漫射
     val strokeLayers = listOf(
-        Pair(featherPx * 0.60f, Pair(moonRadius * 0.16f, Color(0x1A080C14))),
-        Pair(featherPx * 0.30f, Pair(moonRadius * 0.10f, Color(0x2806090E))),
-        Pair(0f,                Pair(moonRadius * 0.05f, Color(0x3A04060A)))
+        Pair(featherPx * 0.75f, Pair(moonRadius * 0.36f, Color(0x0E0B101E))),
+        Pair(featherPx * 0.55f, Pair(moonRadius * 0.26f, Color(0x150B101E))),
+        Pair(featherPx * 0.35f, Pair(moonRadius * 0.18f, Color(0x1E0A0F1C))),
+        Pair(featherPx * 0.18f, Pair(moonRadius * 0.10f, Color(0x28090E1A))),
+        Pair(0f,                Pair(moonRadius * 0.05f, Color(0x34080D18)))
     )
 
     strokeLayers.forEach { (offset, strokeInfo) ->
