@@ -102,6 +102,21 @@ data class CityInfo(
             }
         }
     }
+
+    /**
+     * 获取用于天气缓存与唯一标识的全局统一 Key
+     *
+     * 区分定位城市（如末级街道、地标）与同省同站点编码的手动添加城市，防止多城市因共享站点编码发生缓存覆盖与状态混淆。
+     *
+     * @return 唯一的城市缓存标识字符串
+     */
+    fun getCacheKey(): String {
+        val safeCode = (code as String?) ?: ""
+        val safeName = (name as String?) ?: ""
+        val safeProvince = (province as String?) ?: ""
+        val prefix = if (isAutoLocated) "auto_" else "saved_"
+        return "$prefix${safeCode}_${safeProvince}_$safeName"
+    }
 }
 
 /**

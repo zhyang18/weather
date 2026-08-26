@@ -93,7 +93,7 @@ fun WeatherSkyBackground(
         }
     }
 
-    val celestial = remember(city, weatherText, isNight, currentSystemTimeMillis / 1000L) {
+    val celestial = remember(city?.getCacheKey(), weatherText, isNight, currentSystemTimeMillis / 60000L) {
         val calendar = Calendar.getInstance()
         SunMoonCalculator.calculateCelestialTimes(city, calendar)
     }
@@ -110,17 +110,17 @@ fun WeatherSkyBackground(
     val animatedMid by animateColorAsState(targetValue = targetMid, animationSpec = tween(durationMillis = 800), label = "midColor")
     val animatedBottom by animateColorAsState(targetValue = targetBottom, animationSpec = tween(durationMillis = 800), label = "bottomColor")
 
-    // 加载动效驱动 (仅当城市或天气类型实际发生变化时触发，0ms 立即启动 2.0x 近景推远至 1.00x 全景)：
-    // 新天气背景以 2.00x 巨幕近景入场，在 3000ms 内由近及远优雅推远至 1.00x 开阔全景
+    // 加载动效驱动 (仅当城市或天气类型实际发生变化时触发，0ms 立即启动 1.35x 近景推远至 1.00x 全景)：
+    // 新天气背景由近及远优雅推远至 1.00x 开阔全景，状态在 graphicsLayer Draw 阶段消费，实现零重组 120 FPS
     val entranceAnim = remember { Animatable(1f) }
     var lastSettledCityKey by remember { mutableStateOf<String?>(null) }
-    val currentCityKey = remember(city?.code, city?.name, weatherCategory) {
-        "${city?.code}_${city?.name}_$weatherCategory"
+    val currentCityKey = remember(city?.getCacheKey(), weatherCategory) {
+        "${city?.getCacheKey()}_$weatherCategory"
     }
 
     LaunchedEffect(currentCityKey) {
         if (lastSettledCityKey != null && lastSettledCityKey != currentCityKey) {
-            // 城市或天气发生实际切换时，0ms 立即重置并触发 2.00x 由近到远的 3000ms 镜头景深推远加载展开动效
+            // 城市或天气发生实际切换时，触发 3000ms 镜头景深推远展开动效（由近及远优雅推镜）
             entranceAnim.snapTo(0f)
             entranceAnim.animateTo(
                 targetValue = 1f,
@@ -323,12 +323,7 @@ fun WeatherSkyBackground(
                 else -> 0.82f
             }
 
-            val entranceProgress = entranceAnim.value
-            // 切换后由近到远巨幕推远加载展开 (近景 2.00x -> 远景全貌 1.00x)
-            val entranceZoom = 1.0f + (1f - entranceProgress) * 1.00f
-            val entranceAlpha = (0.20f + 0.80f * entranceProgress).coerceIn(0f, 1f)
-
-            // Layer 1: 底层主云海 (超屏尺寸 1.35x，伴随 2.0x 由近到远推镜加载展开)
+            // Layer 1: 底层主云海 (超屏尺寸 1.35x，伴随由近到远推镜加载展开)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
@@ -337,6 +332,9 @@ fun WeatherSkyBackground(
                     .fillMaxSize()
                     .graphicsLayer {
                         val offset = parallaxOffsetProvider()
+                        val entranceProgress = entranceAnim.value
+                        val entranceZoom = 1.0f + (1f - entranceProgress) * 0.35f
+                        val entranceAlpha = (0.20f + 0.80f * entranceProgress).coerceIn(0f, 1f)
                         translationX = baseDrift - offset * 80f
                         scaleX = 1.35f * entranceZoom
                         scaleY = 1.35f * entranceZoom
@@ -344,7 +342,7 @@ fun WeatherSkyBackground(
                     }
             )
 
-            // Layer 2: 镜像视差深景流云 (超屏尺寸 1.50x，伴随 2.0x 由近到远推镜加载)
+            // Layer 2: 镜像视差深景流云 (超屏尺寸 1.50x，伴随由近到远推镜加载)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "深景视差流云",
@@ -353,7 +351,9 @@ fun WeatherSkyBackground(
                     .fillMaxSize()
                     .graphicsLayer {
                         val offset = parallaxOffsetProvider()
-                        val layerZoom = 1.0f + (1f - entranceProgress) * 1.00f
+                        val entranceProgress = entranceAnim.value
+                        val layerZoom = 1.0f + (1f - entranceProgress) * 0.35f
+                        val entranceAlpha = (0.20f + 0.80f * entranceProgress).coerceIn(0f, 1f)
                         translationX = fastDrift - offset * 140f
                         scaleX = -1.50f * layerZoom
                         scaleY = 1.50f * layerZoom
@@ -382,14 +382,14 @@ fun WeatherSkyBackground(
             )
         }
 
-        // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，伴随 2.00x 由近到远镜头加载展开)
+        // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，伴随由近到远镜头加载展开)
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     val offset = parallaxOffsetProvider()
                     val entranceProgress = entranceAnim.value
-                    val canvasZoom = 1.0f + (1f - entranceProgress) * 1.00f
+                    val canvasZoom = 1.0f + (1f - entranceProgress) * 0.35f
                     val canvasAlpha = (0.20f + 0.80f * entranceProgress).coerceIn(0f, 1f)
                     translationX = -offset * 60f
                     scaleX = canvasZoom
@@ -2031,6 +2031,8 @@ private fun DrawScope.drawGlowingMoon(
  *
  * 严格基于天体几何正交投影规律，采用半椭圆晨昏线（Terminator）曲面路径、
  * 16 级高密度平滑微偏移渐进半透明阶梯阴影与 5 级高斯级物理光学羽化描边；
+ * 将除月牙亮色外的暗面阴影整体不透明度精准控制在 90%（保留 10% 细腻透光度），
+ * 呈现极其深邃沉静的夜空暗部，同时在 10% 微弱透光下保留月球球体轮廓、月海与地貌撞击坑的隐约可见感；
  * 具备满月（Full Moon）自适应天文窗口判定，满月前后（如农历十五、十六）呈现皎洁无瑕的完整满月，消除黑影瑕疵。
  *
  * @param moonCenter 月球在屏幕上的中心坐标 [Offset]
@@ -2063,24 +2065,24 @@ private fun DrawScope.drawLunarPhaseShadow(
     val adaptScale = ((darkFraction - 0.025f) / 0.225f).coerceIn(0f, 1f)
     val featherPx = maxFeatherAllowed * adaptScale
 
-    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（通透空灵深空蓝黑，核心暗部最高不透明度降至约 63%，底质地貌与夜空极为清晰通透）
+    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（全层复合叠加后，暗面核心区域不透明度精准稳定在 90%，保留 10% 透光度呈现月球球体表面与月海地貌）
     val shadowLayers = listOf(
-        Pair(featherPx * 1.00f, Color(0x060B101E)), // 1. 极外缘若隐若现漫射微晕 (~2%)
-        Pair(featherPx * 0.92f, Color(0x0C0B101E)), // 2. 外缘极弱暮光 (~5%)
-        Pair(featherPx * 0.84f, Color(0x140B101E)), // 3. 外层暮光漫射 (~8%)
-        Pair(featherPx * 0.76f, Color(0x1E0B101E)), // 4. 次外层柔焦过渡 (~12%)
-        Pair(featherPx * 0.68f, Color(0x2A0A0F1C)), // 5. 暮光渐浓层 (~16%)
-        Pair(featherPx * 0.60f, Color(0x360A0F1C)), // 6. 中外层自然过渡 (~21%)
-        Pair(featherPx * 0.52f, Color(0x44090E1A)), // 7. 中层阴影渗透 (~27%)
-        Pair(featherPx * 0.44f, Color(0x52090E1A)), // 8. 中层温润递进 (~32%)
-        Pair(featherPx * 0.36f, Color(0x62080D18)), // 9. 中内层阴影加深 (~38%)
-        Pair(featherPx * 0.28f, Color(0x72080D18)), // 10. 次内层半影沉降 (~45%)
-        Pair(featherPx * 0.21f, Color(0x80070B16)), // 11. 近核心深色沉降 (~50%)
-        Pair(featherPx * 0.15f, Color(0x8C070B16)), // 12. 核心深色聚拢 (~55%)
-        Pair(featherPx * 0.10f, Color(0x94060A14)), // 13. 深邃半影过渡 (~58%)
-        Pair(featherPx * 0.06f, Color(0x9A060A14)), // 14. 核心深影层 (~60%)
-        Pair(featherPx * 0.03f, Color(0x9E050912)), // 15. 核心致密半透层 (~62%)
-        Pair(0f,                Color(0xA2050912))  // 16. 核心暗面极致通透沉降区 (~63% 半透明，保留约 37% 明朗透光度)
+        Pair(featherPx * 1.00f, Color(0x0C060A14)), // 1. 极外缘若隐若现漫射微晕 (~4.7%)
+        Pair(featherPx * 0.92f, Color(0x12060A14)), // 2. 外缘极弱暮光 (~7.1%)
+        Pair(featherPx * 0.84f, Color(0x18060A14)), // 3. 外层暮光漫射 (~9.4%)
+        Pair(featherPx * 0.76f, Color(0x1E060A14)), // 4. 次外层柔焦过渡 (~11.8%)
+        Pair(featherPx * 0.68f, Color(0x22060A14)), // 5. 暮光渐浓层 (~13.3%)
+        Pair(featherPx * 0.60f, Color(0x24060A14)), // 6. 中外层自然过渡 (~14.1%)
+        Pair(featherPx * 0.52f, Color(0x26060A14)), // 7. 中层阴影渗透 (~14.9%)
+        Pair(featherPx * 0.44f, Color(0x26060A14)), // 8. 中层温润递进 (~14.9%)
+        Pair(featherPx * 0.36f, Color(0x26060A14)), // 9. 中内层阴影加深 (~14.9%)
+        Pair(featherPx * 0.28f, Color(0x28060A14)), // 10. 次内层半影沉降 (~15.7%)
+        Pair(featherPx * 0.21f, Color(0x28060A14)), // 11. 近核心深色沉降 (~15.7%)
+        Pair(featherPx * 0.15f, Color(0x28060A14)), // 12. 核心深色聚拢 (~15.7%)
+        Pair(featherPx * 0.10f, Color(0x26060A14)), // 13. 深邃半影过渡 (~14.9%)
+        Pair(featherPx * 0.06f, Color(0x24060A14)), // 14. 核心深影层 (~14.1%)
+        Pair(featherPx * 0.03f, Color(0x20060A14)), // 15. 核心致密半透层 (~12.5%)
+        Pair(0f,                Color(0x1C060A14))  // 16. 核心暗面通透基准区 (16 层全部叠加后总遮罩率精准约为 90%，保留 10% 细腻透光度)
     )
 
     shadowLayers.forEach { (offset, color) ->
@@ -2096,8 +2098,8 @@ private fun DrawScope.drawLunarPhaseShadow(
             Pair(featherPx * 0.75f, Pair(maxStroke * 1.00f * adaptScale, Color(0x080B101E))),
             Pair(featherPx * 0.55f, Pair(maxStroke * 0.75f * adaptScale, Color(0x0E0B101E))),
             Pair(featherPx * 0.35f, Pair(maxStroke * 0.50f * adaptScale, Color(0x140A0F1C))),
-            Pair(featherPx * 0.18f, Pair(maxStroke * 0.30f * adaptScale, Color(0x1C090E1A))),
-            Pair(0f,                Pair(maxStroke * 0.15f * adaptScale, Color(0x24080D18)))
+            Pair(featherPx * 0.18f, Pair(maxStroke * 0.30f * adaptScale, Color(0x1A090E1A))),
+            Pair(0f,                Pair(maxStroke * 0.15f * adaptScale, Color(0x20080D18)))
         )
 
         strokeLayers.forEach { (offset, strokeInfo) ->

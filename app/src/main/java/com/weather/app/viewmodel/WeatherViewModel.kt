@@ -81,13 +81,27 @@ data class WeatherUiState(
     }
 
     /**
+     * 获取指定城市的天气数据
+     *
+     * 优先通过全局唯一 Key (getCacheKey) 精准匹配，若未命中则降级通过编码或城市名称容错查找。
+     *
+     * @param city 目标城市信息 [CityInfo]
+     * @return 对应的天气数据 [WeatherData]，若无缓存返回 null
+     */
+    fun getWeatherForCity(city: CityInfo?): WeatherData? {
+        if (city == null) return null
+        return weatherCache[city.getCacheKey()]
+            ?: weatherCache[city.code.ifEmpty { city.name }]
+            ?: weatherCache[city.name]
+    }
+
+    /**
      * 获取当前选中城市的天气数据
      *
      * @return 当前天气 [WeatherData]，可能为 null
      */
     fun getCurrentWeather(): WeatherData? {
-        val city = getCurrentCity()
-        return weatherCache[city.code.ifEmpty { city.name }] ?: weatherCache[city.name]
+        return getWeatherForCity(getCurrentCity())
     }
 }
 
@@ -121,6 +135,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         savedCities.forEach { city ->
             val cached = repository.getCachedWeatherData(city)
             if (cached != null) {
+                initialCache[city.getCacheKey()] = cached
                 initialCache[city.code.ifEmpty { city.name }] = cached
                 initialCache[city.name] = cached
             }
@@ -163,6 +178,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             locateResult.onSuccess { data ->
                 val updatedList = repository.getSavedCities()
                 val cache = _uiState.value.weatherCache.toMutableMap()
+                cache[data.city.getCacheKey()] = data
                 cache[data.city.code.ifEmpty { data.city.name }] = data
                 cache[data.city.name] = data
 
@@ -197,12 +213,13 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun preloadOtherCitiesWeather() {
         val cities = _uiState.value.savedCities
         for (city in cities) {
-            val key = city.code.ifEmpty { city.name }
+            val key = city.getCacheKey()
             if (!_uiState.value.weatherCache.containsKey(key)) {
                 val result = repository.fetchWeather(city)
                 result.onSuccess { data ->
                     val cache = _uiState.value.weatherCache.toMutableMap()
                     cache[key] = data
+                    cache[city.code.ifEmpty { city.name }] = data
                     cache[city.name] = data
                     _uiState.update { it.copy(weatherCache = cache) }
                 }
@@ -221,7 +238,9 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(isRefreshing = true) }
             val result = repository.fetchWeather(city)
             result.onSuccess { data ->
+                repository.saveCachedWeatherData(city, data)
                 val cache = _uiState.value.weatherCache.toMutableMap()
+                cache[city.getCacheKey()] = data
                 cache[city.code.ifEmpty { city.name }] = data
                 cache[city.name] = data
                 _uiState.update {
@@ -258,7 +277,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         if (newIndex in _uiState.value.savedCities.indices && newIndex != _uiState.value.currentCityIndex) {
             _uiState.update { it.copy(currentCityIndex = newIndex) }
             val targetCity = _uiState.value.savedCities[newIndex]
-            val key = targetCity.code.ifEmpty { targetCity.name }
+            val key = targetCity.getCacheKey()
             if (!_uiState.value.weatherCache.containsKey(key)) {
                 refreshCityAtIndex(newIndex)
             }
@@ -288,7 +307,9 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             // 立即拉取新城市天气
             val result = repository.fetchWeather(city)
             result.onSuccess { data ->
+                repository.saveCachedWeatherData(city, data)
                 val cache = _uiState.value.weatherCache.toMutableMap()
+                cache[city.getCacheKey()] = data
                 cache[city.code.ifEmpty { city.name }] = data
                 cache[city.name] = data
                 _uiState.update { it.copy(weatherCache = cache) }
@@ -467,7 +488,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
             // 同步更新天气缓存中的对应城市引用，确保数据完全准确不被错误网络请求覆盖
             if (autoCity != null) {
-                val existingData = currentCache[autoCity.code]
+                val existingData = currentCache[autoCity.getCacheKey()]
+                    ?: currentCache[autoCity.code]
                     ?: currentCache[autoCity.name]
                     ?: currentCache.values.firstOrNull { it.city.isAutoLocated }
 
@@ -475,6 +497,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                     val updatedWeatherData = existingData.copy(
                         city = autoCity.copy(code = existingData.city.code.ifEmpty { autoCity.code })
                     )
+                    currentCache[autoCity.getCacheKey()] = updatedWeatherData
                     if (autoCity.code.isNotEmpty()) currentCache[autoCity.code] = updatedWeatherData
                     currentCache[autoCity.name] = updatedWeatherData
                     repository.saveCachedWeatherData(autoCity, updatedWeatherData)
@@ -589,12 +612,13 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         if (cities.isEmpty()) return
 
         for (city in cities) {
-            val key = city.code.ifEmpty { city.name }
+            val key = city.getCacheKey()
             val result = repository.fetchWeather(city)
             result.onSuccess { data ->
                 repository.saveCachedWeatherData(city, data)
                 val cache = _uiState.value.weatherCache.toMutableMap()
                 cache[key] = data
+                cache[city.code.ifEmpty { city.name }] = data
                 cache[city.name] = data
                 _uiState.update { it.copy(weatherCache = cache) }
             }
@@ -613,10 +637,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         var hasNewData = false
         savedCities.forEach { city ->
             val cached = repository.getCachedWeatherData(city)
-            val key = city.code.ifEmpty { city.name }
-            val currentMem = updatedCache[key]
+            val key = city.getCacheKey()
+            val currentMem = updatedCache[key] ?: updatedCache[city.code.ifEmpty { city.name }]
             if (cached != null && (currentMem == null || cached.updateTimestamp > currentMem.updateTimestamp)) {
                 updatedCache[key] = cached
+                updatedCache[city.code.ifEmpty { city.name }] = cached
                 updatedCache[city.name] = cached
                 hasNewData = true
             }

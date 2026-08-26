@@ -211,10 +211,11 @@ fun CityManagementFullScreen(
                 ) {
                     itemsIndexed(
                         items = savedCities,
-                        key = { index, city -> "${city.code}_${city.name}_${city.isAutoLocated}_$index" }
+                        key = { index, city -> "${city.getCacheKey()}_$index" }
                     ) { index, city ->
-                        val key = city.code.ifEmpty { city.name }
-                        val weather = weatherCache[key] ?: weatherCache[city.name]
+                        val weather = weatherCache[city.getCacheKey()]
+                            ?: weatherCache[city.code.ifEmpty { city.name }]
+                            ?: weatherCache[city.name]
                         val canDelete = savedCities.size > 1 && !city.isAutoLocated
 
                         SwipeableCityCard(

@@ -141,7 +141,8 @@ class WeatherRepository(
      * @param data 最新聚合天气数据 [WeatherData]
      */
     fun saveCachedWeatherData(city: CityInfo, data: WeatherData) {
-        val key = "weather_cache_${city.code.ifEmpty { city.name }}"
+        val safeCity = city.sanitize()
+        val key = "weather_cache_${safeCity.getCacheKey()}"
         val json = gson.toJson(data)
         prefs.edit().putString(key, json).apply()
     }
@@ -153,8 +154,10 @@ class WeatherRepository(
      * @return 缓存的天气数据 [WeatherData]，若不存在返回 null
      */
     fun getCachedWeatherData(city: CityInfo): WeatherData? {
-        val key = "weather_cache_${city.code.ifEmpty { city.name }}"
-        val json = prefs.getString(key, null) ?: return null
+        val safeCity = city.sanitize()
+        val key = "weather_cache_${safeCity.getCacheKey()}"
+        val legacyKey = "weather_cache_${safeCity.code.ifEmpty { safeCity.name }}"
+        val json = prefs.getString(key, null) ?: prefs.getString(legacyKey, null) ?: return null
         return try {
             gson.fromJson(json, WeatherData::class.java)
         } catch (e: Exception) {

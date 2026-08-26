@@ -117,33 +117,20 @@ fun WeatherScreen(
         }
     }
 
-    // 外部索引变更时联动 Pager
+    // 外部索引变更时联动 Pager (仅在非手势滑动进行中联动，避免与用户左右滑动手势冲突)
     LaunchedEffect(uiState.currentCityIndex) {
-        if (pagerState.currentPage != uiState.currentCityIndex && uiState.currentCityIndex < cityCount) {
+        if (!pagerState.isScrollInProgress && pagerState.currentPage != uiState.currentCityIndex && uiState.currentCityIndex < cityCount) {
             pagerState.animateScrollToPage(uiState.currentCityIndex)
         }
     }
 
     val currentCity = uiState.getCurrentCity()
 
-    // 使用 derivedStateOf 避免滑动中间帧高频重组顶部栏与天空背景
+    // 仅在滑页停靠后更新主页顶部栏与沉浸式背景，避免滑动中间帧高频重组
     val settledPage by remember { derivedStateOf { pagerState.settledPage } }
-    val displayedCity by remember(uiState.savedCities, currentCity) {
-        derivedStateOf {
-            uiState.savedCities.getOrNull(pagerState.settledPage) ?: currentCity
-        }
-    }
-    val displayedWeather by remember(uiState.weatherCache, currentCity) {
-        derivedStateOf {
-            val city = uiState.savedCities.getOrNull(pagerState.settledPage) ?: currentCity
-            uiState.weatherCache[city.code]
-                ?: uiState.weatherCache[city.name]
-                ?: uiState.getCurrentWeather()
-        }
-    }
-    val weatherText by remember(displayedWeather) {
-        derivedStateOf { displayedWeather?.current?.weatherText ?: "多云" }
-    }
+    val displayedCity = uiState.savedCities.getOrNull(settledPage) ?: currentCity
+    val displayedWeather = uiState.getWeatherForCity(displayedCity)
+    val weatherText = displayedWeather?.current?.weatherText ?: "多云"
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -153,12 +140,11 @@ fun WeatherScreen(
     val stableWeatherCache = uiState.weatherCache
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 沉浸式动态真实天气天空背景 (滑动完成停靠后触发由近到远的镜头景深加载展开动效，支持昼夜即时刷新切换)
+        // 沉浸式动态真实天气天空背景 (滑动完成停靠后触发镜头景深推远展开动效，支持昼夜即时刷新切换)
         WeatherSkyBackground(
             weatherText = weatherText,
             city = displayedCity,
             lastUpdatedTimestamp = displayedWeather?.updateTimestamp ?: System.currentTimeMillis(),
-            isScrollInProgress = pagerState.isScrollInProgress,
             parallaxOffsetProvider = { pagerState.currentPageOffsetFraction }
         )
 
@@ -196,7 +182,7 @@ fun WeatherScreen(
                     )
                 ),
                 key = { page ->
-                    uiState.savedCities.getOrNull(page)?.let { "${it.code}_${it.name}_$page" } ?: page.toString()
+                    uiState.savedCities.getOrNull(page)?.getCacheKey() ?: page.toString()
                 },
                 modifier = Modifier.weight(1f)
             ) { page ->
@@ -206,8 +192,7 @@ fun WeatherScreen(
                         ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市")
                 }
                 val pageWeather = remember(stableWeatherCache, pageCity) {
-                    val key = pageCity.code.ifEmpty { pageCity.name }
-                    stableWeatherCache[key] ?: stableWeatherCache[pageCity.name]
+                    uiState.getWeatherForCity(pageCity)
                 }
 
                 CityWeatherPageContent(
