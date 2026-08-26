@@ -96,7 +96,7 @@ fun WeatherSkyBackground(
     val animatedMid by animateColorAsState(targetValue = targetMid, animationSpec = tween(durationMillis = 800), label = "midColor")
     val animatedBottom by animateColorAsState(targetValue = targetBottom, animationSpec = tween(durationMillis = 800), label = "bottomColor")
 
-    // 两阶段加载动效驱动 (仅当切实切换到新城市停靠后触发，主页同城上下滑动完全不误触)：
+    // 两阶段加载动效驱动 (仅当城市或天气类型实际发生变化时触发，任何方向的滑动到顶/底均不误触)：
     // 阶段 1：快速渐隐上一个天气动态背景 (100ms 极速瞬滑淡出)
     // 阶段 2：新天气背景以 1.30x 近景入场，在 3000ms 内由近及远优雅推远至 1.00x 开阔全景
     val fadeAnim = remember { Animatable(1f) }
@@ -106,29 +106,27 @@ fun WeatherSkyBackground(
         "${city?.code}_${city?.name}_$weatherCategory"
     }
 
-    LaunchedEffect(currentCityKey, isScrollInProgress) {
-        if (!isScrollInProgress) {
-            if (lastSettledCityKey != null && lastSettledCityKey != currentCityKey) {
-                // 城市或天气发生实际切换时，触发两阶段加载动效
-                // 1. 快速渐隐上一天气动态背景 (100ms)
-                fadeAnim.animateTo(
-                    targetValue = 0f,
-                    animationSpec = tween(durationMillis = 100, easing = LinearEasing)
-                )
-                // 2. 重置并触发 1.30x 由近到远的 3000ms 镜头景深推远加载展开动效
-                entranceAnim.snapTo(0f)
-                fadeAnim.snapTo(1f)
-                entranceAnim.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
-                )
-            } else if (lastSettledCityKey == null) {
-                // 初次进场初始化
-                entranceAnim.snapTo(1f)
-                fadeAnim.snapTo(1f)
-            }
-            lastSettledCityKey = currentCityKey
+    LaunchedEffect(currentCityKey) {
+        if (lastSettledCityKey != null && lastSettledCityKey != currentCityKey) {
+            // 城市或天气发生实际切换时，触发两阶段加载动效
+            // 1. 快速渐隐上一天气动态背景 (100ms)
+            fadeAnim.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 100, easing = LinearEasing)
+            )
+            // 2. 重置并触发 1.30x 由近到远的 3000ms 镜头景深推远加载展开动效
+            entranceAnim.snapTo(0f)
+            fadeAnim.snapTo(1f)
+            entranceAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
+            )
+        } else if (lastSettledCityKey == null) {
+            // 初次进场初始化
+            entranceAnim.snapTo(1f)
+            fadeAnim.snapTo(1f)
         }
+        lastSettledCityKey = currentCityKey
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "dynamicWeatherTransition")

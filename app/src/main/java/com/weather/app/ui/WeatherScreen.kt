@@ -167,17 +167,11 @@ fun WeatherScreen(
                 .statusBarsPadding()
                 .navigationBarsPadding()
         ) {
-            // 顶部导航栏：左侧城市管理入口、中间 Material3 原生可滑动城市 Tab 页签栏、右侧 80% 半透明设置菜单
-            // 使用 settledPage 而非 currentPage，避免滑动中间每帧触发 Tab 栏重组
+            // 顶部导航栏：居中当前城市名称 + 下方居中紧凑圆点指示器（严格对齐设计图）
             TopImmersiveWeatherBar(
+                currentCityName = displayedCity.getDisplayName(stableLocationDisplayMode),
                 savedCities = stableSavedCities,
                 currentPage = settledPage,
-                locationDisplayMode = stableLocationDisplayMode,
-                onTabSelected = { pageIndex ->
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(pageIndex)
-                    }
-                },
                 onMenuClick = {
                     viewModel.setCityManagementOpen(true)
                 },
@@ -323,19 +317,11 @@ fun WeatherScreen(
 }
 
 /**
- * 顶部沉浸式 Material3 原生城市 Tab 页签导航栏
+ * 顶部沉浸式标题栏（居中显示当前选中的城市名称，下方居中紧凑排列圆点指示器，与设计图一模一样）
  *
- * 采用 Material3 原生 [ScrollableTabRow] 与 [Tab] 布局：
- * 1. 所有已保存城市以可横向滑动的原生 Tab 标签展现；
- * 2. 选中的城市 Tab 字体突出高亮并配有原生流线型微光指示器（tabIndicatorOffset）；
- * 3. 未选中城市 Tab 字体半透明，点击任意 Tab 直接秒切到对应城市；
- * 4. 左右滑动主界面内容时，顶部 Tab 页签自动实时跟随居中对齐；
- * 5. 左右保留城市管理入口（≡）与设置入口（⋮）。
- *
+ * @param currentCityName 当前选中的城市展示名称
  * @param savedCities 用户已保存的城市列表
  * @param currentPage 当前选中的城市页码索引
- * @param locationDisplayMode 城市名称展示模式
- * @param onTabSelected 点击城市 Tab 切换页码回调
  * @param onMenuClick 点击左侧城市管理按钮回调
  * @param onSourceClick 点击切换天气源回调
  * @param onIntervalClick 点击设置更新间隔回调
@@ -343,23 +329,24 @@ fun WeatherScreen(
  */
 @Composable
 private fun TopImmersiveWeatherBar(
+    currentCityName: String,
     savedCities: List<CityInfo>,
     currentPage: Int,
-    locationDisplayMode: com.weather.app.model.LocationDisplayMode,
-    onTabSelected: (Int) -> Unit,
     onMenuClick: () -> Unit,
     onSourceClick: () -> Unit,
     onIntervalClick: () -> Unit,
     onLocationSettingsClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val safeSelectedIndex = currentPage.coerceIn(0, (savedCities.size - 1).coerceAtLeast(0))
+    val pageCount = savedCities.size.coerceAtLeast(1)
+    val safeSelectedIndex = currentPage.coerceIn(0, pageCount - 1)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         // 左侧圆形毛玻璃城市管理入口 (≡)
         Surface(
@@ -377,70 +364,57 @@ private fun TopImmersiveWeatherBar(
             }
         }
 
-        // 中间：Material3 原生沉浸式可滚动城市 Tab 页签栏 (ScrollableTabRow)
-        ScrollableTabRow(
-            selectedTabIndex = safeSelectedIndex,
-            containerColor = Color.Transparent,
-            contentColor = Color.White,
-            edgePadding = 8.dp,
-            divider = {}, // 沉浸式透明无下划粗线
-            indicator = { tabPositions ->
-                if (tabPositions.isNotEmpty() && safeSelectedIndex in tabPositions.indices) {
-                    Box(
-                        modifier = Modifier
-                            .tabIndicatorOffset(tabPositions[safeSelectedIndex])
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .padding(horizontal = 14.dp)
-                            .clip(RoundedCornerShape(1.5.dp))
-                            .background(Color.White)
-                    )
-                }
-            },
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 4.dp)
+        // 中间：居中当前城市名称 + 下方居中紧凑圆点指示器（严格对齐设计图）
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 8.dp)
         ) {
-            savedCities.forEachIndexed { index, city ->
-                val isSelected = index == safeSelectedIndex
-                val displayName = city.getDisplayName(locationDisplayMode)
+            Text(
+                text = currentCityName,
+                style = TextStyle(
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.35f),
+                        offset = Offset(0f, 1.5f),
+                        blurRadius = 4f
+                    )
+                )
+            )
 
-                Tab(
-                    selected = isSelected,
-                    onClick = { onTabSelected(index) },
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            if (index == 0 && city.isAutoLocated) {
-                                Icon(
-                                    imageVector = Icons.Default.LocationOn,
-                                    contentDescription = "当前定位城市",
-                                    tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.60f),
-                                    modifier = Modifier
-                                        .size(15.dp)
-                                        .padding(end = 2.dp)
-                                )
-                            }
-                            Text(
-                                text = displayName,
-                                style = TextStyle(
-                                    fontSize = if (isSelected) 18.sp else 15.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.65f),
-                                    shadow = if (isSelected) {
-                                        Shadow(
-                                            color = Color.Black.copy(alpha = 0.40f),
-                                            offset = Offset(0f, 2f),
-                                            blurRadius = 4f
-                                        )
-                                    } else null
-                                )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // 下方居中紧凑排列的圆点指示器（不平均拉伸分布，居中聚合紧凑排列）
+            if (pageCount > 1) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    for (i in 0 until pageCount) {
+                        val isSelected = i == safeSelectedIndex
+                        val city = savedCities.getOrNull(i)
+                        val isAutoLocated = i == 0 && (city?.isAutoLocated == true)
+
+                        if (isAutoLocated) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = "当前定位城市",
+                                tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.40f),
+                                modifier = Modifier.size(11.dp)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isSelected) Color.White else Color.White.copy(alpha = 0.40f)
+                                    )
                             )
                         }
                     }
-                )
+                }
             }
         }
 
