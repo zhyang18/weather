@@ -1984,91 +1984,11 @@ private fun DrawScope.drawGlowingMoon(
             radius = moonRadius
         )
 
-        // 4.9 基于手机系统日期的真实天文学每日高精度连续渐变月相光照引擎 (Continuous Day-by-Day Astronomical Shading)
-        // 依据 29.530588 天标准朔望周期，实现 30 天中每天以 ~12.2° 的真实角速度平滑连续演变，无任何死区间跳变：
-        // - 盈月期 (Waxing，初一至十五)：太阳在西(右)，【右亮左暗】，亮弧从初二极细银丝逐日丰满至十五满月
-        // - 亏月期 (Waning，十六至三十)：太阳在东(左)，【左亮右暗】，亮弧从十六满月逐日收敛至三十残月沉夜
-        val isWaxing = phase < 0.50f
-        // 晨昏线在水平轴上的物理投影位置 (-1.0f ~ 1.0f)
-        val terminatorFactor = if (isWaxing) {
-            cos(2.0 * PI * phase).toFloat()
-        } else {
-            -cos(2.0 * PI * phase).toFloat()
-        }
-        val termX = moonCenter.x + moonRadius * terminatorFactor
-
-        // 暮光过渡羽化带宽 (约占月球半径 18%，确保肉眼自然柔和交融)
-        val feather = moonRadius * 0.18f
-
-        if (isWaxing) {
-            // 盈月期：亮区在右侧 (+moonRadius 侧)，暗面在左侧 (-moonRadius 侧)
-            val fadeStart = (termX + feather).coerceAtMost(moonCenter.x + moonRadius)
-            val fadeEnd = (termX - feather).coerceAtLeast(moonCenter.x - moonRadius * 1.05f)
-            val darkStart = moonCenter.x - moonRadius * 1.10f
-            val darkEnd = fadeEnd
-
-            // 1. 晨昏线暮光柔和渐变过渡带 (从右侧亮部向左侧暗部平滑过渡)
-            if (fadeStart > fadeEnd) {
-                drawRect(
-                    brush = Brush.linearGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color.Transparent,
-                            0.30f to Color(0x65080C14),
-                            0.65f to Color(0xCA05080E),
-                            1.0f to Color(0xFA030508)
-                        ),
-                        start = Offset(fadeStart, moonCenter.y),
-                        end = Offset(fadeEnd, moonCenter.y)
-                    ),
-                    topLeft = Offset(moonCenter.x - moonRadius, moonCenter.y - moonRadius),
-                    size = Size(moonRadius * 2f, moonRadius * 2f)
-                )
-            }
-
-            // 2. 左侧背光暗面完全沉降区 (通透深蓝黑，保留微弱自然地球照轮廓)
-            val darkWidth = (darkEnd - darkStart).coerceAtLeast(0f)
-            if (darkWidth > 0f) {
-                drawRect(
-                    color = Color(0xFA030508),
-                    topLeft = Offset(darkStart, moonCenter.y - moonRadius),
-                    size = Size(darkWidth, moonRadius * 2f)
-                )
-            }
-        } else {
-            // 亏月期：亮区在左侧 (-moonRadius 侧)，暗面在右侧 (+moonRadius 侧)
-            val fadeStart = (termX - feather).coerceAtLeast(moonCenter.x - moonRadius)
-            val fadeEnd = (termX + feather).coerceAtMost(moonCenter.x + moonRadius * 1.05f)
-            val darkStart = fadeEnd
-            val darkEnd = moonCenter.x + moonRadius * 1.10f
-
-            // 1. 晨昏线暮光柔和渐变过渡带 (从左侧亮部向右侧暗部平滑过渡)
-            if (fadeEnd > fadeStart) {
-                drawRect(
-                    brush = Brush.linearGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color.Transparent,
-                            0.30f to Color(0x65080C14),
-                            0.65f to Color(0xCA05080E),
-                            1.0f to Color(0xFA030508)
-                        ),
-                        start = Offset(fadeStart, moonCenter.y),
-                        end = Offset(fadeEnd, moonCenter.y)
-                    ),
-                    topLeft = Offset(moonCenter.x - moonRadius, moonCenter.y - moonRadius),
-                    size = Size(moonRadius * 2f, moonRadius * 2f)
-                )
-            }
-
-            // 2. 右侧背光暗面完全沉降区 (通透深蓝黑，保留微弱自然地球照轮廓)
-            val darkWidth = (darkEnd - darkStart).coerceAtLeast(0f)
-            if (darkWidth > 0f) {
-                drawRect(
-                    color = Color(0xFA030508),
-                    topLeft = Offset(darkStart, moonCenter.y - moonRadius),
-                    size = Size(darkWidth, moonRadius * 2f)
-                )
-            }
-        }
+        // 4.9 基于手机系统日期的真实天文学每日高精度连续渐变月相曲面光照引擎 (Continuous Astronomical Shading)
+        // 依据天体几何正交投影规律与 29.530588 天朔望周期，构建半椭圆晨昏线曲面阴影与多层暮光漫射层：
+        // - 盈月期 (Waxing，初一至十五)：太阳在西(右)，【右亮左暗】，弯弯月牙由两极尖锐圆弧优雅勾勒，逐日丰满至十五满月
+        // - 亏月期 (Waning，十六至三十)：太阳在东(左)，【左亮右暗】，从满月优雅收敛为左侧残月弯钩
+        drawLunarPhaseShadow(moonCenter = moonCenter, moonRadius = moonRadius, phase = phase)
     }
 
     // 5. 伴月璀璨行星/伴星 (Companion Celestial Star / Planetary Satellite - 宁静闪烁)
@@ -2104,6 +2024,185 @@ private fun DrawScope.drawGlowingMoon(
         strokeWidth = 0.9f,
         cap = StrokeCap.Round
     )
+}
+
+/**
+ * 绘制月相晨昏线曲面阴影与高细腻度渐进微偏移暮光漫射层
+ *
+ * 严格基于天体几何正交投影规律，采用半椭圆晨昏线（Terminator）曲面路径、
+ * 8 级平滑微偏移渐进半透明阶梯阴影与高斯级物理光学羽化描边，彻底消除生硬切割感，
+ * 呈现如同真实天体摄影般由浅入深、温润漫射的月牙弧度与自然地貌地球照（Earthshine）。
+ *
+ * @param moonCenter 月球在屏幕上的中心坐标 [Offset]
+ * @param moonRadius 月球圆盘半径 (px)
+ * @param phase 归一化月相周期 (0.0f ~ 1.0f)
+ */
+private fun DrawScope.drawLunarPhaseShadow(
+    moonCenter: Offset,
+    moonRadius: Float,
+    phase: Float
+) {
+    // 加大晨昏线暮光羽化过渡带宽（占月球半径约 24%，实现宽阔细腻的物理光影漫射）
+    val featherPx = moonRadius * 0.24f
+
+    // 8 级高细腻度渐进半透明微偏移曲面阴影层（从外缘极微弱的漫射暮光平滑递进至核心暗部）
+    val shadowLayers = listOf(
+        Pair(featherPx * 1.00f, Color(0x18080C14)), // 1. 极外缘微弱漫射光晕
+        Pair(featherPx * 0.85f, Color(0x22080C14)), // 2. 外层暮光漫射
+        Pair(featherPx * 0.70f, Color(0x30080C14)), // 3. 次外层柔焦过渡
+        Pair(featherPx * 0.55f, Color(0x42070A10)), // 4. 中外层自然过渡
+        Pair(featherPx * 0.40f, Color(0x5A06090E)), // 5. 中层阴影渗透
+        Pair(featherPx * 0.25f, Color(0x7505080D)), // 6. 次内层半影沉降
+        Pair(featherPx * 0.12f, Color(0x9804060B)), // 7. 近核心深色沉降
+        Pair(0f,                Color(0xFA030508))  // 8. 核心本影沉降区（保留 2% 自然地球照轮廓）
+    )
+
+    shadowLayers.forEach { (offset, color) ->
+        val path = createLunarShadowPath(moonCenter, moonRadius, phase, featherOffset = offset)
+        drawPath(path = path, color = color)
+    }
+
+    // 沿晨昏线半椭圆曲率绘制 3 层柔焦漫射描边，彻底柔化交界线，实现无缝连续光学过渡
+    val strokeLayers = listOf(
+        Pair(featherPx * 0.60f, Pair(moonRadius * 0.16f, Color(0x1A080C14))),
+        Pair(featherPx * 0.30f, Pair(moonRadius * 0.10f, Color(0x2806090E))),
+        Pair(0f,                Pair(moonRadius * 0.05f, Color(0x3A04060A)))
+    )
+
+    strokeLayers.forEach { (offset, strokeInfo) ->
+        val (strokeWidth, color) = strokeInfo
+        val arcPath = createTerminatorArcPath(moonCenter, moonRadius, phase, featherOffset = offset)
+        drawPath(
+            path = arcPath,
+            color = color,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+    }
+}
+
+/**
+ * 构建月球暗面（阴影部分）几何路径
+ *
+ * 根据真实天体正交投影规律，晨昏线（Terminator）在观测平面上呈现为半椭圆弧线，
+ * 与月球外圆周亮缘共同构成具备自然优美弧度与两极尖锐月角的月牙（Crescent）与凸月（Gibbous）轮廓。
+ *
+ * @param moonCenter 月球中心坐标 [Offset]
+ * @param moonRadius 月球外圆周半径 (px)
+ * @param phase 归一化月相 (0.0f ~ 1.0f)
+ * @param featherOffset 晨昏线向亮区方向延伸的羽化偏移像素 (px)
+ * @return 暗面几何路径 [Path]
+ */
+private fun createLunarShadowPath(
+    moonCenter: Offset,
+    moonRadius: Float,
+    phase: Float,
+    featherOffset: Float = 0f
+): Path {
+    val cx = moonCenter.x
+    val cy = moonCenter.y
+    val r = moonRadius
+    val p = (phase % 1f + 1f) % 1f
+    val isWaxing = p < 0.50f
+    val k = cos(2.0 * PI * p).toFloat()
+
+    val outerRect = Rect(cx - r, cy - r, cx + r, cy + r)
+    val path = Path()
+
+    if (isWaxing) {
+        // 盈月：暗面在左，亮面在右
+        // 晨昏线赤道相对偏移量（正数表示在中心右侧，负数表示在中心左侧）
+        val rawTermX = k * r + featherOffset
+        val termX = rawTermX.coerceIn(-r, r)
+        val rx = kotlin.math.abs(termX).coerceAtLeast(0.001f)
+        val termRect = Rect(cx - rx, cy - r, cx + rx, cy + r)
+
+        // 1. 从北极点 (270°) 沿左半圆弧逆时针画到南极点 (90°)
+        path.arcTo(outerRect, 270f, -180f, false)
+
+        // 2. 从南极点沿晨昏线半椭圆画回北极点
+        if (termX >= 0f) {
+            // 晨昏线在右侧（月牙状态），沿右半椭圆逆时针画回北极 (90° -> -90°)
+            path.arcTo(termRect, 90f, -180f, false)
+        } else {
+            // 晨昏线在左侧（凸月状态），沿左半椭圆顺时针画回北极 (90° -> 270°)
+            path.arcTo(termRect, 90f, 180f, false)
+        }
+        path.close()
+    } else {
+        // 亏月：暗面在右，亮面在左
+        val rawTermX = -k * r - featherOffset
+        val termX = rawTermX.coerceIn(-r, r)
+        val rx = kotlin.math.abs(termX).coerceAtLeast(0.001f)
+        val termRect = Rect(cx - rx, cy - r, cx + rx, cy + r)
+
+        // 1. 从北极点 (-90°) 沿右半圆弧顺时针画到南极点 (90°)
+        path.arcTo(outerRect, -90f, 180f, false)
+
+        // 2. 从南极点沿晨昏线半椭圆画回北极点
+        if (termX <= 0f) {
+            // 晨昏线在左侧（残月月牙状态），沿左半椭圆顺时针画回北极 (90° -> 270°)
+            path.arcTo(termRect, 90f, 180f, false)
+        } else {
+            // 晨昏线在右侧（亏凸月状态），沿右半椭圆逆时针画回北极 (90° -> -90°)
+            path.arcTo(termRect, 90f, -180f, false)
+        }
+        path.close()
+    }
+
+    return path
+}
+
+/**
+ * 构建月球晨昏线（Terminator）单条半椭圆曲线路径
+ *
+ * 用于在明暗交界线上绘制细腻的暮光柔焦微描边，彻底消除阶梯切割感。
+ *
+ * @param moonCenter 月球中心坐标 [Offset]
+ * @param moonRadius 月球外圆周半径 (px)
+ * @param phase 归一化月相 (0.0f ~ 1.0f)
+ * @param featherOffset 晨昏线向亮区方向延伸的羽化偏移像素 (px)
+ * @return 晨昏线单条半椭圆曲线路径 [Path]
+ */
+private fun createTerminatorArcPath(
+    moonCenter: Offset,
+    moonRadius: Float,
+    phase: Float,
+    featherOffset: Float = 0f
+): Path {
+    val cx = moonCenter.x
+    val cy = moonCenter.y
+    val r = moonRadius
+    val p = (phase % 1f + 1f) % 1f
+    val isWaxing = p < 0.50f
+    val k = cos(2.0 * PI * p).toFloat()
+
+    val path = Path()
+
+    if (isWaxing) {
+        val rawTermX = k * r + featherOffset
+        val termX = rawTermX.coerceIn(-r, r)
+        val rx = kotlin.math.abs(termX).coerceAtLeast(0.001f)
+        val termRect = Rect(cx - rx, cy - r, cx + rx, cy + r)
+
+        if (termX >= 0f) {
+            path.arcTo(termRect, 90f, -180f, false)
+        } else {
+            path.arcTo(termRect, 90f, 180f, false)
+        }
+    } else {
+        val rawTermX = -k * r - featherOffset
+        val termX = rawTermX.coerceIn(-r, r)
+        val rx = kotlin.math.abs(termX).coerceAtLeast(0.001f)
+        val termRect = Rect(cx - rx, cy - r, cx + rx, cy + r)
+
+        if (termX <= 0f) {
+            path.arcTo(termRect, 90f, 180f, false)
+        } else {
+            path.arcTo(termRect, 90f, -180f, false)
+        }
+    }
+
+    return path
 }
 
 /**
