@@ -11,8 +11,8 @@ android {
         applicationId = "com.weather.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -20,13 +20,36 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("app.jks")
+            storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as String?
+                ?: project.findProperty("KEYSTORE_PASSWORD") as String?
+                ?: System.getenv("RELEASE_STORE_PASSWORD")
+                ?: System.getenv("KEYSTORE_PASSWORD")
+                ?: "123456"
+            keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as String?
+                ?: project.findProperty("KEY_ALIAS") as String?
+                ?: System.getenv("RELEASE_KEY_ALIAS")
+                ?: System.getenv("KEY_ALIAS")
+                ?: "key0"
+            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as String?
+                ?: project.findProperty("KEY_PASSWORD") as String?
+                ?: System.getenv("RELEASE_KEY_PASSWORD")
+                ?: System.getenv("KEY_PASSWORD")
+                ?: "123456"
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
