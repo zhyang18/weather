@@ -454,7 +454,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 切换定位展示模式（地标/乡镇/街道 或 附近区县）并持久化保存，同时即时重新解析定位城市名称并关闭设置弹窗
+     * 切换定位展示模式（地标/乡镇/街道 或 附近区县）并持久化保存，同步更新展示名称并关闭设置弹窗
      *
      * @param mode 定位展示模式枚举 [com.weather.app.model.LocationDisplayMode]
      */
@@ -462,17 +462,30 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(locationDisplayMode = mode, showLocationSettings = false) }
         viewModelScope.launch {
             val updatedCities = repository.updateLocationDisplayMode(mode)
-            _uiState.update { it.copy(savedCities = updatedCities) }
-            // 自动刷新更新后的定位城市天气
             val autoCity = updatedCities.firstOrNull { it.isAutoLocated }
+            val currentCache = _uiState.value.weatherCache.toMutableMap()
+
+            // 同步更新天气缓存中的对应城市引用，确保数据完全准确不被错误网络请求覆盖
             if (autoCity != null) {
-                val result = repository.fetchWeather(autoCity)
-                result.onSuccess { data ->
-                    val cache = _uiState.value.weatherCache.toMutableMap()
-                    cache[autoCity.code.ifEmpty { autoCity.name }] = data
-                    cache[autoCity.name] = data
-                    _uiState.update { it.copy(weatherCache = cache) }
+                val existingData = currentCache[autoCity.code]
+                    ?: currentCache[autoCity.name]
+                    ?: currentCache.values.firstOrNull { it.city.isAutoLocated }
+
+                if (existingData != null) {
+                    val updatedWeatherData = existingData.copy(
+                        city = autoCity.copy(code = existingData.city.code.ifEmpty { autoCity.code })
+                    )
+                    if (autoCity.code.isNotEmpty()) currentCache[autoCity.code] = updatedWeatherData
+                    currentCache[autoCity.name] = updatedWeatherData
+                    repository.saveCachedWeatherData(autoCity, updatedWeatherData)
                 }
+            }
+
+            _uiState.update {
+                it.copy(
+                    savedCities = updatedCities,
+                    weatherCache = currentCache
+                )
             }
         }
     }

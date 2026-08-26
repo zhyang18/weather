@@ -48,8 +48,9 @@ import com.weather.app.model.CityInfo
 /**
  * 城市搜索与省市下钻选择底部面板组件
  *
- * 采用与定位设置弹框一致的 90% 不透明磨砂深灰蓝底色与暗色半透明质感，
- * 提供快速输入检索、自动定位当前位置、热门城市快捷气泡以及全国 34 个省市分级浏览选择。
+ * 采用与定位设置弹框一致的 95% 不透明磨砂深灰蓝底色与暗色半透明质感，
+ * 高度拓展至接近全屏（0.92f），采用流畅统一的滚动流架构，
+ * 提供快速输入检索、自动定位当前位置、热门城市快捷气泡以及全国 34 个省市大视野浏览选择。
  *
  * @param searchQuery 当前搜索关键字
  * @param searchResults 关键字搜索匹配结果列表 [CityInfo]
@@ -109,11 +110,11 @@ fun CitySelectionSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.85f)
+                .fillMaxHeight(0.92f)
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 4.dp)
+                .padding(horizontal = 20.dp, vertical = 2.dp)
         ) {
-            // 1. 弹窗头部标题与副标题
+            // 1. 弹窗头部标题与副标题 (固定在顶部)
             Text(
                 text = "城市管理与选择",
                 fontSize = 20.sp,
@@ -121,17 +122,17 @@ fun CitySelectionSheet(
                 color = Color.White
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
             Text(
                 text = "搜索添加城市或按省份浏览全国各行政区划",
-                fontSize = 13.sp,
+                fontSize = 12.5.sp,
                 color = Color.White.copy(alpha = 0.65f)
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 2. 搜索输入框 (适配暗色半透明质感)
+            // 2. 搜索输入框 (固定在顶部方便随时检索)
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchQueryChanged,
@@ -174,155 +175,228 @@ fun CitySelectionSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 3. 自动定位当前位置按钮
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0x252563EB),
-                border = BorderStroke(0.6.dp, Color(0xFF60A5FA).copy(alpha = 0.4f)),
+            // 3. 统一开阔滚动区域 (全屏可上下滚动浏览全国 34 个省份)
+            LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(enabled = !isLocating) { onAutoLocateClick() }
+                    .weight(1f)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (isLocating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = Color.White
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.MyLocation,
-                            contentDescription = "定位",
-                            tint = Color(0xFF93C5FD),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = if (isLocating) "正在自动定位当前位置..." else "自动定位当前城市 (GPS/网络)",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 4. 搜索结果或热门城市与省市列表
-            if (searchQuery.isNotEmpty()) {
-                Text(
-                    text = "搜索结果",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.70f)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (isSearching) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color.White)
-                    }
-                } else if (searchResults.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                if (searchQuery.isNotEmpty()) {
+                    item(key = "search_header") {
                         Text(
-                            text = "未找到相关城市，请尝试搜索其他关键字",
-                            color = Color.White.copy(alpha = 0.65f),
-                            fontSize = 14.sp
+                            text = "搜索结果",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.70f),
+                            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
                         )
+                    }
+
+                    if (isSearching) {
+                        item(key = "search_loading") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Color.White)
+                            }
+                        }
+                    } else if (searchResults.isEmpty()) {
+                        item(key = "search_empty") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "未找到相关城市，请尝试搜索其他关键字",
+                                    color = Color.White.copy(alpha = 0.65f),
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    } else {
+                        items(
+                            items = searchResults,
+                            key = { "search_${it.code}_${it.name}_${it.province}" }
+                        ) { city ->
+                            CityListItem(city = city, onClick = { onSelectCity(city) })
+                        }
                     }
                 } else {
-                    LazyColumn {
-                        items(searchResults) { city ->
-                            CityListItem(city = city, onClick = { onSelectCity(city) })
+                    // 3.1 自动定位当前位置按钮 (随滚动自然上移，释放省份列表展示空间)
+                    item(key = "auto_locate_button") {
+                        AutoLocateButton(
+                            isLocating = isLocating,
+                            onClick = onAutoLocateClick
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    // 3.2 热门城市快速选择气泡 (仅在未进入特定省份时展示)
+                    if (selectedProvinceCode.isNullOrEmpty()) {
+                        item(key = "hot_cities_section") {
+                            Column {
+                                Text(
+                                    text = "热门城市",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White.copy(alpha = 0.70f)
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    hotCities.forEach { city ->
+                                        HotCityChip(city = city, onClick = { onSelectCity(city) })
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                            }
                         }
                     }
-                }
-            } else {
-                // 热门城市快捷选择气泡
-                Text(
-                    text = "热门城市",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.70f)
-                )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    hotCities.forEach { city ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0x18FFFFFF),
-                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
+                    // 3.3 全国省份 / 下辖城市列表头部
+                    item(key = "province_section_header") {
+                        Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSelectCity(city) }
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = city.name,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                text = if (!selectedProvinceCode.isNullOrEmpty()) "下辖城市列表 (点击城市加载)" else "全国省份 / 直辖市",
                                 fontSize = 13.sp,
-                                color = Color.White
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White.copy(alpha = 0.70f)
                             )
+
+                            if (!selectedProvinceCode.isNullOrEmpty()) {
+                                Text(
+                                    text = "‹ 返回省份列表",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF60A5FA),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .clickable { onSelectProvince("") }
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 省份与城市列表
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = if (!selectedProvinceCode.isNullOrEmpty()) "下辖城市列表 (点击城市加载)" else "全国省份 / 直辖市",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White.copy(alpha = 0.70f)
-                    )
-
+                    // 3.4 渲染全国省份列表或下辖城市列表
                     if (!selectedProvinceCode.isNullOrEmpty()) {
-                        Text(
-                            text = "‹ 返回省份列表",
-                            fontSize = 13.sp,
-                            color = Color(0xFF60A5FA),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable { onSelectProvince("") }
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    if (!selectedProvinceCode.isNullOrEmpty()) {
-                        items(citiesInProvince) { city ->
+                        items(
+                            items = citiesInProvince,
+                            key = { "city_${it.code}_${it.name}" }
+                        ) { city ->
                             CityListItem(city = city, onClick = { onSelectCity(city) })
                         }
                     } else {
-                        items(provinces) { province ->
+                        items(
+                            items = provinces,
+                            key = { "prov_${it.code}_${it.name}" }
+                        ) { province ->
                             ProvinceListItem(province = province, onClick = { onSelectProvince(province.code) })
                         }
+                    }
+
+                    item(key = "list_bottom_spacer") {
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * 自动定位当前位置操作按钮卡片组件
+ *
+ * @param isLocating 是否正处于自动定位检索中
+ * @param onClick 点击触发自动定位回调
+ */
+@Composable
+private fun AutoLocateButton(
+    isLocating: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0x252563EB),
+        border = BorderStroke(0.6.dp, Color(0xFF60A5FA).copy(alpha = 0.4f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !isLocating) { onClick() }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isLocating) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(19.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.White
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = "定位",
+                    tint = Color(0xFF93C5FD),
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = if (isLocating) "正在自动定位当前位置..." else "自动定位当前城市 (GPS/网络)",
+                color = Color.White,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Normal
+            )
+        }
+    }
+}
+
+/**
+ * 热门城市气泡标签项组件
+ *
+ * @param city 热门城市信息实体 [CityInfo]
+ * @param onClick 选中热门城市回调
+ */
+@Composable
+private fun HotCityChip(
+    city: CityInfo,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0x18FFFFFF),
+        border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+    ) {
+        Text(
+            text = city.name,
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.5.dp),
+            fontSize = 13.sp,
+            color = Color.White
+        )
     }
 }
 
@@ -340,12 +414,12 @@ private fun CityListItem(city: CityInfo, onClick: () -> Unit) {
         border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
+            .padding(vertical = 2.5.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable { onClick() }
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -380,12 +454,12 @@ private fun ProvinceListItem(province: ProvinceItem, onClick: () -> Unit) {
         border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
+            .padding(vertical = 2.5.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable { onClick() }
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {

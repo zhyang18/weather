@@ -153,10 +153,11 @@ fun WeatherScreen(
     val stableWeatherCache = uiState.weatherCache
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 沉浸式动态真实天气天空背景 (滑动完成停靠后触发由近到远的镜头景深加载展开动效)
+        // 沉浸式动态真实天气天空背景 (滑动完成停靠后触发由近到远的镜头景深加载展开动效，支持昼夜即时刷新切换)
         WeatherSkyBackground(
             weatherText = weatherText,
             city = displayedCity,
+            lastUpdatedTimestamp = displayedWeather?.updateTimestamp ?: System.currentTimeMillis(),
             isScrollInProgress = pagerState.isScrollInProgress,
             parallaxOffsetProvider = { pagerState.currentPageOffsetFraction }
         )

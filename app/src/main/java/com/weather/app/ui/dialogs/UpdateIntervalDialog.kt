@@ -74,7 +74,6 @@ fun UpdateIntervalDialog(
 
     val options = listOf(
         UpdateIntervalOption(0, "无", "完全手动刷新，不消耗任何后台电量"),
-        UpdateIntervalOption(5, "5 分钟", "极速刷新，适合密切追踪突发天气"),
         UpdateIntervalOption(30, "30 分钟", "高频更新，适合密切关注天气变化"),
         UpdateIntervalOption(60, "1 小时", "平衡模式，兼顾实时性与省电"),
         UpdateIntervalOption(120, "2 小时", "推荐模式，省电与实况均衡"),

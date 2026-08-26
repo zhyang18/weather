@@ -66,6 +66,7 @@ import kotlin.random.Random
  * @param weatherText 当前天气现象描述（如 "晴", "多云", "阴", "小雨", "雷阵雨", "暴雪", "雾", "沙尘" 等）
  * @param city 当前展示的城市信息实体 [CityInfo]（用于日出日落月出月落天文计算）
  * @param isNight 是否强制指定夜间模式（为 null 时依据城市实际日出日落自动判定）
+ * @param lastUpdatedTimestamp 数据刷新时间戳（毫秒），用于感知刷新并即时重新计算昼夜与日月天体运行轨迹
  * @param isScrollInProgress 当前水平分页手势是否处于滑动中
  * @param parallaxOffsetProvider 水平滑动分页时的视差偏移量提供者 () -> Float，绘制阶段直接读取避免触发重组
  * @param modifier 外部修饰符
@@ -75,13 +76,17 @@ fun WeatherSkyBackground(
     weatherText: String,
     city: CityInfo? = null,
     isNight: Boolean? = null,
+    lastUpdatedTimestamp: Long = 0L,
     isScrollInProgress: Boolean = false,
     parallaxOffsetProvider: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
-    val nowCalendar = remember { Calendar.getInstance() }
-    val celestial = remember(city, weatherText) {
-        SunMoonCalculator.calculateCelestialTimes(city, nowCalendar)
+    val celestial = remember(city, weatherText, lastUpdatedTimestamp, isNight) {
+        val calendar = Calendar.getInstance()
+        if (lastUpdatedTimestamp > 0L) {
+            calendar.timeInMillis = lastUpdatedTimestamp
+        }
+        SunMoonCalculator.calculateCelestialTimes(city, calendar)
     }
 
     val effectiveIsNight = isNight ?: celestial.isNight

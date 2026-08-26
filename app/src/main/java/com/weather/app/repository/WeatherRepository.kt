@@ -336,12 +336,23 @@ class WeatherRepository(
         val targetCity = locatedCity ?: getSavedCities().firstOrNull() ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true)
         updateAutoLocatedCity(targetCity)
 
-        // 4. 获取目标城市的天气数据
-        currentSource.getWeather(targetCity)
+        // 4. 获取目标城市的天气数据并回写可靠气象站点编码
+        val weatherResult = currentSource.getWeather(targetCity)
+        weatherResult.onSuccess { data ->
+            val finalAutoCity = targetCity.copy(
+                code = data.city.code.ifEmpty { targetCity.code },
+                province = data.city.province.ifEmpty { targetCity.province }
+            )
+            updateAutoLocatedCity(finalAutoCity)
+            saveCachedWeatherData(finalAutoCity, data)
+        }
+        weatherResult
     }
 
     /**
-     * 切换定位展示模式并立即重新解析更新已保存的定位城市名称
+     * 切换定位展示模式并安全更新已保存定位城市的展示名称与元数据
+     *
+     * 严格保留已解析的准确气象站点编码 [CityInfo.code] 与所属区县地级市，杜绝站点丢失。
      *
      * @param mode 新的定位展示模式 [com.weather.app.model.LocationDisplayMode]
      * @return 更新后的已保存城市列表 [List]
@@ -371,7 +382,8 @@ class WeatherRepository(
                 val newName = currentAuto.getDisplayName(mode)
                 updated = currentAuto.copy(name = newName)
             }
-            currentCities[autoIndex] = updated.sanitize()
+            val safeUpdated = updated.copy(code = currentAuto.code.ifEmpty { updated.code })
+            currentCities[autoIndex] = safeUpdated.sanitize()
             saveSavedCities(currentCities)
         }
         currentCities
