@@ -32,16 +32,22 @@ import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -58,6 +64,7 @@ import com.weather.app.model.CityInfo
 import com.weather.app.model.WeatherData
 import com.weather.app.ui.components.DailyForecastCard
 import com.weather.app.ui.components.HeroWeatherView
+import kotlinx.coroutines.launch
 import com.weather.app.ui.components.HourlyForecastCard
 import com.weather.app.ui.components.MinutelyPrecipitationCard
 import com.weather.app.ui.components.WeatherAlertCard
@@ -103,9 +110,9 @@ fun WeatherScreen(
         pageCount = { cityCount }
     )
 
-    // 监听滑页变更，同步 ViewModel 中的当前城市索引
+    // 监听滑页变更，同步 ViewModel 中的当前城市索引 (仅在页面真正停靠后同步，避免中间帧无效写入)
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
+        snapshotFlow { pagerState.settledPage }.collect { page ->
             viewModel.setCurrentCityIndex(page)
         }
     }
@@ -118,12 +125,32 @@ fun WeatherScreen(
     }
 
     val currentCity = uiState.getCurrentCity()
-    // 顶部栏与天气背景随当前分页平滑展示对应城市与天气
-    val displayedCity = uiState.savedCities.getOrNull(pagerState.currentPage) ?: currentCity
-    val displayedWeather = uiState.weatherCache[displayedCity.code]
-        ?: uiState.weatherCache[displayedCity.name]
-        ?: uiState.getCurrentWeather()
-    val weatherText = displayedWeather?.current?.weatherText ?: "多云"
+
+    // 使用 derivedStateOf 避免滑动中间帧高频重组顶部栏与天空背景
+    val settledPage by remember { derivedStateOf { pagerState.settledPage } }
+    val displayedCity by remember(uiState.savedCities, currentCity) {
+        derivedStateOf {
+            uiState.savedCities.getOrNull(pagerState.settledPage) ?: currentCity
+        }
+    }
+    val displayedWeather by remember(uiState.weatherCache, currentCity) {
+        derivedStateOf {
+            val city = uiState.savedCities.getOrNull(pagerState.settledPage) ?: currentCity
+            uiState.weatherCache[city.code]
+                ?: uiState.weatherCache[city.name]
+                ?: uiState.getCurrentWeather()
+        }
+    }
+    val weatherText by remember(displayedWeather) {
+        derivedStateOf { displayedWeather?.current?.weatherText ?: "多云" }
+    }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    // 预先缓存稳定的 savedCities 快照引用，避免每次重组生成新列表
+    val stableSavedCities = remember(uiState.savedCities) { uiState.savedCities.ifEmpty { listOf(currentCity) } }
+    val stableLocationDisplayMode = uiState.locationDisplayMode
+    val stableWeatherCache = uiState.weatherCache
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 沉浸式动态真实天气天空背景 (滑动完成停靠后触发由近到远的镜头景深加载展开动效)
@@ -140,12 +167,17 @@ fun WeatherScreen(
                 .statusBarsPadding()
                 .navigationBarsPadding()
         ) {
-            // 顶部导航栏：左侧城市管理入口、中间城市与分页点指示器、右侧 80% 半透明设置菜单
+            // 顶部导航栏：左侧城市管理入口、中间 Material3 原生可滑动城市 Tab 页签栏、右侧 80% 半透明设置菜单
+            // 使用 settledPage 而非 currentPage，避免滑动中间每帧触发 Tab 栏重组
             TopImmersiveWeatherBar(
-                cityName = displayedCity.getDisplayName(uiState.locationDisplayMode),
-                isFirstPageAutoLocated = uiState.savedCities.firstOrNull()?.isAutoLocated == true,
-                pageCount = cityCount,
-                currentPage = pagerState.currentPage,
+                savedCities = stableSavedCities,
+                currentPage = settledPage,
+                locationDisplayMode = stableLocationDisplayMode,
+                onTabSelected = { pageIndex ->
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pageIndex)
+                    }
+                },
                 onMenuClick = {
                     viewModel.setCityManagementOpen(true)
                 },
@@ -169,14 +201,19 @@ fun WeatherScreen(
                     )
                 ),
                 key = { page ->
-                    uiState.savedCities.getOrNull(page)?.let { "${it.code}_${it.name}_${it.isAutoLocated}_$page" } ?: page.toString()
+                    uiState.savedCities.getOrNull(page)?.let { "${it.code}_${it.name}_$page" } ?: page.toString()
                 },
                 modifier = Modifier.weight(1f)
             ) { page ->
-                val pageCity = uiState.savedCities.getOrNull(page)
-                    ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市")
-                val key = pageCity.code.ifEmpty { pageCity.name }
-                val pageWeather = uiState.weatherCache[key] ?: uiState.weatherCache[pageCity.name]
+                // 在 Pager 内部稳定读取页面所需的城市与天气数据，避免父级重组传染
+                val pageCity = remember(uiState.savedCities, page) {
+                    uiState.savedCities.getOrNull(page)
+                        ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市")
+                }
+                val pageWeather = remember(stableWeatherCache, pageCity) {
+                    val key = pageCity.code.ifEmpty { pageCity.name }
+                    stableWeatherCache[key] ?: stableWeatherCache[pageCity.name]
+                }
 
                 CityWeatherPageContent(
                     city = pageCity,
@@ -286,12 +323,19 @@ fun WeatherScreen(
 }
 
 /**
- * 沉浸式顶部栏组件
+ * 顶部沉浸式 Material3 原生城市 Tab 页签导航栏
  *
- * @param cityName 城市名称
- * @param isFirstPageAutoLocated 第一页是否为定位城市
- * @param pageCount 城市总页数
- * @param currentPage 当前城市页码
+ * 采用 Material3 原生 [ScrollableTabRow] 与 [Tab] 布局：
+ * 1. 所有已保存城市以可横向滑动的原生 Tab 标签展现；
+ * 2. 选中的城市 Tab 字体突出高亮并配有原生流线型微光指示器（tabIndicatorOffset）；
+ * 3. 未选中城市 Tab 字体半透明，点击任意 Tab 直接秒切到对应城市；
+ * 4. 左右滑动主界面内容时，顶部 Tab 页签自动实时跟随居中对齐；
+ * 5. 左右保留城市管理入口（≡）与设置入口（⋮）。
+ *
+ * @param savedCities 用户已保存的城市列表
+ * @param currentPage 当前选中的城市页码索引
+ * @param locationDisplayMode 城市名称展示模式
+ * @param onTabSelected 点击城市 Tab 切换页码回调
  * @param onMenuClick 点击左侧城市管理按钮回调
  * @param onSourceClick 点击切换天气源回调
  * @param onIntervalClick 点击设置更新间隔回调
@@ -299,23 +343,23 @@ fun WeatherScreen(
  */
 @Composable
 private fun TopImmersiveWeatherBar(
-    cityName: String,
-    isFirstPageAutoLocated: Boolean,
-    pageCount: Int,
+    savedCities: List<CityInfo>,
     currentPage: Int,
+    locationDisplayMode: com.weather.app.model.LocationDisplayMode,
+    onTabSelected: (Int) -> Unit,
     onMenuClick: () -> Unit,
     onSourceClick: () -> Unit,
     onIntervalClick: () -> Unit,
     onLocationSettingsClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val safeSelectedIndex = currentPage.coerceIn(0, (savedCities.size - 1).coerceAtLeast(0))
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         // 左侧圆形毛玻璃城市管理入口 (≡)
         Surface(
@@ -333,54 +377,70 @@ private fun TopImmersiveWeatherBar(
             }
         }
 
-        // 中间：纯净城市名称与分页指示器（第一页定位页展示定位 Pin 图标，后续城市展示指示圆点）
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = cityName,
-                style = TextStyle(
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = Color.White,
-                    shadow = Shadow(
-                        color = Color.Black.copy(alpha = 0.40f),
-                        offset = Offset(0f, 2f),
-                        blurRadius = 5f
+        // 中间：Material3 原生沉浸式可滚动城市 Tab 页签栏 (ScrollableTabRow)
+        ScrollableTabRow(
+            selectedTabIndex = safeSelectedIndex,
+            containerColor = Color.Transparent,
+            contentColor = Color.White,
+            edgePadding = 8.dp,
+            divider = {}, // 沉浸式透明无下划粗线
+            indicator = { tabPositions ->
+                if (tabPositions.isNotEmpty() && safeSelectedIndex in tabPositions.indices) {
+                    Box(
+                        modifier = Modifier
+                            .tabIndicatorOffset(tabPositions[safeSelectedIndex])
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .padding(horizontal = 14.dp)
+                            .clip(RoundedCornerShape(1.5.dp))
+                            .background(Color.White)
                     )
-                )
-            )
+                }
+            },
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp)
+        ) {
+            savedCities.forEachIndexed { index, city ->
+                val isSelected = index == safeSelectedIndex
+                val displayName = city.getDisplayName(locationDisplayMode)
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // 页面指示器 (第一页定位页为定位图标，选中时纯白高亮，未选时半透明)
-            if (pageCount > 1) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    for (i in 0 until pageCount) {
-                        val isSelected = i == currentPage
-                        if (i == 0 && isFirstPageAutoLocated) {
-                            Icon(
-                                imageVector = Icons.Default.LocationOn,
-                                contentDescription = "当前定位城市",
-                                tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.45f),
-                                modifier = Modifier.size(11.dp)
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .height(4.dp)
-                                    .width(if (isSelected) 8.dp else 4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(
-                                        if (isSelected) Color.White else Color.White.copy(alpha = 0.45f)
-                                    )
+                Tab(
+                    selected = isSelected,
+                    onClick = { onTabSelected(index) },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (index == 0 && city.isAutoLocated) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = "当前定位城市",
+                                    tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.60f),
+                                    modifier = Modifier
+                                        .size(15.dp)
+                                        .padding(end = 2.dp)
+                                )
+                            }
+                            Text(
+                                text = displayName,
+                                style = TextStyle(
+                                    fontSize = if (isSelected) 18.sp else 15.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.65f),
+                                    shadow = if (isSelected) {
+                                        Shadow(
+                                            color = Color.Black.copy(alpha = 0.40f),
+                                            offset = Offset(0f, 2f),
+                                            blurRadius = 4f
+                                        )
+                                    } else null
+                                )
                             )
                         }
                     }
-                }
+                )
             }
         }
 
