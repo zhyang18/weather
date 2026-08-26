@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -81,11 +83,18 @@ fun WeatherSkyBackground(
     parallaxOffsetProvider: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
-    val celestial = remember(city, weatherText, lastUpdatedTimestamp, isNight) {
-        val calendar = Calendar.getInstance()
-        if (lastUpdatedTimestamp > 0L) {
-            calendar.timeInMillis = lastUpdatedTimestamp
+    // 实时系统时钟（每秒自动校准，用户在系统设置修改日期切回 App 后即时刷新生效）
+    var currentSystemTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentSystemTimeMillis = System.currentTimeMillis()
+            delay(1000L)
         }
+    }
+
+    val celestial = remember(city, weatherText, isNight, currentSystemTimeMillis / 1000L) {
+        val calendar = Calendar.getInstance()
         SunMoonCalculator.calculateCelestialTimes(city, calendar)
     }
 
@@ -289,6 +298,7 @@ fun WeatherSkyBackground(
 
     val sunProgress = celestial.sunProgress
     val moonProgress = celestial.moonProgress
+    val moonPhase = celestial.moonPhase
     val isSunVisible = celestial.isSunVisible && (weatherCategory == WeatherCategory.SUNNY || weatherCategory == WeatherCategory.CLOUDY)
     val isMoonVisible = (weatherCategory.isNight || celestial.isMoonVisible)
 
@@ -390,12 +400,12 @@ fun WeatherSkyBackground(
             val width = size.width
             val height = size.height
 
-            // 夜间渲染群星、流星与明月（月亮出现时机由城市月出月落时间精确决定）
+            // 夜间渲染群星、流星与明月（月亮出现时机由城市月出月落时间精确决定，月相由真实日期物理驱动）
             if (isMoonVisible && weatherCategory.isNight) {
                 val moonCenter = calculateMoonCenter(width, height, moonProgress)
                 drawNightStars(starParticles, mediumProgress)
                 drawShootingStars(width, height, mediumProgress)
-                drawGlowingMoon(width, height, moonCenter, slowProgress)
+                drawGlowingMoon(width, height, moonCenter, slowProgress, moonPhase)
             }
 
             // 白昼渲染太阳、丁达尔圣光与浮游光尘（太阳出现时机由城市实际日出日落时间平缓决定）
@@ -770,6 +780,7 @@ private fun DrawScope.drawAtmosphericSoftHaze(
  * @property sunProgress 太阳在日照轨迹中的归一化运行进度 (0.0f ~ 1.0f)
  * @property isMoonVisible 月亮是否处于升起可见状态（夜间且处于月出至月落可见窗口）
  * @property moonProgress 月亮在月夜轨迹中的归一化运行进度 (0.0f ~ 1.0f)
+ * @property moonPhase 基于真实日期的归一化月相周期 (0.0f ~ 1.0f，0: 新月, 0.25: 上弦月, 0.5: 满月, 0.75: 下弦月)
  * @property isNight 当前是否为夜间模式（日落后至日出前）
  */
 data class CelestialTimes(
@@ -781,6 +792,7 @@ data class CelestialTimes(
     val sunProgress: Float,
     val isMoonVisible: Boolean,
     val moonProgress: Float,
+    val moonPhase: Float,
     val isNight: Boolean
 )
 
@@ -892,14 +904,13 @@ object SunMoonCalculator {
         }
         val moonProgress = (nightElapsed / nightTotalMinutes.toFloat()).coerceIn(0f, 1f)
 
-        // 5. 月相与月升月落参考时间 (基于朔望周期 29.530588853 天)
-        val refCalendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-            set(2026, Calendar.JANUARY, 18, 17, 51, 0)
-        }
-        val diffMillis = calendar.timeInMillis - refCalendar.timeInMillis
+        // 5. 真实月相与月升月落参考时间 (基于标准 J2000 新月纪元 2000-01-06 18:14 UTC 精确推算)
+        val epochNewMoonMillis = 947182440000L
+        val diffMillis = calendar.timeInMillis - epochNewMoonMillis
         val diffDays = diffMillis.toDouble() / (1000.0 * 60.0 * 60.0 * 24.0)
         val synodicMonth = 29.530588853
         val moonAge = (diffDays % synodicMonth + synodicMonth) % synodicMonth
+        val moonPhase = ((moonAge / synodicMonth).toFloat()).coerceIn(0f, 1f)
 
         // 月球每天相对太阳滞后约 50.47 分钟升起
         val moonLagMinutes = (moonAge * 50.47).toInt()
@@ -917,6 +928,7 @@ object SunMoonCalculator {
             sunProgress = sunProgress,
             isMoonVisible = isMoonVisible,
             moonProgress = moonProgress,
+            moonPhase = moonPhase,
             isNight = isNight
         )
     }
@@ -1514,45 +1526,46 @@ private data class LunarMountainRidge(
 )
 
 /**
- * 绘制天文摄影级超真实三维月球表面球体系统 (Photorealistic 3D Lunar Celestial Sphere Engine)
+ * 绘制天文摄影级超真实三维月球表面球体系统 (100% 纯代码 Canvas 高清物理与真实月相渲染引擎)
  *
- * 融合 NASA 摄影月相地质特征、玄武岩月海矿物色调、斜长岩高地反照率、高密度微观月壤颗粒与球面边缘减光物理规律：
- * 1. 广域深邃月晕与清透近月冕：微光通透柔和漫射，夜空中晶莹深邃；
- * 2. 真实天然月表矿物色调：基底采用天然斜长岩珍珠白与象牙银灰交织，月海呈现深邃炭灰与石板青灰；
- * 3. 真实正射球面透视地貌（月海系统）：
- *    - 危海 (Mare Crisium)：东侧独立透视压缩的南北向深色椭圆盆地；
- *    - 雨海 (Mare Imbrium) 与 虹湾 (Sinus Iridum)：西北圆弧大盆地及突出半月湾；
- *    - 亚平宁山脉 (Montes Apenninus)：雨海东南缘璀璨起伏的白色高地山脊；
- *    - 澄海与静海 (Mare Serenitatis & Tranquillitatis)：东北侧标志性双联暗海；
- *    - 风暴洋、云海、湿海、丰富海、神海与冷海：具有真实地貌起伏与犬牙交错边缘；
- * 4. 80+ 微观月壤撞击坑颗粒群：散布在全月盘的微型环形山与凹凸月壳，彻底消除矢量图形的人工感；
- * 5. 肉眼标志性环形山与贯穿半球的第谷辐射纹系（Tycho Ray System）：
- *    - 第谷 (Tycho) 8 条明亮射线跨越球盘；哥白尼 (Copernicus)、阿里斯塔克斯 (Aristarchus) 极亮耀斑；
- * 6. 物理三维球体曲率与边缘减光（Limb Darkening & 3D Curvature Depth）：
- *    - 赋予月球真实厚重、饱满、圆润的实体 3D 行星球体感；
- * 7. 伴月璀璨行星与微型十字星芒：随月华呼吸动态微闪。
+ * 采用全数学几何与物理光影算法，依据真实日期实时计算月相盈亏形态（新月/峨眉月/上弦月/凸月/满月/残月）：
+ * 1. 真实月相驱动：基于朔望周期（29.530588853 天）精确计算晨昏线与照亮比例；
+ * 2. 高对比度双层星球系统：暗面呈现通透真实的地球照（Earthshine），亮面呈现高反照率天然矿物月貌；
+ * 3. 广域深邃月晕与近月冕漫射：随月相照亮比例（Illumination Fraction）物理联动缩放；
+ * 4. 紧贴月盘外边缘的光学接触漫射 (Subtle Contact Rim Bloom)：消除生硬剪纸描边，实现自然光学交融；
+ * 5. 真实天然月表矿物色调：基底采用天然斜长岩珍珠白与象牙银灰交织，月海呈现深邃炭灰与石板青灰；
+ * 6. 真实正射球面透视地貌（月海系统）：危海、雨海与虹湾、亚平宁山脉、澄海与静海等；
+ * 7. 80+ 微观月壤撞击坑颗粒群与第谷 10 向跨半球辐射纹系；
+ * 8. 精细物理三维球体曲率与柔和边缘减光（Soft Physically-accurate Limb Darkening）；
+ * 9. 伴月璀璨行星与微型十字星芒：随月华呼吸动态微闪。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
  * @param moonCenter 明月实时屏幕坐标 [Offset]
  * @param pulseProgress 月华呼吸动画相位 (0f ~ 1f)
+ * @param moonPhase 基于真实日期的归一化月相周期 (0.0f ~ 1.0f)
  */
 private fun DrawScope.drawGlowingMoon(
     width: Float,
     height: Float,
     moonCenter: Offset,
-    pulseProgress: Float
+    pulseProgress: Float,
+    moonPhase: Float
 ) {
     val moonRadius = width * 0.076f // 清晰精致的真实月球盘面半径（约 30dp ~ 32dp）
-    val glowRadius = moonRadius * (3.0f + pulseProgress * 0.20f) // 广域柔美月华光晕半径
+    val phase = (moonPhase % 1f + 1f) % 1f
+    // 真实月亮受光照比例 (0.0f ~ 1.0f)
+    val illum = ((1f - cos(2f * PI.toFloat() * phase)) / 2f).coerceIn(0f, 1f)
+    val glowAlphaScale = 0.35f + illum * 0.65f
+    val glowRadius = moonRadius * (2.6f + illum * 0.6f + pulseProgress * 0.15f) // 随月相照亮比例自然调节光晕
 
-    // 1. 最外层广阔深空柔和月华漫射 (Deep Sky Atmospheric Lunar Glow)
+    // 1. 最外层广阔深空柔和月华漫射 (Deep Sky Atmospheric Lunar Glow - 随月相盈亏联动)
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color(0xFFBACEE6).copy(alpha = 0.12f + pulseProgress * 0.02f),
-                Color(0xFF7595BF).copy(alpha = 0.05f + pulseProgress * 0.01f),
-                Color(0xFF384B66).copy(alpha = 0.02f),
+                Color(0xFFBACEE6).copy(alpha = (0.12f + pulseProgress * 0.02f) * glowAlphaScale),
+                Color(0xFF7595BF).copy(alpha = (0.05f + pulseProgress * 0.01f) * glowAlphaScale),
+                Color(0xFF384B66).copy(alpha = 0.02f * glowAlphaScale),
                 Color.Transparent
             ),
             center = moonCenter,
@@ -1566,18 +1579,33 @@ private fun DrawScope.drawGlowingMoon(
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                Color(0xFFE2ECF7).copy(alpha = 0.22f + pulseProgress * 0.03f),
-                Color(0xFF9FB7D4).copy(alpha = 0.07f),
+                Color(0xFFE2ECF7).copy(alpha = (0.20f + pulseProgress * 0.03f) * glowAlphaScale),
+                Color(0xFF9FB7D4).copy(alpha = 0.06f * glowAlphaScale),
                 Color.Transparent
             ),
             center = moonCenter,
-            radius = moonRadius * 1.38f
+            radius = moonRadius * (1.20f + illum * 0.16f)
         ),
         center = moonCenter,
-        radius = moonRadius * 1.38f
+        radius = moonRadius * (1.20f + illum * 0.16f)
     )
 
-    // 3. 绘制真实月球盘面内部（使用 clipPath 限制在月球圆形范围内）
+    // 3. 紧贴月盘外边缘的光学接触漫射 (Subtle Contact Rim Glow - 消除生硬切边，实现自然光学过渡)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colorStops = arrayOf(
+                0.0f to Color(0xFFF6F9FF).copy(alpha = (0.22f + pulseProgress * 0.03f) * (0.40f + illum * 0.60f)),
+                0.70f to Color(0xFFD0E2F5).copy(alpha = 0.08f * (0.40f + illum * 0.60f)),
+                1.0f to Color.Transparent
+            ),
+            center = moonCenter,
+            radius = moonRadius * 1.10f
+        ),
+        center = moonCenter,
+        radius = moonRadius * 1.10f
+    )
+
+    // 4. 绘制月球完整三维球体 (在全圆盘内自然渲染连贯的月球地貌与柔和物理光影)
     val moonClipPath = Path().apply {
         addOval(
             Rect(
@@ -1588,15 +1616,15 @@ private fun DrawScope.drawGlowingMoon(
     }
 
     clipPath(moonClipPath) {
-        // 3.1 真实三维月球高地基础层 (天然斜长岩高反照矿物色调：温润珍珠白 -> 象牙银灰 -> 边缘自然灰)
+        // 4.1 真实三维月球高地基础层 (天然斜长岩高反照矿物色调：温润珍珠白 -> 象牙银灰 -> 边缘自然灰)
         drawCircle(
             brush = Brush.radialGradient(
                 colorStops = arrayOf(
-                    0.0f to Color(0xFFF7F6F2), // 中心纯净透亮（冲日效应/对日反照增强）
-                    0.40f to Color(0xFFE8E5DC), // 高地主体象牙银灰
-                    0.72f to Color(0xFFCCC8BD), // 高地过渡区
-                    0.90f to Color(0xFFAFA99E), // 近边缘微暗
-                    1.0f to Color(0xFF918C82)   // 极边缘自然收敛
+                    0.0f to Color(0xFFF8F7F4), // 中心纯净透亮（对日反照增强）
+                    0.40f to Color(0xFFE9E6DE), // 高地主体象牙银灰
+                    0.72f to Color(0xFFCDC9BE), // 高地过渡区
+                    0.90f to Color(0xFFB0AAA0), // 近边缘微暗
+                    1.0f to Color(0xFF948F85)   // 极边缘自然收敛
                 ),
                 center = Offset(moonCenter.x + moonRadius * 0.06f, moonCenter.y - moonRadius * 0.06f),
                 radius = moonRadius * 1.15f
@@ -1605,7 +1633,7 @@ private fun DrawScope.drawGlowingMoon(
             radius = moonRadius
         )
 
-        // 3.2 古老高地斑驳反照率亮块 (Highland Albedo Geological Patches)
+        // 4.2 古老高地斑驳反照率亮块 (Highland Albedo Geological Patches)
         val highlandPatches = listOf(
             LunarHighlandPatch(relX = -0.06f, relY = 0.52f, radiusFactor = 0.40f, alpha = 0.45f), // 南方第谷古老高地群
             LunarHighlandPatch(relX = 0.36f, relY = 0.42f, radiusFactor = 0.30f, alpha = 0.35f),  // 东南高地区
@@ -1632,7 +1660,7 @@ private fun DrawScope.drawGlowingMoon(
             )
         }
 
-        // 3.3 真实肉眼月海系统（正射球面透视形态与深沉玄武岩平原）
+        // 4.3 真实肉眼月海系统（正射球面透视形态与深沉玄武岩平原）
         val lunarMariaList = listOf(
             // 雨海 (Mare Imbrium) - 西北部大圆盆玄武岩海
             LunarMariaRegion(relX = -0.22f, relY = -0.26f, radiusXFactor = 0.29f, radiusYFactor = 0.27f, alpha = 0.78f, rotationDeg = -10f),
@@ -1717,7 +1745,7 @@ private fun DrawScope.drawGlowingMoon(
             }
         }
 
-        // 3.4 真实高地山脉山脊线（亚平宁山脉 Montes Apenninus / 高加索山脉 Montes Caucasus）
+        // 4.4 真实高地山脉山脊线（亚平宁山脉 Montes Apenninus / 高加索山脉 Montes Caucasus）
         val mountainRanges = listOf(
             // 亚平宁山脉 (Montes Apenninus) - 雨海东南侧一道显赫的银白锯齿弧形山脊
             LunarMountainRidge(
@@ -1768,7 +1796,7 @@ private fun DrawScope.drawGlowingMoon(
             )
         }
 
-        // 3.5 真实月壤微观撞击坑与颗粒质感点群（80+ 微型地貌特征，消除人工矢量平滑感）
+        // 4.5 真实月壤微观撞击坑与颗粒质感点群（80+ 微型地貌特征，消除人工矢量平滑感）
         val microFeatures = listOf(
             // 南方高地密集的古老撞击坑群 (Southern Highlands Crater Dense Zone)
             LunarMicroFeature(-0.02f, 0.35f, 0.026f, isDark = true, alpha = 0.60f),
@@ -1840,7 +1868,7 @@ private fun DrawScope.drawGlowingMoon(
             }
         }
 
-        // 3.6 真实肉眼标志性辐射纹系 (Tycho Crater Lunar Ray System)
+        // 4.6 真实肉眼标志性辐射纹系 (Tycho Crater Lunar Ray System)
         // 第谷辐射纹由南纬 43° 沿球面大圆弧向北半球雨海、澄海、静海穿插扩散
         val tychoRays = listOf(
             // 射线贯穿云海直达雨海西北部
@@ -1885,7 +1913,7 @@ private fun DrawScope.drawGlowingMoon(
             )
         }
 
-        // 3.7 标志性著名环形山高清结构 (Craters: Tycho, Copernicus, Kepler, Aristarchus, Proclus, Langrenus)
+        // 4.7 标志性著名环形山高清结构 (Craters: Tycho, Copernicus, Kepler, Aristarchus, Proclus, Langrenus)
         val craterFeatures = listOf(
             // 第谷 (Tycho) - 南方高地最显赫的高亮大撞击坑与中心峰
             LunarCraterFeature(relX = -0.08f, relY = 0.48f, rimRadius = 0.082f, coreRadius = 0.030f, alpha = 0.98f),
@@ -1938,16 +1966,16 @@ private fun DrawScope.drawGlowingMoon(
             )
         }
 
-        // 3.8 三维球体真实曲率与边缘减光层 (Photorealistic 3D Spherical Curvature & Limb Darkening)
-        // 模拟真实天体球体从中心向边缘的视线切角减光，赋予月球真实厚重饱满的球体立体感
+        // 4.8 柔和物理三维球体曲率与边缘减光层 (Soft Physically-accurate Limb Darkening)
+        // 依据真实天体视线切角减光物理规律，自然平缓地从内向外过渡，赋予月球真实圆润饱满的 3D 体积感
         drawCircle(
             brush = Brush.radialGradient(
                 colorStops = arrayOf(
                     0.0f to Color.Transparent,
-                    0.65f to Color.Transparent,
-                    0.80f to Color(0x120E1218),
-                    0.92f to Color(0x2E0B0F15),
-                    1.0f to Color(0x56080B10)
+                    0.72f to Color.Transparent,
+                    0.88f to Color(0x10080E14),
+                    0.96f to Color(0x22050A10),
+                    1.0f to Color(0x3504080D)
                 ),
                 center = moonCenter,
                 radius = moonRadius
@@ -1955,23 +1983,93 @@ private fun DrawScope.drawGlowingMoon(
             center = moonCenter,
             radius = moonRadius
         )
-    }
 
-    // 4. 外缘清晰纯净微光轮廓（晶莹立体感，清晰划分夜空与月盘边缘）
-    drawCircle(
-        brush = Brush.linearGradient(
-            colors = listOf(
-                Color.White.copy(alpha = 0.55f),
-                Color(0xFFE8E5DD).copy(alpha = 0.30f),
-                Color(0xFF88847A).copy(alpha = 0.18f)
-            ),
-            start = Offset(moonCenter.x + moonRadius * 0.8f, moonCenter.y - moonRadius * 0.8f),
-            end = Offset(moonCenter.x - moonRadius * 0.8f, moonCenter.y + moonRadius * 0.8f)
-        ),
-        radius = moonRadius,
-        center = moonCenter,
-        style = Stroke(width = 1.0f)
-    )
+        // 4.9 基于手机系统日期的真实天文学每日高精度连续渐变月相光照引擎 (Continuous Day-by-Day Astronomical Shading)
+        // 依据 29.530588 天标准朔望周期，实现 30 天中每天以 ~12.2° 的真实角速度平滑连续演变，无任何死区间跳变：
+        // - 盈月期 (Waxing，初一至十五)：太阳在西(右)，【右亮左暗】，亮弧从初二极细银丝逐日丰满至十五满月
+        // - 亏月期 (Waning，十六至三十)：太阳在东(左)，【左亮右暗】，亮弧从十六满月逐日收敛至三十残月沉夜
+        val isWaxing = phase < 0.50f
+        // 晨昏线在水平轴上的物理投影位置 (-1.0f ~ 1.0f)
+        val terminatorFactor = if (isWaxing) {
+            cos(2.0 * PI * phase).toFloat()
+        } else {
+            -cos(2.0 * PI * phase).toFloat()
+        }
+        val termX = moonCenter.x + moonRadius * terminatorFactor
+
+        // 暮光过渡羽化带宽 (约占月球半径 18%，确保肉眼自然柔和交融)
+        val feather = moonRadius * 0.18f
+
+        if (isWaxing) {
+            // 盈月期：亮区在右侧 (+moonRadius 侧)，暗面在左侧 (-moonRadius 侧)
+            val fadeStart = (termX + feather).coerceAtMost(moonCenter.x + moonRadius)
+            val fadeEnd = (termX - feather).coerceAtLeast(moonCenter.x - moonRadius * 1.05f)
+            val darkStart = moonCenter.x - moonRadius * 1.10f
+            val darkEnd = fadeEnd
+
+            // 1. 晨昏线暮光柔和渐变过渡带 (从右侧亮部向左侧暗部平滑过渡)
+            if (fadeStart > fadeEnd) {
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.30f to Color(0x65080C14),
+                            0.65f to Color(0xCA05080E),
+                            1.0f to Color(0xFA030508)
+                        ),
+                        start = Offset(fadeStart, moonCenter.y),
+                        end = Offset(fadeEnd, moonCenter.y)
+                    ),
+                    topLeft = Offset(moonCenter.x - moonRadius, moonCenter.y - moonRadius),
+                    size = Size(moonRadius * 2f, moonRadius * 2f)
+                )
+            }
+
+            // 2. 左侧背光暗面完全沉降区 (通透深蓝黑，保留微弱自然地球照轮廓)
+            val darkWidth = (darkEnd - darkStart).coerceAtLeast(0f)
+            if (darkWidth > 0f) {
+                drawRect(
+                    color = Color(0xFA030508),
+                    topLeft = Offset(darkStart, moonCenter.y - moonRadius),
+                    size = Size(darkWidth, moonRadius * 2f)
+                )
+            }
+        } else {
+            // 亏月期：亮区在左侧 (-moonRadius 侧)，暗面在右侧 (+moonRadius 侧)
+            val fadeStart = (termX - feather).coerceAtLeast(moonCenter.x - moonRadius)
+            val fadeEnd = (termX + feather).coerceAtMost(moonCenter.x + moonRadius * 1.05f)
+            val darkStart = fadeEnd
+            val darkEnd = moonCenter.x + moonRadius * 1.10f
+
+            // 1. 晨昏线暮光柔和渐变过渡带 (从左侧亮部向右侧暗部平滑过渡)
+            if (fadeEnd > fadeStart) {
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.30f to Color(0x65080C14),
+                            0.65f to Color(0xCA05080E),
+                            1.0f to Color(0xFA030508)
+                        ),
+                        start = Offset(fadeStart, moonCenter.y),
+                        end = Offset(fadeEnd, moonCenter.y)
+                    ),
+                    topLeft = Offset(moonCenter.x - moonRadius, moonCenter.y - moonRadius),
+                    size = Size(moonRadius * 2f, moonRadius * 2f)
+                )
+            }
+
+            // 2. 右侧背光暗面完全沉降区 (通透深蓝黑，保留微弱自然地球照轮廓)
+            val darkWidth = (darkEnd - darkStart).coerceAtLeast(0f)
+            if (darkWidth > 0f) {
+                drawRect(
+                    color = Color(0xFA030508),
+                    topLeft = Offset(darkStart, moonCenter.y - moonRadius),
+                    size = Size(darkWidth, moonRadius * 2f)
+                )
+            }
+        }
+    }
 
     // 5. 伴月璀璨行星/伴星 (Companion Celestial Star / Planetary Satellite - 宁静闪烁)
     val starOffset = Offset(moonCenter.x + moonRadius * 1.60f, moonCenter.y + moonRadius * 1.15f)
