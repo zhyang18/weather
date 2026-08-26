@@ -2031,7 +2031,7 @@ private fun DrawScope.drawGlowingMoon(
  *
  * 严格基于天体几何正交投影规律，采用半椭圆晨昏线（Terminator）曲面路径、
  * 16 级高密度平滑微偏移渐进半透明阶梯阴影与 5 级高斯级物理光学羽化描边；
- * 昏暗部分采用温润通透的深空半透明度（非死黑遮罩），保留月球暗面自然地貌与达芬奇地球照（Earthshine）。
+ * 具备满月（Full Moon）自适应天文窗口判定，满月前后（如农历十五、十六）呈现皎洁无瑕的完整满月，消除黑影瑕疵。
  *
  * @param moonCenter 月球在屏幕上的中心坐标 [Offset]
  * @param moonRadius 月球圆盘半径 (px)
@@ -2042,51 +2042,76 @@ private fun DrawScope.drawLunarPhaseShadow(
     moonRadius: Float,
     phase: Float
 ) {
-    // 宽幅晨昏线暮光羽化过渡带宽（占月球半径约 48%，实现宽阔柔润的物理光影漫射）
-    val featherPx = moonRadius * 0.48f
+    val p = (phase % 1f + 1f) % 1f
+    val k = cos(2.0 * PI * p).toFloat()
+    // 暗面占全盘的理论面积比例 (0.0f ~ 1.0f，满月时为 0f，新月时为 1f)
+    val darkFraction = ((1f + k) / 2f).coerceIn(0f, 1f)
 
-    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（通透深空蓝黑半透明，核心暗部最高不透明度约 78%，绝非全黑死黑）
+    // 1. 满月天文窗口判定：当月亮受光照达到 97.5% 以上（如农历十四晚至十六满月期），呈现完美无瑕皎洁大满月
+    if (darkFraction <= 0.025f) {
+        return
+    }
+
+    // 2. 计算赤道处亮区（月牙/亮半球）的物理几何宽度 (px)
+    // 当 k >= 0 (月牙阶段)，亮区宽度为 moonRadius * (1 - k)
+    // 当 k < 0 (凸月阶段)，亮区宽度为 moonRadius * (1 - k) > moonRadius
+    val brightWidthPx = moonRadius * (1f - k).coerceIn(0.01f, 2f)
+
+    // 3. 几何自适应羽化带宽：羽化向亮区渗透的宽度绝不能超过亮月牙自身宽度的 38%，
+    // 彻底防止细月牙（如初二/初三/廿七/廿八）被过宽的羽化层吞噬涂黑，保证月牙亮弧始终清晰可见
+    val maxFeatherAllowed = (brightWidthPx * 0.38f).coerceAtMost(moonRadius * 0.28f)
+    val adaptScale = ((darkFraction - 0.025f) / 0.225f).coerceIn(0f, 1f)
+    val featherPx = maxFeatherAllowed * adaptScale
+
+    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（通透空灵深空蓝黑，核心暗部最高不透明度降至约 63%，底质地貌与夜空极为清晰通透）
     val shadowLayers = listOf(
-        Pair(featherPx * 1.00f, Color(0x0A0B101E)), // 1. 极外缘若隐若现漫射微晕
-        Pair(featherPx * 0.92f, Color(0x120B101E)), // 2. 外缘极弱暮光
-        Pair(featherPx * 0.84f, Color(0x1C0B101E)), // 3. 外层暮光漫射
-        Pair(featherPx * 0.76f, Color(0x270B101E)), // 4. 次外层柔焦过渡
-        Pair(featherPx * 0.68f, Color(0x340A0F1C)), // 5. 暮光渐浓层
-        Pair(featherPx * 0.60f, Color(0x430A0F1C)), // 6. 中外层自然过渡
-        Pair(featherPx * 0.52f, Color(0x54090E1A)), // 7. 中层阴影渗透
-        Pair(featherPx * 0.44f, Color(0x66090E1A)), // 8. 中层温润递进
-        Pair(featherPx * 0.36f, Color(0x79080D18)), // 9. 中内层阴影加深
-        Pair(featherPx * 0.28f, Color(0x8D080D18)), // 10. 次内层半影沉降
-        Pair(featherPx * 0.21f, Color(0xA0070B16)), // 11. 近核心深色沉降
-        Pair(featherPx * 0.15f, Color(0xB2070B16)), // 12. 核心深色聚拢
-        Pair(featherPx * 0.10f, Color(0xBE060A14)), // 13. 深邃半影过渡
-        Pair(featherPx * 0.06f, Color(0xC6060A14)), // 14. 核心深影层
-        Pair(featherPx * 0.03f, Color(0xCC050912)), // 15. 核心致密半透层
-        Pair(0f,                Color(0xD0050912))  // 16. 核心暗面通透沉降区（~81% 半透明，底质地貌与夜空清晰透射）
+        Pair(featherPx * 1.00f, Color(0x060B101E)), // 1. 极外缘若隐若现漫射微晕 (~2%)
+        Pair(featherPx * 0.92f, Color(0x0C0B101E)), // 2. 外缘极弱暮光 (~5%)
+        Pair(featherPx * 0.84f, Color(0x140B101E)), // 3. 外层暮光漫射 (~8%)
+        Pair(featherPx * 0.76f, Color(0x1E0B101E)), // 4. 次外层柔焦过渡 (~12%)
+        Pair(featherPx * 0.68f, Color(0x2A0A0F1C)), // 5. 暮光渐浓层 (~16%)
+        Pair(featherPx * 0.60f, Color(0x360A0F1C)), // 6. 中外层自然过渡 (~21%)
+        Pair(featherPx * 0.52f, Color(0x44090E1A)), // 7. 中层阴影渗透 (~27%)
+        Pair(featherPx * 0.44f, Color(0x52090E1A)), // 8. 中层温润递进 (~32%)
+        Pair(featherPx * 0.36f, Color(0x62080D18)), // 9. 中内层阴影加深 (~38%)
+        Pair(featherPx * 0.28f, Color(0x72080D18)), // 10. 次内层半影沉降 (~45%)
+        Pair(featherPx * 0.21f, Color(0x80070B16)), // 11. 近核心深色沉降 (~50%)
+        Pair(featherPx * 0.15f, Color(0x8C070B16)), // 12. 核心深色聚拢 (~55%)
+        Pair(featherPx * 0.10f, Color(0x94060A14)), // 13. 深邃半影过渡 (~58%)
+        Pair(featherPx * 0.06f, Color(0x9A060A14)), // 14. 核心深影层 (~60%)
+        Pair(featherPx * 0.03f, Color(0x9E050912)), // 15. 核心致密半透层 (~62%)
+        Pair(0f,                Color(0xA2050912))  // 16. 核心暗面极致通透沉降区 (~63% 半透明，保留约 37% 明朗透光度)
     )
 
     shadowLayers.forEach { (offset, color) ->
+        val scaledColor = if (adaptScale < 1f) color.copy(alpha = color.alpha * adaptScale) else color
         val path = createLunarShadowPath(moonCenter, moonRadius, phase, featherOffset = offset)
-        drawPath(path = path, color = color)
+        drawPath(path = path, color = scaledColor)
     }
 
-    // 沿晨昏线半椭圆曲率绘制 5 层不同宽度的柔焦漫射描边，实现像素级无缝连续光学漫射
-    val strokeLayers = listOf(
-        Pair(featherPx * 0.75f, Pair(moonRadius * 0.36f, Color(0x0E0B101E))),
-        Pair(featherPx * 0.55f, Pair(moonRadius * 0.26f, Color(0x150B101E))),
-        Pair(featherPx * 0.35f, Pair(moonRadius * 0.18f, Color(0x1E0A0F1C))),
-        Pair(featherPx * 0.18f, Pair(moonRadius * 0.10f, Color(0x28090E1A))),
-        Pair(0f,                Pair(moonRadius * 0.05f, Color(0x34080D18)))
-    )
-
-    strokeLayers.forEach { (offset, strokeInfo) ->
-        val (strokeWidth, color) = strokeInfo
-        val arcPath = createTerminatorArcPath(moonCenter, moonRadius, phase, featherOffset = offset)
-        drawPath(
-            path = arcPath,
-            color = color,
-            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+    // 沿晨昏线半椭圆曲率绘制 5 层不同宽度的柔焦漫射描边，线宽受亮区宽度严格约束，绝不侵蚀细月牙
+    if (adaptScale > 0.05f) {
+        val maxStroke = (brightWidthPx * 0.30f).coerceAtMost(moonRadius * 0.20f)
+        val strokeLayers = listOf(
+            Pair(featherPx * 0.75f, Pair(maxStroke * 1.00f * adaptScale, Color(0x080B101E))),
+            Pair(featherPx * 0.55f, Pair(maxStroke * 0.75f * adaptScale, Color(0x0E0B101E))),
+            Pair(featherPx * 0.35f, Pair(maxStroke * 0.50f * adaptScale, Color(0x140A0F1C))),
+            Pair(featherPx * 0.18f, Pair(maxStroke * 0.30f * adaptScale, Color(0x1C090E1A))),
+            Pair(0f,                Pair(maxStroke * 0.15f * adaptScale, Color(0x24080D18)))
         )
+
+        strokeLayers.forEach { (offset, strokeInfo) ->
+            val (strokeWidth, color) = strokeInfo
+            if (strokeWidth > 0.5f) {
+                val scaledColor = if (adaptScale < 1f) color.copy(alpha = color.alpha * adaptScale) else color
+                val arcPath = createTerminatorArcPath(moonCenter, moonRadius, phase, featherOffset = offset)
+                drawPath(
+                    path = arcPath,
+                    color = scaledColor,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+        }
     }
 }
 
