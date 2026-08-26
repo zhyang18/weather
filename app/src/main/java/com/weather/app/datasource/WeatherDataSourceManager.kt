@@ -57,17 +57,6 @@ class WeatherDataSourceManager {
         val registered = dataSources.values.map { it.getSourceInfo() }.toMutableList()
 
         // 添加未来扩展源预览（展示多数据源架构的可扩展性）
-        if (registered.none { it.id == "qweather" }) {
-            registered.add(
-                WeatherSourceInfo(
-                    id = "qweather",
-                    name = "和风天气",
-                    description = "高精度多维度商业气象服务（后续扩展）",
-                    isDefault = false,
-                    isAvailable = false
-                )
-            )
-        }
         if (registered.none { it.id == "open_meteo" }) {
             registered.add(
                 WeatherSourceInfo(

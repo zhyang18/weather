@@ -84,7 +84,7 @@ fun SourceSelectionSheet(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "系统采用多源架构设计，可按需切换不同气象服务提供商",
+                text = "系统采用多源架构设计，切换不同气象服务提供商",
                 fontSize = 13.sp,
                 color = Color.White.copy(alpha = 0.65f)
             )

@@ -18,7 +18,7 @@ data class ProvinceItem(
 /**
  * 天气数据源抽象规范接口
  *
- * 定义所有天气数据源（如中央气象台、和风天气、Open-Meteo 等）的标准交互协议，
+ * 定义所有天气数据源（如中央气象台、Open-Meteo 等）的标准交互协议，
  * 支撑天气应用的多源切换架构。
  */
 interface WeatherDataSource {
