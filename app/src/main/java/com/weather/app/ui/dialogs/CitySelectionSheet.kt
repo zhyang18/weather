@@ -1,6 +1,6 @@
 package com.weather.app.ui.dialogs
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,16 +21,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -37,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +48,7 @@ import com.weather.app.model.CityInfo
 /**
  * 城市搜索与省市下钻选择底部面板组件
  *
+ * 采用与定位设置弹框一致的 90% 不透明磨砂深灰蓝底色与暗色半透明质感，
  * 提供快速输入检索、自动定位当前位置、热门城市快捷气泡以及全国 34 个省市分级浏览选择。
  *
  * @param searchQuery 当前搜索关键字
@@ -95,50 +98,89 @@ fun CitySelectionSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = Color(0xF2182230), // 95% 磨砂深灰蓝底色
+        scrimColor = Color.Transparent,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color.White.copy(alpha = 0.35f)
+            )
+        }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
-                .padding(horizontal = 20.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 4.dp)
         ) {
-            // 标题栏
+            // 1. 弹窗头部标题与副标题
             Text(
                 text = "城市管理与选择",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Normal,
-                color = MaterialTheme.colorScheme.onSurface
+                color = Color.White
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // 搜索输入框
+            Text(
+                text = "搜索添加城市或按省份浏览全国各行政区划",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.65f)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 2. 搜索输入框 (适配暗色半透明质感)
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchQueryChanged,
-                placeholder = { Text("输入城市/区县名 (如：海淀、朝阳、江宁)") },
+                placeholder = {
+                    Text(
+                        text = "输入城市/区县名 (如：海淀、朝阳)",
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.45f)
+                    )
+                },
                 leadingIcon = {
-                    Icon(imageVector = Icons.Default.Search, contentDescription = "搜索")
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "搜索",
+                        tint = Color.White.copy(alpha = 0.65f)
+                    )
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { onSearchQueryChanged("") }) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "清空")
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "清空",
+                                tint = Color.White.copy(alpha = 0.75f)
+                            )
                         }
                     }
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = Color(0x20FFFFFF),
+                    unfocusedContainerColor = Color(0x14FFFFFF),
+                    cursorColor = Color(0xFF60A5FA),
+                    focusedBorderColor = Color(0xFF60A5FA).copy(alpha = 0.6f),
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.08f)
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 自动定位当前位置按钮
+            // 3. 自动定位当前位置按钮
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
+                color = Color(0x252563EB),
+                border = BorderStroke(0.6.dp, Color(0xFF60A5FA).copy(alpha = 0.4f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
@@ -152,20 +194,20 @@ fun CitySelectionSheet(
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = Color.White
                         )
                     } else {
                         Icon(
                             imageVector = Icons.Default.MyLocation,
                             contentDescription = "定位",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            tint = Color(0xFF93C5FD),
                             modifier = Modifier.size(20.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = if (isLocating) "正在自动定位当前位置..." else "自动定位当前城市 (GPS/网络)",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        color = Color.White,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Normal
                     )
@@ -174,23 +216,27 @@ fun CitySelectionSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 搜索状态展示
+            // 4. 搜索结果或热门城市与省市列表
             if (searchQuery.isNotEmpty()) {
                 Text(
                     text = "搜索结果",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.70f)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (isSearching) {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = Color.White)
                     }
                 } else if (searchResults.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text(text = "未找到相关城市，请尝试搜索其他关键字", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "未找到相关城市，请尝试搜索其他关键字",
+                            color = Color.White.copy(alpha = 0.65f),
+                            fontSize = 14.sp
+                        )
                     }
                 } else {
                     LazyColumn {
@@ -203,9 +249,9 @@ fun CitySelectionSheet(
                 // 热门城市快捷选择气泡
                 Text(
                     text = "热门城市",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.70f)
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -218,7 +264,8 @@ fun CitySelectionSheet(
                     hotCities.forEach { city ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            color = Color(0x18FFFFFF),
+                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { onSelectCity(city) }
@@ -227,7 +274,7 @@ fun CitySelectionSheet(
                                 text = city.name,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
                                 fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.White
                             )
                         }
                     }
@@ -236,17 +283,35 @@ fun CitySelectionSheet(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // 省份与城市列表
-                Text(
-                    text = if (selectedProvinceCode != null) "下辖城市列表 (点击城市加载)" else "全国省份 / 直辖市",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = if (!selectedProvinceCode.isNullOrEmpty()) "下辖城市列表 (点击城市加载)" else "全国省份 / 直辖市",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.70f)
+                    )
+
+                    if (!selectedProvinceCode.isNullOrEmpty()) {
+                        Text(
+                            text = "‹ 返回省份列表",
+                            fontSize = 13.sp,
+                            color = Color(0xFF60A5FA),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { onSelectProvince("") }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    if (selectedProvinceCode != null) {
+                    if (!selectedProvinceCode.isNullOrEmpty()) {
                         items(citiesInProvince) { city ->
                             CityListItem(city = city, onClick = { onSelectCity(city) })
                         }
@@ -270,12 +335,14 @@ fun CitySelectionSheet(
 @Composable
 private fun CityListItem(city: CityInfo, onClick: () -> Unit) {
     Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0x18FFFFFF),
+        border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() },
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -286,13 +353,13 @@ private fun CityListItem(city: CityInfo, onClick: () -> Unit) {
                 text = city.name,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Normal,
-                color = MaterialTheme.colorScheme.onSurface
+                color = Color.White
             )
             if (city.province.isNotEmpty()) {
                 Text(
                     text = city.province,
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color.White.copy(alpha = 0.65f)
                 )
             }
         }
@@ -308,12 +375,14 @@ private fun CityListItem(city: CityInfo, onClick: () -> Unit) {
 @Composable
 private fun ProvinceListItem(province: ProvinceItem, onClick: () -> Unit) {
     Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0x18FFFFFF),
+        border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() },
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -323,13 +392,14 @@ private fun ProvinceListItem(province: ProvinceItem, onClick: () -> Unit) {
             Text(
                 text = province.name,
                 fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurface
+                color = Color.White
             )
             Text(
                 text = "查看城市 ›",
                 fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.primary
+                color = Color(0xFF60A5FA)
             )
         }
     }
 }
+

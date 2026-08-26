@@ -62,7 +62,7 @@ fun LocationSettingsScreen(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xE6182230), // 90% 不透明磨砂深灰蓝底色
+        containerColor = Color(0xF2182230), // 95% 磨砂深灰蓝底色
         scrimColor = Color.Transparent,
         dragHandle = {
             BottomSheetDefaults.DragHandle(

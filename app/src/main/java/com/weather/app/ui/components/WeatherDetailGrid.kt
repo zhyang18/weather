@@ -142,10 +142,10 @@ fun WeatherDetailGrid(
                 }
             }
 
-            // 版本号展示 (取值 versionName)
+            // 版本号展示 (取值 versionName，颜色与数据源自一致)
             Text(
                 text = "版本号 v$versionName",
-                color = Color.White.copy(alpha = 0.50f),
+                color = Color.White.copy(alpha = 0.65f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Normal
             )
@@ -162,7 +162,7 @@ fun WeatherDetailGrid(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "气象观测发布时间：${current.publishTime}",
-                    color = Color.White.copy(alpha = 0.45f),
+                    color = Color.White.copy(alpha = 0.65f),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Normal
                 )
@@ -171,7 +171,7 @@ fun WeatherDetailGrid(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = lastUpdatedText,
-                    color = Color.White.copy(alpha = 0.45f),
+                    color = Color.White.copy(alpha = 0.65f),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Normal
                 )

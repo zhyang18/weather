@@ -106,6 +106,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     val uiState: StateFlow<WeatherUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var autoRefreshJob: Job? = null
 
     init {
         val activeSource = repository.getActiveDataSource().getSourceInfo()
@@ -142,6 +143,9 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
         // 注册/更新后台省电定时自动更新任务 (WorkManager)
         com.weather.app.worker.WeatherAutoUpdateScheduler.scheduleAutoUpdate(application, intervalMinutes)
+
+        // 启动前台定时自动刷新检查轮询
+        startAutoRefreshLoop()
 
         // 启动时自动定位并预加载城市天气
         autoLocateAndPreload()
@@ -382,11 +386,15 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 加载选定省份下属城市列表
+     * 加载选定省份下属城市列表；若传入 null 或空字符串则清空选中状态并返回全国省份列表
      *
-     * @param provinceCode 省份代码
+     * @param provinceCode 省份代码，传入 null 或空字符串时重置回省份列表
      */
-    fun loadCitiesForProvince(provinceCode: String) {
+    fun loadCitiesForProvince(provinceCode: String?) {
+        if (provinceCode.isNullOrEmpty()) {
+            _uiState.update { it.copy(selectedProvinceCode = null, citiesInProvince = emptyList()) }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProvinceCode = provinceCode) }
             val result = repository.getCitiesInProvince(provinceCode)
@@ -414,7 +422,14 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      * @param show 是否显示弹窗
      */
     fun setShowAddCityDialog(show: Boolean) {
-        _uiState.update { it.copy(showAddCityDialog = show) }
+        _uiState.update {
+            it.copy(
+                showAddCityDialog = show,
+                selectedProvinceCode = if (!show) null else it.selectedProvinceCode,
+                searchQuery = if (!show) "" else it.searchQuery,
+                searchResults = if (!show) emptyList() else it.searchResults
+            )
+        }
         if (show && _uiState.value.provinces.isEmpty()) {
             loadProvinces()
         }
@@ -439,12 +454,12 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 切换定位展示模式（地标/乡镇/街道 或 附近区县）并持久化保存，同时即时重新解析定位城市名称
+     * 切换定位展示模式（地标/乡镇/街道 或 附近区县）并持久化保存，同时即时重新解析定位城市名称并关闭设置弹窗
      *
      * @param mode 定位展示模式枚举 [com.weather.app.model.LocationDisplayMode]
      */
     fun setLocationDisplayMode(mode: com.weather.app.model.LocationDisplayMode) {
-        _uiState.update { it.copy(locationDisplayMode = mode) }
+        _uiState.update { it.copy(locationDisplayMode = mode, showLocationSettings = false) }
         viewModelScope.launch {
             val updatedCities = repository.updateLocationDisplayMode(mode)
             _uiState.update { it.copy(savedCities = updatedCities) }
@@ -482,7 +497,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 设置并持久化新的自动更新间隔时间（分钟），同时更新后台 WorkManager 省电调度任务
+     * 设置并持久化新的自动更新间隔时间（分钟），同时重启前台轮询、立即检查是否过期并更新后台 WorkManager 调度
      *
      * @param minutes 更新间隔分钟数（0 为无/关闭，30、60、120、360、720、1440）
      */
@@ -495,6 +510,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 showIntervalDialog = false
             )
         }
+        // 1. 重新启动前台定时检查协程
+        startAutoRefreshLoop()
+        // 2. 若当前天气数据已超过新的间隔要求，立即静默自动拉取最新天气
+        checkAndAutoRefresh()
+        // 3. 更新后台 WorkManager 调度任务
         com.weather.app.worker.WeatherAutoUpdateScheduler.scheduleAutoUpdate(getApplication(), minutes)
     }
 
@@ -505,6 +525,97 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      */
     fun setAutoUpdateInterval(hours: Int) {
         setAutoUpdateIntervalMinutes(hours * 60)
+    }
+
+    /**
+     * 启动前台定时自动刷新检查轮询协程
+     *
+     * 根据用户配置的 [autoUpdateIntervalMinutes] 定期轮询检查当前数据是否已过期。
+     * 采用轻量高效的休眠唤醒机制，并在数据超出设定间隔时自动触发静默刷新。
+     */
+    private fun startAutoRefreshLoop() {
+        autoRefreshJob?.cancel()
+        val intervalMinutes = _uiState.value.autoUpdateIntervalMinutes
+        if (intervalMinutes <= 0) return
+
+        autoRefreshJob = viewModelScope.launch {
+            while (true) {
+                delay(15_000L) // 每 15 秒轻量检查一次是否超时
+                checkAndAutoRefresh()
+            }
+        }
+    }
+
+    /**
+     * 检查当前已保存城市天气是否已超出设定的自动更新间隔，并在超时时执行静默刷新
+     *
+     * @param force 是否强制立即刷新所有城市
+     */
+    fun checkAndAutoRefresh(force: Boolean = false) {
+        val intervalMinutes = _uiState.value.autoUpdateIntervalMinutes
+        if (intervalMinutes <= 0 && !force) return
+
+        val intervalMillis = intervalMinutes * 60 * 1000L
+        val now = System.currentTimeMillis()
+        val currentWeather = _uiState.value.getCurrentWeather()
+
+        val isExpired = force || currentWeather == null || (now - currentWeather.updateTimestamp >= intervalMillis)
+
+        if (isExpired) {
+            viewModelScope.launch {
+                refreshAllSavedCitiesSilent()
+            }
+        }
+    }
+
+    /**
+     * 静默刷新所有已保存城市的天气数据（不打扰用户当前操作，后台拉取完毕后平滑更新 UI）
+     */
+    suspend fun refreshAllSavedCitiesSilent() {
+        val cities = _uiState.value.savedCities
+        if (cities.isEmpty()) return
+
+        for (city in cities) {
+            val key = city.code.ifEmpty { city.name }
+            val result = repository.fetchWeather(city)
+            result.onSuccess { data ->
+                repository.saveCachedWeatherData(city, data)
+                val cache = _uiState.value.weatherCache.toMutableMap()
+                cache[key] = data
+                cache[city.name] = data
+                _uiState.update { it.copy(weatherCache = cache) }
+            }
+        }
+    }
+
+    /**
+     * 当应用切回前台 (Activity onResume) 时的生命周期通知
+     *
+     * 同步可能在后台被 WorkManager 更新的离线缓存，并检查是否需要即时自动刷新。
+     */
+    fun onAppResume() {
+        // 1. 同步磁盘中可能已被后台 Worker 更新的最新快照
+        val savedCities = _uiState.value.savedCities
+        val updatedCache = _uiState.value.weatherCache.toMutableMap()
+        var hasNewData = false
+        savedCities.forEach { city ->
+            val cached = repository.getCachedWeatherData(city)
+            val key = city.code.ifEmpty { city.name }
+            val currentMem = updatedCache[key]
+            if (cached != null && (currentMem == null || cached.updateTimestamp > currentMem.updateTimestamp)) {
+                updatedCache[key] = cached
+                updatedCache[city.name] = cached
+                hasNewData = true
+            }
+        }
+        if (hasNewData) {
+            _uiState.update { it.copy(weatherCache = updatedCache) }
+        }
+
+        // 2. 检查是否达到更新间隔需要自动刷新
+        checkAndAutoRefresh()
+        // 3. 确保前台定时器处于激活状态
+        startAutoRefreshLoop()
     }
 
     /**

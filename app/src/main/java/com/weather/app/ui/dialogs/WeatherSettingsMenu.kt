@@ -100,7 +100,7 @@ fun WeatherSettingsMenu(
         ) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0xE6182230), // 90% 不透明磨砂深灰蓝背景
+                color = Color(0xF2182230), // 95% 磨砂深灰蓝背景
                 shadowElevation = 14.dp,
                 border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.15f)),
                 modifier = Modifier

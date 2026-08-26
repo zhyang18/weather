@@ -63,6 +63,16 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Activity 恢复可见生命周期回调
+     *
+     * 触发 ViewModel 同步后台离线天气快照缓存，并检查是否超出设定的更新间隔触发自动刷新。
+     */
+    override fun onResume() {
+        super.onResume()
+        weatherViewModel.onAppResume()
+    }
+
+    /**
      * 检查并请求定位权限
      */
     private fun checkAndRequestLocationPermission() {

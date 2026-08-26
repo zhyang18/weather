@@ -68,8 +68,8 @@ object WeatherAutoUpdateScheduler {
     /**
      * 调度或更新后台自动刷新任务
      *
-     * 配置严格的省电与网络可用性约束条件（必须具备网络连接且电池非极低电量），
-     * 使用 [ExistingPeriodicWorkPolicy.UPDATE] 确保全局单一定时任务，不重复占用系统资源。
+     * 配置省电与网络可用性约束条件（必须具备网络连接），
+     * 使用 [ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE] 确保更新间隔后能够干净地重新排期调度。
      *
      * @param context Android 上下文
      * @param intervalMinutes 自动更新时间间隔（分钟数，0 为无/取消，30, 60, 120, 360, 720, 1440）
@@ -85,7 +85,6 @@ object WeatherAutoUpdateScheduler {
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
             .build()
 
         val periodicWorkRequest = PeriodicWorkRequestBuilder<WeatherAutoUpdateWorker>(
@@ -96,7 +95,7 @@ object WeatherAutoUpdateScheduler {
 
         workManager.enqueueUniquePeriodicWork(
             UNIQUE_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
+            ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
             periodicWorkRequest
         )
     }
@@ -120,3 +119,4 @@ object WeatherAutoUpdateScheduler {
         WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
     }
 }
+

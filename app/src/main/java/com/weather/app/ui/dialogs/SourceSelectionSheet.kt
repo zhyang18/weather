@@ -59,7 +59,7 @@ fun SourceSelectionSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xE6182230), // 90% 不透明磨砂深灰蓝底色
+        containerColor = Color(0xF2182230), // 95% 磨砂深灰蓝底色
         scrimColor = Color.Transparent,
         dragHandle = {
             BottomSheetDefaults.DragHandle(
@@ -135,7 +135,7 @@ fun SourceSelectionSheet(
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            text = "官方默认",
+                                            text = "默认",
                                             color = Color.White,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Normal
