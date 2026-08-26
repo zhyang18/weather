@@ -63,23 +63,23 @@ fun MinutelyPrecipitationCard(
         return
     }
 
-    // 100% 依据真实数据动态计算预测文案
+    // 100% 依据真实数据动态计算精简预测文案（短促紧凑，单行显示）
     val rainNoticeText = remember(currentRain, upcomingRainMax, current.weatherText, upcomingHourly) {
         when {
             currentRain >= 5.0 -> {
                 val nextStopHour = upcomingHourly.firstOrNull { it.rain == 0.0 }?.getDisplayHour()
                 if (nextStopHour != null) {
-                    "当前降水实况：大雨（降水量 ${currentRain} mm），预计【$nextStopHour】前后雨势逐渐减弱"
+                    "大雨（${currentRain}mm），预计 $nextStopHour 减弱"
                 } else {
-                    "当前降水实况：大雨（降水量 ${currentRain} mm），近期雨势较强，请注意出行安全"
+                    "大雨（${currentRain}mm），近期雨势较强"
                 }
             }
             currentRain > 0.0 -> {
                 val nextStopHour = upcomingHourly.firstOrNull { it.rain == 0.0 }?.getDisplayHour()
                 if (nextStopHour != null) {
-                    "当前降水实况：正在降雨（降水量 ${currentRain} mm），预计【$nextStopHour】前后逐渐停歇"
+                    "降雨中（${currentRain}mm），预计 $nextStopHour 停歇"
                 } else {
-                    "当前降水实况：正在降雨（降水量 ${currentRain} mm），出行请携带雨具"
+                    "降雨中（${currentRain}mm），请带雨具"
                 }
             }
             upcomingRainMax > 0.0 -> {
@@ -91,9 +91,9 @@ fun MinutelyPrecipitationCard(
                     rainAmount >= 2.5 -> "中雨"
                     else -> "小雨"
                 }
-                "气象预报：预计【$hourText】前后将转为${level}（降水量约 ${rainAmount} mm）"
+                "预计 $hourText 转$level（约 ${rainAmount}mm）"
             }
-            else -> "气象实况：当前有零星弱降水记录"
+            else -> "当前有零星弱降水"
         }
     }
 
@@ -146,7 +146,7 @@ fun MinutelyPrecipitationCard(
         Text(
             text = rainNoticeText,
             color = Color.White.copy(alpha = 0.95f),
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Normal,
             maxLines = 1,
             modifier = Modifier.basicMarquee()

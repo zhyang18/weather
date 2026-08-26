@@ -51,23 +51,21 @@ fun HourlyForecastCard(
     val current = weatherData.current
     val hourlyList = weatherData.hourlyForecasts
 
-    // 基于真实数据动态合成智能天气提示文本
+    // 基于真实数据动态合成精简智能天气提示文本（短促紧凑，单行显示）
     val summaryNotice = buildString {
-        append("当前${current.weatherText}")
-
         val firstRainHour = hourlyList.take(6).firstOrNull { it.rain > 0.0 }
         if (firstRainHour != null) {
             val hourDisplay = firstRainHour.getDisplayHour()
-            append("，预计【$hourDisplay】前后有降水（${firstRainHour.rain} mm），出行请带伞。")
+            append("当前${current.weatherText}，预计 $hourDisplay 有降水（${firstRainHour.rain}mm）")
         } else {
             val futureRainDay = weatherData.dailyForecasts.drop(1).take(4).firstOrNull {
                 it.dayWeatherText.contains("雨") || it.nightWeatherText.contains("雨")
             }
             if (futureRainDay != null) {
-                append("，预计【${futureRainDay.dayOfWeek}】将有降雨过程。")
+                append("当前${current.weatherText}，预计${futureRainDay.dayOfWeek}有降雨")
             } else {
                 val feels = current.feelsLike?.toInt() ?: current.temperature.toInt()
-                append("，今日体感温度约 ${feels}°，整体气象条件适宜出行。")
+                append("当前${current.weatherText}，体感 ${feels}°，适宜出行")
             }
         }
     }
