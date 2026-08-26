@@ -1,6 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -22,22 +31,20 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("app.jks")
-            storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as String?
-                ?: project.findProperty("KEYSTORE_PASSWORD") as String?
+            val keystorePath = localProperties.getProperty("RELEASE_KEYSTORE_PATH") ?: "app.jks"
+            storeFile = file(keystorePath)
+            storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                ?: project.findProperty("RELEASE_STORE_PASSWORD") as String?
                 ?: System.getenv("RELEASE_STORE_PASSWORD")
-                ?: System.getenv("KEYSTORE_PASSWORD")
-                ?: "123456"
-            keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as String?
-                ?: project.findProperty("KEY_ALIAS") as String?
+                ?: ""
+            keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+                ?: project.findProperty("RELEASE_KEY_ALIAS") as String?
                 ?: System.getenv("RELEASE_KEY_ALIAS")
-                ?: System.getenv("KEY_ALIAS")
-                ?: "key0"
-            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as String?
-                ?: project.findProperty("KEY_PASSWORD") as String?
+                ?: ""
+            keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+                ?: project.findProperty("RELEASE_KEY_PASSWORD") as String?
                 ?: System.getenv("RELEASE_KEY_PASSWORD")
-                ?: System.getenv("KEY_PASSWORD")
-                ?: "123456"
+                ?: ""
         }
     }
 
