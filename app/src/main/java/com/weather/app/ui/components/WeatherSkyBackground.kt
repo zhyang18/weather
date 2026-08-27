@@ -22,6 +22,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -382,6 +386,14 @@ fun WeatherSkyBackground(
             )
         }
 
+        // OpenGL ES 2.0 纯代码 3D 真实月球渲染器
+        val lunarRenderer = remember { LunarOpenGlRenderer() }
+        DisposableEffect(Unit) {
+            onDispose {
+                lunarRenderer.release()
+            }
+        }
+
         // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，伴随由近到远镜头加载展开)
         Canvas(
             modifier = Modifier
@@ -405,7 +417,7 @@ fun WeatherSkyBackground(
                 val moonCenter = calculateMoonCenter(width, height, moonProgress)
                 drawNightStars(starParticles, mediumProgress)
                 drawShootingStars(width, height, mediumProgress)
-                drawGlowingMoon(width, height, moonCenter, slowProgress, moonPhase)
+                drawGlowingMoon(width, height, moonCenter, slowProgress, moonPhase, lunarRenderer)
             }
 
             // 白昼渲染太阳、丁达尔圣光与浮游光尘（太阳出现时机由城市实际日出日落时间平缓决定）
@@ -1526,31 +1538,29 @@ private data class LunarMountainRidge(
 )
 
 /**
- * 绘制天文摄影级超真实三维月球表面球体系统 (100% 纯代码 Canvas 高清物理与真实月相渲染引擎)
+ * 绘制沉浸式 3D 真实月球与物理光影系统
  *
- * 采用全数学几何与物理光影算法，依据真实日期实时计算月相盈亏形态（新月/峨眉月/上弦月/凸月/满月/残月）：
- * 1. 真实月相驱动：基于朔望周期（29.530588853 天）精确计算晨昏线与照亮比例；
- * 2. 高对比度双层星球系统：暗面呈现通透真实的地球照（Earthshine），亮面呈现高反照率天然矿物月貌；
- * 3. 广域深邃月晕与近月冕漫射：随月相照亮比例（Illumination Fraction）物理联动缩放；
- * 4. 紧贴月盘外边缘的光学接触漫射 (Subtle Contact Rim Bloom)：消除生硬剪纸描边，实现自然光学交融；
- * 5. 真实天然月表矿物色调：基底采用天然斜长岩珍珠白与象牙银灰交织，月海呈现深邃炭灰与石板青灰；
- * 6. 真实正射球面透视地貌（月海系统）：危海、雨海与虹湾、亚平宁山脉、澄海与静海等；
- * 7. 80+ 微观月壤撞击坑颗粒群与第谷 10 向跨半球辐射纹系；
- * 8. 精细物理三维球体曲率与柔和边缘减光（Soft Physically-accurate Limb Darkening）；
- * 9. 伴月璀璨行星与微型十字星芒：随月华呼吸动态微闪。
+ * 包含：
+ * 1. 最外层广阔深空柔和月华漫射 (Deep Sky Atmospheric Lunar Glow)
+ * 2. 近月轮清辉光晕 (Inner Corona Halo)
+ * 3. 紧贴月盘外边缘的光学接触漫射 (Subtle Contact Rim Glow)
+ * 4. 纯代码 OpenGL ES 2.0 程序化渲染的 3D 真实月球表面（完全无图片依赖，GPU 实时计算）
+ * 5. 伴月璀璨行星与微型十字星芒
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
  * @param moonCenter 明月实时屏幕坐标 [Offset]
  * @param pulseProgress 月华呼吸动画相位 (0f ~ 1f)
  * @param moonPhase 基于真实日期的归一化月相周期 (0.0f ~ 1.0f)
+ * @param lunarRenderer OpenGL ES 2.0 纯代码 3D 月球渲染器
  */
 private fun DrawScope.drawGlowingMoon(
     width: Float,
     height: Float,
     moonCenter: Offset,
     pulseProgress: Float,
-    moonPhase: Float
+    moonPhase: Float,
+    lunarRenderer: LunarOpenGlRenderer? = null
 ) {
     val moonRadius = width * 0.076f // 清晰精致的真实月球盘面半径（约 30dp ~ 32dp）
     val phase = (moonPhase % 1f + 1f) % 1f
@@ -1605,7 +1615,7 @@ private fun DrawScope.drawGlowingMoon(
         radius = moonRadius * 1.10f
     )
 
-    // 4. 绘制月球完整三维球体 (在全圆盘内自然渲染连贯的月球地貌与柔和物理光影)
+    // 4. 绘制月球完整三维球体 (在全圆盘内渲染由 OpenGL ES 2.0 着色器纯代码计算的超逼真 3D 月球表面)
     val moonClipPath = Path().apply {
         addOval(
             Rect(
@@ -1616,378 +1626,24 @@ private fun DrawScope.drawGlowingMoon(
     }
 
     clipPath(moonClipPath) {
-        // 4.1 真实三维月球高地基础层 (天然斜长岩高反照矿物色调：温润珍珠白 -> 象牙银灰 -> 边缘自然灰)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0.0f to Color(0xFFF8F7F4), // 中心纯净透亮（对日反照增强）
-                    0.40f to Color(0xFFE9E6DE), // 高地主体象牙银灰
-                    0.72f to Color(0xFFCDC9BE), // 高地过渡区
-                    0.90f to Color(0xFFB0AAA0), // 近边缘微暗
-                    1.0f to Color(0xFF948F85)   // 极边缘自然收敛
+        // 4.1 绘制由 OpenGL ES 2.0 纯代码程序化渲染的高精度 3D 真实月球面（完全无图片依赖，GPU 实时着色）
+        val moonImage = lunarRenderer?.renderMoon(sizePx = 512)
+        if (moonImage != null) {
+            drawImage(
+                image = moonImage,
+                dstOffset = IntOffset(
+                    (moonCenter.x - moonRadius).toInt(),
+                    (moonCenter.y - moonRadius).toInt()
                 ),
-                center = Offset(moonCenter.x + moonRadius * 0.06f, moonCenter.y - moonRadius * 0.06f),
-                radius = moonRadius * 1.15f
-            ),
-            center = moonCenter,
-            radius = moonRadius
-        )
-
-        // 4.2 古老高地斑驳反照率亮块 (Highland Albedo Geological Patches)
-        val highlandPatches = listOf(
-            LunarHighlandPatch(relX = -0.06f, relY = 0.52f, radiusFactor = 0.40f, alpha = 0.45f), // 南方第谷古老高地群
-            LunarHighlandPatch(relX = 0.36f, relY = 0.42f, radiusFactor = 0.30f, alpha = 0.35f),  // 东南高地区
-            LunarHighlandPatch(relX = -0.46f, relY = -0.42f, radiusFactor = 0.28f, alpha = 0.32f), // 西北高地区
-            LunarHighlandPatch(relX = 0.50f, relY = -0.44f, radiusFactor = 0.26f, alpha = 0.38f), // 东北高地区
-            LunarHighlandPatch(relX = -0.04f, relY = 0.16f, radiusFactor = 0.24f, alpha = 0.30f)  // 中央高地明亮陆块
-        )
-
-        highlandPatches.forEach { patch ->
-            val patchCenter = Offset(moonCenter.x + moonRadius * patch.relX, moonCenter.y + moonRadius * patch.relY)
-            val patchRadius = moonRadius * patch.radiusFactor
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color(0xFFFFFFFF).copy(alpha = patch.alpha),
-                        0.55f to Color(0xFFF2EFE8).copy(alpha = patch.alpha * 0.60f),
-                        1.0f to Color.Transparent
-                    ),
-                    center = patchCenter,
-                    radius = patchRadius
+                dstSize = IntSize(
+                    (moonRadius * 2f).toInt(),
+                    (moonRadius * 2f).toInt()
                 ),
-                center = patchCenter,
-                radius = patchRadius
+                filterQuality = FilterQuality.High
             )
         }
 
-        // 4.3 真实肉眼月海系统（正射球面透视形态与深沉玄武岩平原）
-        val lunarMariaList = listOf(
-            // 雨海 (Mare Imbrium) - 西北部大圆盆玄武岩海
-            LunarMariaRegion(relX = -0.22f, relY = -0.26f, radiusXFactor = 0.29f, radiusYFactor = 0.27f, alpha = 0.78f, rotationDeg = -10f),
-            LunarMariaRegion(relX = -0.18f, relY = -0.22f, radiusXFactor = 0.20f, radiusYFactor = 0.19f, alpha = 0.85f, rotationDeg = -10f),
-            // 虹湾 (Sinus Iridum) - 雨海西北突出之优美半弧湾
-            LunarMariaRegion(relX = -0.32f, relY = -0.44f, radiusXFactor = 0.11f, radiusYFactor = 0.08f, alpha = 0.80f, rotationDeg = 35f),
-            // 柏拉图环形山 (Plato) - 雨海北缘深黑熔岩平底坑
-            LunarMariaRegion(relX = -0.10f, relY = -0.48f, radiusXFactor = 0.055f, radiusYFactor = 0.040f, alpha = 0.90f, rotationDeg = 0f),
-
-            // 风暴洋 (Oceanus Procellarum) - 西侧广袤起伏玄武岩暗区
-            LunarMariaRegion(relX = -0.48f, relY = -0.06f, radiusXFactor = 0.22f, radiusYFactor = 0.32f, alpha = 0.72f, rotationDeg = 15f),
-            LunarMariaRegion(relX = -0.42f, relY = 0.14f, radiusXFactor = 0.24f, radiusYFactor = 0.26f, alpha = 0.68f, rotationDeg = -5f),
-            LunarMariaRegion(relX = -0.55f, relY = 0.02f, radiusXFactor = 0.16f, radiusYFactor = 0.22f, alpha = 0.65f, rotationDeg = 10f),
-
-            // 澄海 (Mare Serenitatis) - 东北偏北圆润深邃暗盆
-            LunarMariaRegion(relX = 0.18f, relY = -0.30f, radiusXFactor = 0.22f, radiusYFactor = 0.20f, alpha = 0.76f, rotationDeg = 5f),
-            LunarMariaRegion(relX = 0.18f, relY = -0.30f, radiusXFactor = 0.14f, radiusYFactor = 0.13f, alpha = 0.82f, rotationDeg = 5f),
-
-            // 静海 (Mare Tranquillitatis) - 东北部与澄海相连的钛铁矿深色大暗海
-            LunarMariaRegion(relX = 0.36f, relY = -0.12f, radiusXFactor = 0.25f, radiusYFactor = 0.23f, alpha = 0.76f, rotationDeg = -15f),
-            LunarMariaRegion(relX = 0.34f, relY = -0.09f, radiusXFactor = 0.17f, radiusYFactor = 0.15f, alpha = 0.82f, rotationDeg = -15f),
-
-            // 丰富海 (Mare Fecunditatis) 与 神海 (Mare Nectaris) - 东南侧暗海
-            LunarMariaRegion(relX = 0.46f, relY = 0.12f, radiusXFactor = 0.19f, radiusYFactor = 0.23f, alpha = 0.70f, rotationDeg = 20f),
-            LunarMariaRegion(relX = 0.28f, relY = 0.24f, radiusXFactor = 0.15f, radiusYFactor = 0.15f, alpha = 0.68f, rotationDeg = 0f),
-
-            // 危海 (Mare Crisium) - 极东边缘独立且因正射球面透视压缩呈清晰直立椭圆深黑盆地
-            LunarMariaRegion(relX = 0.62f, relY = -0.22f, radiusXFactor = 0.095f, radiusYFactor = 0.165f, alpha = 0.88f, rotationDeg = -5f),
-
-            // 云海与湿海 (Mare Nubium & Humorum) - 西南部圆盆暗海
-            LunarMariaRegion(relX = -0.25f, relY = 0.26f, radiusXFactor = 0.21f, radiusYFactor = 0.19f, alpha = 0.72f, rotationDeg = -10f),
-            LunarMariaRegion(relX = -0.46f, relY = 0.32f, radiusXFactor = 0.14f, radiusYFactor = 0.14f, alpha = 0.68f, rotationDeg = 0f),
-
-            // 汽海与中央湾 (Sinus Medii) - 盘面中心细窄暗纹
-            LunarMariaRegion(relX = 0.02f, relY = -0.04f, radiusXFactor = 0.15f, radiusYFactor = 0.11f, alpha = 0.70f, rotationDeg = 0f),
-
-            // 冷海 (Mare Frigoris) - 北部沿纬度弧线弯曲的狭长暗弧带
-            LunarMariaRegion(relX = -0.04f, relY = -0.55f, radiusXFactor = 0.29f, radiusYFactor = 0.09f, alpha = 0.68f, rotationDeg = -4f),
-            LunarMariaRegion(relX = 0.26f, relY = -0.50f, radiusXFactor = 0.21f, radiusYFactor = 0.08f, alpha = 0.64f, rotationDeg = -12f)
-        )
-
-        // 绘制月海区域（深沉玄武岩矿物色彩：深炭灰 -> 石板灰 -> 自然过渡）
-        lunarMariaList.forEach { spot ->
-            val spotCenterX = moonCenter.x + moonRadius * spot.relX
-            val spotCenterY = moonCenter.y + moonRadius * spot.relY
-            val rX = moonRadius * spot.radiusXFactor
-            val rY = moonRadius * spot.radiusYFactor
-            val maxR = maxOf(rX, rY)
-
-            if (spot.rotationDeg != 0f) {
-                rotate(degrees = spot.rotationDeg, pivot = Offset(spotCenterX, spotCenterY)) {
-                    drawOval(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color(0xFF1E2127).copy(alpha = spot.alpha),
-                                0.45f to Color(0xFF2E323B).copy(alpha = spot.alpha * 0.94f),
-                                0.76f to Color(0xFF4C525E).copy(alpha = spot.alpha * 0.44f),
-                                1.0f to Color.Transparent
-                            ),
-                            center = Offset(spotCenterX, spotCenterY),
-                            radius = maxR
-                        ),
-                        topLeft = Offset(spotCenterX - rX, spotCenterY - rY),
-                        size = Size(rX * 2f, rY * 2f)
-                    )
-                }
-            } else {
-                drawOval(
-                    brush = Brush.radialGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color(0xFF1E2127).copy(alpha = spot.alpha),
-                            0.45f to Color(0xFF2E323B).copy(alpha = spot.alpha * 0.94f),
-                            0.76f to Color(0xFF4C525E).copy(alpha = spot.alpha * 0.44f),
-                            1.0f to Color.Transparent
-                        ),
-                        center = Offset(spotCenterX, spotCenterY),
-                        radius = maxR
-                    ),
-                    topLeft = Offset(spotCenterX - rX, spotCenterY - rY),
-                    size = Size(rX * 2f, rY * 2f)
-                )
-            }
-        }
-
-        // 4.4 真实高地山脉山脊线（亚平宁山脉 Montes Apenninus / 高加索山脉 Montes Caucasus）
-        val mountainRanges = listOf(
-            // 亚平宁山脉 (Montes Apenninus) - 雨海东南侧一道显赫的银白锯齿弧形山脊
-            LunarMountainRidge(
-                points = listOf(
-                    Offset(-0.03f, -0.06f),
-                    Offset(-0.08f, -0.14f),
-                    Offset(-0.14f, -0.22f),
-                    Offset(-0.20f, -0.28f)
-                ),
-                alpha = 0.85f,
-                strokeWidth = 1.2f
-            ),
-            // 高加索山脉 (Montes Caucasus) - 雨海东北侧山脉
-            LunarMountainRidge(
-                points = listOf(
-                    Offset(-0.02f, -0.25f),
-                    Offset(0.02f, -0.34f),
-                    Offset(0.04f, -0.42f)
-                ),
-                alpha = 0.75f,
-                strokeWidth = 1.0f
-            ),
-            // 喀尔巴阡山脉 (Montes Carpatus) - 雨海南缘山脉
-            LunarMountainRidge(
-                points = listOf(
-                    Offset(-0.15f, -0.04f),
-                    Offset(-0.28f, -0.02f),
-                    Offset(-0.38f, 0.01f)
-                ),
-                alpha = 0.70f,
-                strokeWidth = 1.0f
-            )
-        )
-
-        mountainRanges.forEach { ridge ->
-            val path = Path().apply {
-                val p0 = ridge.points.first()
-                moveTo(moonCenter.x + moonRadius * p0.x, moonCenter.y + moonRadius * p0.y)
-                for (i in 1 until ridge.points.size) {
-                    val p = ridge.points[i]
-                    lineTo(moonCenter.x + moonRadius * p.x, moonCenter.y + moonRadius * p.y)
-                }
-            }
-            drawPath(
-                path = path,
-                color = Color(0xFFFFFFFF).copy(alpha = ridge.alpha),
-                style = Stroke(width = ridge.strokeWidth, cap = StrokeCap.Round)
-            )
-        }
-
-        // 4.5 真实月壤微观撞击坑与颗粒质感点群（80+ 微型地貌特征，消除人工矢量平滑感）
-        val microFeatures = listOf(
-            // 南方高地密集的古老撞击坑群 (Southern Highlands Crater Dense Zone)
-            LunarMicroFeature(-0.02f, 0.35f, 0.026f, isDark = true, alpha = 0.60f),
-            LunarMicroFeature(0.12f, 0.42f, 0.030f, isDark = true, alpha = 0.55f),
-            LunarMicroFeature(-0.20f, 0.45f, 0.024f, isDark = true, alpha = 0.50f),
-            LunarMicroFeature(0.04f, 0.60f, 0.028f, isDark = false, alpha = 0.85f),
-            LunarMicroFeature(-0.16f, 0.65f, 0.022f, isDark = false, alpha = 0.80f),
-            LunarMicroFeature(0.26f, 0.55f, 0.025f, isDark = true, alpha = 0.50f),
-            LunarMicroFeature(-0.30f, 0.52f, 0.020f, isDark = false, alpha = 0.75f),
-            LunarMicroFeature(0.18f, 0.32f, 0.018f, isDark = false, alpha = 0.70f),
-            LunarMicroFeature(-0.08f, 0.28f, 0.022f, isDark = true, alpha = 0.55f),
-            LunarMicroFeature(0.32f, 0.35f, 0.025f, isDark = true, alpha = 0.60f),
-
-            // 静海与澄海周边微小坑洼
-            LunarMicroFeature(0.24f, -0.18f, 0.018f, isDark = false, alpha = 0.75f), // 普林尼坑
-            LunarMicroFeature(0.12f, -0.15f, 0.020f, isDark = true, alpha = 0.65f),  // 曼尼里乌斯坑
-            LunarMicroFeature(0.42f, -0.28f, 0.016f, isDark = false, alpha = 0.80f), // 塔伦提乌斯坑
-            LunarMicroFeature(0.50f, -0.05f, 0.022f, isDark = true, alpha = 0.55f),
-
-            // 风暴洋与雨海内部微小环形山
-            LunarMicroFeature(-0.32f, -0.18f, 0.018f, isDark = false, alpha = 0.85f), // 开普勒次级坑
-            LunarMicroFeature(-0.15f, -0.38f, 0.022f, isDark = true, alpha = 0.65f),  // 阿基米德坑
-            LunarMicroFeature(-0.25f, -0.35f, 0.018f, isDark = true, alpha = 0.60f),  // 奥托里库斯坑
-            LunarMicroFeature(-0.52f, -0.20f, 0.015f, isDark = false, alpha = 0.80f), // 塞琉古坑
-            LunarMicroFeature(-0.35f, 0.02f, 0.016f, isDark = false, alpha = 0.70f),
-            LunarMicroFeature(-0.18f, 0.12f, 0.018f, isDark = true, alpha = 0.55f),   // 弗拉·毛罗坑
-
-            // 东部与危海周边高反照微斑
-            LunarMicroFeature(0.58f, -0.10f, 0.015f, isDark = false, alpha = 0.85f),
-            LunarMicroFeature(0.68f, -0.35f, 0.020f, isDark = true, alpha = 0.60f),
-            LunarMicroFeature(0.52f, 0.28f, 0.022f, isDark = false, alpha = 0.75f),  // 佩塔维乌斯坑
-            LunarMicroFeature(0.42f, 0.40f, 0.020f, isDark = true, alpha = 0.65f),
-
-            // 北极与冷海周边微颗粒
-            LunarMicroFeature(-0.28f, -0.58f, 0.016f, isDark = false, alpha = 0.70f),
-            LunarMicroFeature(0.10f, -0.58f, 0.018f, isDark = true, alpha = 0.55f),
-            LunarMicroFeature(0.38f, -0.52f, 0.015f, isDark = false, alpha = 0.75f)
-        )
-
-        microFeatures.forEach { feat ->
-            val featPos = Offset(moonCenter.x + moonRadius * feat.relX, moonCenter.y + moonRadius * feat.relY)
-            val featRadius = moonRadius * feat.radiusFactor
-
-            if (feat.isDark) {
-                // 微型暗坑（玄武岩小坑洼，带微小立体亮边）
-                drawCircle(
-                    color = Color(0xFF1B1E24).copy(alpha = feat.alpha),
-                    radius = featRadius,
-                    center = featPos
-                )
-                drawCircle(
-                    color = Color(0xFFFFFFFF).copy(alpha = feat.alpha * 0.45f),
-                    radius = featRadius * 1.15f,
-                    center = Offset(featPos.x - 0.4f, featPos.y - 0.4f),
-                    style = Stroke(width = 0.6f)
-                )
-            } else {
-                // 微型高亮反照微坑（小亮点与微晕）
-                drawCircle(
-                    color = Color(0xFFFFFFFF).copy(alpha = feat.alpha),
-                    radius = featRadius * 0.75f,
-                    center = featPos
-                )
-                drawCircle(
-                    color = Color(0xFFEDE9DF).copy(alpha = feat.alpha * 0.40f),
-                    radius = featRadius * 1.4f,
-                    center = featPos
-                )
-            }
-        }
-
-        // 4.6 真实肉眼标志性辐射纹系 (Tycho Crater Lunar Ray System)
-        // 第谷辐射纹由南纬 43° 沿球面大圆弧向北半球雨海、澄海、静海穿插扩散
-        val tychoRays = listOf(
-            // 射线贯穿云海直达雨海西北部
-            LunarRayLine(Offset(-0.08f, 0.48f), Offset(-0.24f, 0.02f), 0.75f, 1.4f),
-            // 射线往西北延伸穿过湿海
-            LunarRayLine(Offset(-0.08f, 0.48f), Offset(-0.44f, 0.20f), 0.65f, 1.2f),
-            // 射线往东北延伸穿过静海西缘
-            LunarRayLine(Offset(-0.08f, 0.48f), Offset(0.19f, 0.00f), 0.70f, 1.3f),
-            // 射线往东延伸穿过丰富海
-            LunarRayLine(Offset(-0.08f, 0.48f), Offset(0.40f, 0.26f), 0.60f, 1.1f),
-            // 射线往西南高地延伸
-            LunarRayLine(Offset(-0.08f, 0.48f), Offset(-0.36f, 0.60f), 0.62f, 1.2f),
-            // 射线往东南高地延伸
-            LunarRayLine(Offset(-0.08f, 0.48f), Offset(0.24f, 0.70f), 0.58f, 1.1f),
-            // 射线往正北高地直贯盘面中心
-            LunarRayLine(Offset(-0.08f, 0.48f), Offset(-0.03f, -0.16f), 0.68f, 1.2f),
-            // 哥白尼周围特征辐射纹
-            LunarRayLine(Offset(-0.20f, -0.10f), Offset(-0.36f, -0.30f), 0.58f, 1.1f),
-            LunarRayLine(Offset(-0.20f, -0.10f), Offset(-0.02f, -0.24f), 0.54f, 1.0f)
-        )
-
-        tychoRays.forEach { ray ->
-            val rayAlpha = (ray.alpha * (0.85f + pulseProgress * 0.15f)).coerceIn(0f, 1f)
-            val startPoint = Offset(moonCenter.x + moonRadius * ray.startRel.x, moonCenter.y + moonRadius * ray.startRel.y)
-            val endPoint = Offset(moonCenter.x + moonRadius * ray.endRel.x, moonCenter.y + moonRadius * ray.endRel.y)
-
-            drawLine(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFFFFFFFF).copy(alpha = rayAlpha),
-                        Color(0xFFF0ECE3).copy(alpha = rayAlpha * 0.75f),
-                        Color(0xFFCBC6BA).copy(alpha = rayAlpha * 0.20f),
-                        Color.Transparent
-                    ),
-                    start = startPoint,
-                    end = endPoint
-                ),
-                start = startPoint,
-                end = endPoint,
-                strokeWidth = ray.strokeWidth,
-                cap = StrokeCap.Round
-            )
-        }
-
-        // 4.7 标志性著名环形山高清结构 (Craters: Tycho, Copernicus, Kepler, Aristarchus, Proclus, Langrenus)
-        val craterFeatures = listOf(
-            // 第谷 (Tycho) - 南方高地最显赫的高亮大撞击坑与中心峰
-            LunarCraterFeature(relX = -0.08f, relY = 0.48f, rimRadius = 0.082f, coreRadius = 0.030f, alpha = 0.98f),
-            // 哥白尼 (Copernicus) - 雨海南侧壮丽环形山
-            LunarCraterFeature(relX = -0.20f, relY = -0.10f, rimRadius = 0.072f, coreRadius = 0.026f, alpha = 0.92f),
-            // 开普勒 (Kepler) - 风暴洋中明亮辐射坑
-            LunarCraterFeature(relX = -0.38f, relY = -0.08f, rimRadius = 0.052f, coreRadius = 0.020f, alpha = 0.88f),
-            // 阿里斯塔克斯 (Aristarchus) - 全月球最高反照率耀眼极亮点
-            LunarCraterFeature(relX = -0.46f, relY = -0.24f, rimRadius = 0.042f, coreRadius = 0.018f, alpha = 1.00f),
-            // 普罗克洛斯 (Proclus) - 危海西侧清晰高亮反照点
-            LunarCraterFeature(relX = 0.46f, relY = -0.18f, rimRadius = 0.036f, coreRadius = 0.015f, alpha = 0.90f),
-            // 朗格勒努斯 (Langrenus) - 东侧丰富海东缘清晰环形山
-            LunarCraterFeature(relX = 0.62f, relY = 0.10f, rimRadius = 0.040f, coreRadius = 0.016f, alpha = 0.85f)
-        )
-
-        craterFeatures.forEach { crater ->
-            val craterPos = Offset(moonCenter.x + moonRadius * crater.relX, moonCenter.y + moonRadius * crater.relY)
-            val rimPx = moonRadius * crater.rimRadius
-            val corePx = moonRadius * crater.coreRadius
-            val dynamicAlpha = (crater.alpha * (0.90f + pulseProgress * 0.10f)).coerceIn(0f, 1f)
-
-            // 环形山明亮外壁光晕 (Bright Rim Halo)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color(0xFFFFFFFF).copy(alpha = dynamicAlpha * 0.88f),
-                        0.45f to Color(0xFFF2EFE8).copy(alpha = dynamicAlpha * 0.45f),
-                        1.0f to Color.Transparent
-                    ),
-                    center = craterPos,
-                    radius = rimPx
-                ),
-                center = craterPos,
-                radius = rimPx
-            )
-
-            // 环形山内壁深邃阴影微圈（塑造立体撞击坑凹陷深邃感）
-            drawCircle(
-                color = Color(0xFF17191E).copy(alpha = dynamicAlpha * 0.48f),
-                radius = corePx * 1.35f,
-                center = Offset(craterPos.x + 0.5f, craterPos.y + 0.5f),
-                style = Stroke(width = 0.8f)
-            )
-
-            // 环形山中央高反照亮核/中央峰 (Central Peak)
-            drawCircle(
-                color = Color(0xFFFFFFFF).copy(alpha = dynamicAlpha),
-                radius = corePx,
-                center = craterPos
-            )
-        }
-
-        // 4.8 柔和物理三维球体曲率与边缘减光层 (Soft Physically-accurate Limb Darkening)
-        // 依据真实天体视线切角减光物理规律，自然平缓地从内向外过渡，赋予月球真实圆润饱满的 3D 体积感
-        drawCircle(
-            brush = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0.0f to Color.Transparent,
-                    0.72f to Color.Transparent,
-                    0.88f to Color(0x10080E14),
-                    0.96f to Color(0x22050A10),
-                    1.0f to Color(0x3504080D)
-                ),
-                center = moonCenter,
-                radius = moonRadius
-            ),
-            center = moonCenter,
-            radius = moonRadius
-        )
-
-        // 4.9 基于手机系统日期的真实天文学每日高精度连续渐变月相曲面光照引擎 (Continuous Astronomical Shading)
-        // 依据天体几何正交投影规律与 29.530588 天朔望周期，构建半椭圆晨昏线曲面阴影与多层暮光漫射层：
-        // - 盈月期 (Waxing，初一至十五)：太阳在西(右)，【右亮左暗】，弯弯月牙由两极尖锐圆弧优雅勾勒，逐日丰满至十五满月
-        // - 亏月期 (Waning，十六至三十)：太阳在东(左)，【左亮右暗】，从满月优雅收敛为左侧残月弯钩
+        // 4.2 基于手机系统日期的真实天文学每日高精度连续渐变月相曲面光照引擎
         drawLunarPhaseShadow(moonCenter = moonCenter, moonRadius = moonRadius, phase = phase)
     }
 
@@ -2025,6 +1681,8 @@ private fun DrawScope.drawGlowingMoon(
         cap = StrokeCap.Round
     )
 }
+
+
 
 /**
  * 绘制月相晨昏线曲面阴影与高细腻度渐进微偏移暮光漫射层
