@@ -61,7 +61,7 @@ fun HeroWeatherView(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 16.dp, bottom = 24.dp),
+            .padding(top = 50.dp, bottom = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // 1. 巨幅主温度展示：
@@ -82,8 +82,8 @@ fun HeroWeatherView(
             ),
             modifier = Modifier.graphicsLayer {
                 val scroll = scrollOffsetProvider().toFloat()
-                val squeezeThreshold = 220f // 挤压触发阈值（像素）
-                val squeezeDistance = 160f  // 阻尼挤压过渡距离（像素）
+                val squeezeThreshold = 350f // 挤压触发阈值（像素）
+                val squeezeDistance = 360f  // 阻尼挤压过渡距离（像素）
 
                 if (scroll < 0f) {
                     // 下拉弹性阻尼阶段 (Overscroll)
@@ -111,7 +111,7 @@ fun HeroWeatherView(
             }
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(0.dp))
 
         // 2. 最高温与最低温：随列表正常上移并在 50px ~ 170px 期间正弦阻尼渐隐
         Text(
@@ -137,7 +137,7 @@ fun HeroWeatherView(
             }
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(5.dp))
 
         // 3. 空气质量与天气描述：随列表正常上移并在 0px ~ 110px 期间最先正弦阻尼渐隐
         Text(
