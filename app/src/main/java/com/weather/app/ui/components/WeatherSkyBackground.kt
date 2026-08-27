@@ -55,6 +55,7 @@ import java.util.TimeZone
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -382,11 +383,13 @@ fun WeatherSkyBackground(
             )
         }
 
-        // OpenGL ES 2.0 纯代码 3D 真实月球渲染器
+        // OpenGL ES 2.0 纯代码 3D 真实月球与太阳渲染器
         val lunarRenderer = remember { LunarOpenGlRenderer() }
+        val solarRenderer = remember { SolarOpenGlRenderer() }
         DisposableEffect(Unit) {
             onDispose {
                 lunarRenderer.release()
+                solarRenderer.release()
             }
         }
 
@@ -416,7 +419,7 @@ fun WeatherSkyBackground(
                 drawGlowingMoon(width, height, moonCenter, slowProgress, moonPhase, lunarRenderer)
             }
 
-            // 白昼渲染太阳、丁达尔圣光与浮游光尘（太阳出现时机由城市实际日出日落时间平缓决定）
+            // 白昼渲染 OpenGL ES 2.0 真实太阳、丁达尔圣光与浮游光尘（太阳出现时机由城市实际日出日落时间平缓决定）
             if (isSunVisible && !weatherCategory.isNight) {
                 // 模拟太阳东升西落的平缓微弧天顶坐标
                 val sunCenter = calculateSunCenter(width, height, sunProgress)
@@ -428,7 +431,8 @@ fun WeatherSkyBackground(
                     dayProgress = sunProgress,
                     pulseProgress = slowProgress,
                     rotation = continuousRotation,
-                    isPartlyCloudy = (weatherCategory == WeatherCategory.CLOUDY)
+                    isPartlyCloudy = (weatherCategory == WeatherCategory.CLOUDY),
+                    solarRenderer = solarRenderer
                 )
                 // 丁达尔云隙圣光（God Rays 随太阳实时位置向下发散与晨昏色温自适应）
                 drawCrepuscularGodRays(
@@ -984,9 +988,14 @@ object SunMoonCalculator {
 }
 
 /**
- * 根据城市日照时间进度计算太阳在天穹弧线中的屏幕坐标（平缓优美微弧轨迹）
+ * 根据天文学天球投影原理与城市日照时间进度，计算太阳在屏幕天穹微弧中的物理坐标
  *
- * 优化弧度：降低天顶与地平线落差，使太阳在天空上方以平缓自然的微弧平滑运行，避开中央文字。
+ * 天体力学模拟：
+ * 1. 水平经向 (X 轴)：基于天球时角正弦投影 $X = 0.5w + 0.37w \times \sin((p - 0.5)\pi \times 0.92)$，
+ *    清晨位于东偏上方 (X ≈ 0.13w)，正午行经正南子午线 (X = 0.50w)，傍晚西落至西偏上方 (X ≈ 0.87w)；
+ * 2. 垂直高度角 (Y 轴)：符合正午最高天顶、晨昏靠近地平线的真实天体升落曲线：
+ *    $Y = Y_{horizon} - (Y_{horizon} - Y_{zenith}) \times \sin(p \times \pi)^{0.90}$，
+ *    全天在屏幕上方 7% ~ 17% 高度微弧运行，兼顾真实天文轨迹与界面美感。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -994,21 +1003,18 @@ object SunMoonCalculator {
  * @return 太阳中心屏幕坐标 [Offset]
  */
 private fun calculateSunCenter(width: Float, height: Float, progress: Float): Offset {
-    val sunX = width * (0.14f + 0.72f * progress)
-    val horizonY = height * 0.16f
-    val zenithY = height * 0.07f
-    val sunY = horizonY - (horizonY - zenithY) * sin(progress * PI.toFloat())
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    // 水平天球时角正弦投影
+    val sunX = width * (0.50f + 0.37f * sin((clampedProgress - 0.5f) * PI.toFloat() * 0.92f))
+    val horizonY = height * 0.165f
+    val zenithY = height * 0.075f
+    // 天文高度角幂律平滑微弧
+    val sunY = horizonY - (horizonY - zenithY) * (sin(clampedProgress * PI.toFloat())).pow(0.90f)
     return Offset(sunX, sunY)
 }
 
 /**
  * 根据城市夜幕月行进度计算明月在夜空弧线中的屏幕坐标（微弧自然天际线）
- *
- * 坐标精调：
- * - 傍晚入夜 (progress ≈ 0.0 ~ 0.12)：屏幕偏左侧天际 (X ≈ 0.10f ~ 0.18f * width, Y ≈ 0.15f * height) 升起；
- * - 午夜当空 (progress ≈ 0.50)：夜空天顶最高点 (X ≈ 0.51f * width, Y ≈ 0.08f * height) 高悬；
- * - 黎明破晓 (progress ≈ 0.88 ~ 1.00)：屏幕偏右侧天际 (X ≈ 0.85f ~ 0.92f * width, Y ≈ 0.15f * height) 缓缓西落。
- * 避开顶部状态栏与中央大温度文字，视野清晰舒展。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1016,22 +1022,28 @@ private fun calculateSunCenter(width: Float, height: Float, progress: Float): Of
  * @return 明月中心屏幕坐标 [Offset]
  */
 private fun calculateMoonCenter(width: Float, height: Float, progress: Float): Offset {
-    val moonX = width * (0.10f + 0.82f * progress)
-    val horizonY = height * 0.15f
-    val zenithY = height * 0.08f
-    val moonY = horizonY - (horizonY - zenithY) * sin(progress * PI.toFloat())
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    val moonX = width * (0.50f + 0.40f * sin((clampedProgress - 0.5f) * PI.toFloat() * 0.94f))
+    val horizonY = height * 0.155f
+    val zenithY = height * 0.080f
+    val moonY = horizonY - (horizonY - zenithY) * (sin(clampedProgress * PI.toFloat())).pow(0.90f)
     return Offset(moonX, moonY)
 }
 
 /**
- * 绘制白天丁达尔云隙圣光（God Rays）（随太阳实时大弧线位置自适应角度与晨昏色温向下发散）
+ * 绘制白天丁达尔云隙圣光（God Rays）（严格联动太阳实时空间天体位置与晨昏色温）
+ *
+ * 物理空间几何：
+ * - 清晨太阳在东：光束朝右下方 (约 60°~75°) 倾斜投射；
+ * - 正午太阳中天：光束朝正下方 (约 90°) 垂直辐射；
+ * - 傍晚太阳在西：光束朝左下方 (约 105°~120°) 倾斜投射。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
  * @param sunCenter 太阳实时天顶屏幕坐标 [Offset]
  * @param dayProgress 日照时间进度 (0.0f ~ 1.0f)
  * @param progress 呼吸动画相位 (0f ~ 1f)
- * @param isCloudy 是否为多云天气（多云时云隙光更明显）
+ * @param isCloudy 是否为多云天气
  */
 private fun DrawScope.drawCrepuscularGodRays(
     width: Float,
@@ -1041,24 +1053,24 @@ private fun DrawScope.drawCrepuscularGodRays(
     progress: Float,
     isCloudy: Boolean
 ) {
-    val maxRayLength = width * 1.35f
-    val rayAlphaBase = if (isCloudy) 0.065f else 0.045f
+    val maxRayLength = width * 1.05f
+    val rayAlphaBase = if (isCloudy) 0.060f else 0.040f
 
-    // 依太阳在屏幕左右大弧线位置自适应调整发散角度基准 (左边朝右下 50° ~ 正中 90° ~ 右边朝左下 130°)
-    val sunXRatio = (sunCenter.x / width).coerceIn(0.05f, 0.95f)
-    val baseAngleDeg = 50f + ((sunXRatio - 0.05f) / 0.90f) * 80f
+    // 严格按太阳在屏幕水平位置计算投射基准方位角 (58° ~ 90° ~ 122°)
+    val sunXRatio = (sunCenter.x / width).coerceIn(0.10f, 0.90f)
+    val baseAngleDeg = 58f + ((sunXRatio - 0.10f) / 0.80f) * 64f
 
     // 晨昏色温自适应：清晨与黄昏呈现温暖朝夕金霞光束，正午呈现明净白金光束
     val duskDawnFactor = (abs(dayProgress - 0.5f) * 2f).coerceIn(0f, 1f)
     val rayColorCenter = if (duskDawnFactor > 0.5f) Color(0xFFFFE082) else Color(0xFFFFF9C4)
     val rayColorEdge = if (duskDawnFactor > 0.5f) Color(0xFFFFB74D) else Color(0xFFFFECB3)
 
-    val rayAngles = listOf(baseAngleDeg - 36f, baseAngleDeg - 18f, baseAngleDeg, baseAngleDeg + 18f, baseAngleDeg + 36f)
-    val rayWidths = listOf(14f, 20f, 16f, 22f, 15f)
+    val rayAngles = listOf(baseAngleDeg - 32f, baseAngleDeg - 16f, baseAngleDeg, baseAngleDeg + 16f, baseAngleDeg + 32f)
+    val rayWidths = listOf(13f, 18f, 15f, 19f, 14f)
 
     rayAngles.forEachIndexed { index, angleDeg ->
         val pulse = (sin((progress + index * 0.2f) * 2f * PI.toFloat()) + 1f) / 2f
-        val currentAlpha = rayAlphaBase * (0.65f + pulse * 0.35f)
+        val currentAlpha = rayAlphaBase * (0.70f + pulse * 0.30f)
         val angleRad = angleDeg * (PI / 180f)
         val beamWidthDeg = rayWidths[index] * (PI / 180f)
 
@@ -1086,7 +1098,7 @@ private fun DrawScope.drawCrepuscularGodRays(
             brush = Brush.radialGradient(
                 colors = listOf(
                     rayColorCenter.copy(alpha = currentAlpha),
-                    rayColorEdge.copy(alpha = currentAlpha * 0.40f),
+                    rayColorEdge.copy(alpha = currentAlpha * 0.35f),
                     Color.Transparent
                 ),
                 center = sunCenter,
@@ -1097,7 +1109,202 @@ private fun DrawScope.drawCrepuscularGodRays(
 }
 
 /**
- * 绘制白昼太阳光晕、核心发光球与自转辐射光芒（自适应晨昏朝夕色温演化与大气消光，对齐摄影级天象质感）
+ * 太阳全天候物理光学与色温状态数据
+ *
+ * @property coreColors 日盘本体与极高亮光核色彩梯队（中心至边缘）
+ * @property innerGlowColors 近日光晕与日冕色彩梯队
+ * @property outerGlowColors 远景广阔大气瑞利散射光晕色彩梯队
+ * @property ringAlphaScale 光学镜头光圈与彩虹色散环可见度 (0.0f ~ 1.0f)
+ * @property rayAlphaScale 辐射衍射星芒与光芒强度 (0.0f ~ 1.0f)
+ * @property diskScale 太阳视直径缩放因子 (晨昏地平线视觉饱满放大，正午天顶紧致)
+ * @property horizonExtinction 大气消光与地平线隐没因子 (0.0f ~ 1.0f)
+ */
+private data class SolarPhysicalState(
+    val coreColors: List<Color>,
+    val innerGlowColors: List<Color>,
+    val outerGlowColors: List<Color>,
+    val ringAlphaScale: Float,
+    val rayAlphaScale: Float,
+    val diskScale: Float,
+    val horizonExtinction: Float
+)
+
+/**
+ * 根据日照进度计算太阳的真实全天候物理色温与光学特征参数
+ *
+ * 严格对齐自然界光学原理：
+ * - 清晨日出 (0.00 ~ 0.15)：穿透厚大气层，强烈瑞利散射过滤蓝紫光，呈现清晰温润的深赤橙/金红朝阳，无刺眼光柱；
+ * - 上午升空 (0.15 ~ 0.35)：色温迅速升高，转为耀眼金白与璀璨暖金，镜头光圈与光芒逐渐展开；
+ * - 烈日正午 (0.35 ~ 0.65)：直射天顶光程最短，肉眼不可直视，呈现纯白极炽光核 (6500K)，伴随高能青蓝紫外近晕与 16 束高亮辐射光柱；
+ * - 下午西斜 (0.65 ~ 0.85)：色温重归柔和琥珀金与香槟金，光束倾斜；
+ * - 落日熔金 (0.85 ~ 1.00)：浓郁壮丽晚霞散射，呈现浑圆深红/赤金落日，大范围紫红夕照，并在地平线自然消光隐没。
+ *
+ * @param dayProgress 归一化日照时间进度 (0.0f ~ 1.0f，0: 日出, 0.5: 正午, 1.0: 日落)
+ * @return 太阳实时物理光学参数 [SolarPhysicalState]
+ */
+private fun calculateSolarPhysicalState(dayProgress: Float): SolarPhysicalState {
+    val clampedProgress = dayProgress.coerceIn(0f, 1f)
+    // 地平线大气消光与缓入缓出平滑曲线
+    val horizonExtinction = (sin(clampedProgress * PI.toFloat()) * 2.6f).coerceIn(0.18f, 1.0f)
+
+    return when {
+        // 1. 清晨日出 (0.00 ~ 0.15)：深赤金/橙红朝阳，温润红日
+        clampedProgress < 0.15f -> {
+            val t = clampedProgress / 0.15f
+            SolarPhysicalState(
+                coreColors = listOf(
+                    Color(0xFFFFF3E0),
+                    Color(0xFFFF7043),
+                    Color(0xFFFF3D00),
+                    Color(0xFFDD2C00),
+                    Color.Transparent
+                ),
+                innerGlowColors = listOf(
+                    Color(0xFFFF8A65).copy(alpha = 0.45f),
+                    Color(0xFFFF5722).copy(alpha = 0.22f),
+                    Color(0xFFE64A19).copy(alpha = 0.08f),
+                    Color.Transparent
+                ),
+                outerGlowColors = listOf(
+                    Color(0xFFFFAB91).copy(alpha = 0.35f),
+                    Color(0xFFFF7043).copy(alpha = 0.16f),
+                    Color(0xFFD84315).copy(alpha = 0.04f),
+                    Color.Transparent
+                ),
+                ringAlphaScale = 0.0f,
+                rayAlphaScale = 0.08f + 0.18f * t,
+                diskScale = 1.15f - 0.08f * t,
+                horizonExtinction = horizonExtinction
+            )
+        }
+
+        // 2. 晨光高照 (0.15 ~ 0.35)：璀璨明金，光芒渐显
+        clampedProgress < 0.35f -> {
+            val t = (clampedProgress - 0.15f) / 0.20f
+            SolarPhysicalState(
+                coreColors = listOf(
+                    Color.White,
+                    Color(0xFFFFFDE7),
+                    Color(0xFFFFE082),
+                    Color(0xFFFFB300),
+                    Color.Transparent
+                ),
+                innerGlowColors = listOf(
+                    Color(0xFFFFF9C4).copy(alpha = 0.50f),
+                    Color(0xFFFFD54F).copy(alpha = 0.25f),
+                    Color(0xFFFFB300).copy(alpha = 0.08f),
+                    Color.Transparent
+                ),
+                outerGlowColors = listOf(
+                    Color(0xFFFFF176).copy(alpha = 0.30f),
+                    Color(0xFFFFCA28).copy(alpha = 0.14f),
+                    Color(0xFFFF8F00).copy(alpha = 0.03f),
+                    Color.Transparent
+                ),
+                ringAlphaScale = 0.35f + 0.65f * t,
+                rayAlphaScale = 0.26f + 0.64f * t,
+                diskScale = 1.07f - 0.07f * t,
+                horizonExtinction = horizonExtinction
+            )
+        }
+
+        // 3. 烈日正午 (0.35 ~ 0.65)：纯白炽热烈日核心，高能青蓝与白金光芒
+        clampedProgress <= 0.65f -> {
+            val noonCloseness = 1f - abs(clampedProgress - 0.5f) / 0.15f
+            SolarPhysicalState(
+                coreColors = listOf(
+                    Color.White,
+                    Color.White.copy(alpha = 0.98f),
+                    Color(0xFFFFF9C4).copy(alpha = 0.85f),
+                    Color(0xFFFFE082).copy(alpha = 0.35f),
+                    Color.Transparent
+                ),
+                innerGlowColors = listOf(
+                    Color(0xFFE0F7FA).copy(alpha = 0.55f + noonCloseness * 0.10f),
+                    Color(0xFFFFF59D).copy(alpha = 0.32f),
+                    Color(0xFFFFCA28).copy(alpha = 0.10f),
+                    Color.Transparent
+                ),
+                outerGlowColors = listOf(
+                    Color(0xFFB3E5FC).copy(alpha = 0.28f),
+                    Color(0xFFFFE082).copy(alpha = 0.15f),
+                    Color(0xFFFFB300).copy(alpha = 0.04f),
+                    Color.Transparent
+                ),
+                ringAlphaScale = 1.0f,
+                rayAlphaScale = 1.0f,
+                diskScale = 1.00f,
+                horizonExtinction = 1.0f
+            )
+        }
+
+        // 4. 夕阳西斜 (0.65 ~ 0.85)：香槟金与暖琥珀金，光束倾斜
+        clampedProgress < 0.85f -> {
+            val t = (clampedProgress - 0.65f) / 0.20f
+            SolarPhysicalState(
+                coreColors = listOf(
+                    Color.White,
+                    Color(0xFFFFF8E1),
+                    Color(0xFFFFD54F),
+                    Color(0xFFFF8F00),
+                    Color.Transparent
+                ),
+                innerGlowColors = listOf(
+                    Color(0xFFFFE082).copy(alpha = 0.50f),
+                    Color(0xFFFFB74D).copy(alpha = 0.25f),
+                    Color(0xFFFF7043).copy(alpha = 0.08f),
+                    Color.Transparent
+                ),
+                outerGlowColors = listOf(
+                    Color(0xFFFFCC80).copy(alpha = 0.32f),
+                    Color(0xFFFF9800).copy(alpha = 0.15f),
+                    Color(0xFFE65100).copy(alpha = 0.03f),
+                    Color.Transparent
+                ),
+                ringAlphaScale = 1.0f - 0.70f * t,
+                rayAlphaScale = 1.0f - 0.65f * t,
+                diskScale = 1.00f + 0.08f * t,
+                horizonExtinction = horizonExtinction
+            )
+        }
+
+        // 5. 落日熔金 (0.85 ~ 1.00)：浓郁晚霞赤红落日，大范围紫红夕照，地平线沉降
+        else -> {
+            val t = (clampedProgress - 0.85f) / 0.15f
+            SolarPhysicalState(
+                coreColors = listOf(
+                    Color(0xFFFFF3E0),
+                    Color(0xFFFF5722),
+                    Color(0xFFFF2D00),
+                    Color(0xFFC62828),
+                    Color.Transparent
+                ),
+                innerGlowColors = listOf(
+                    Color(0xFFFF7043).copy(alpha = 0.48f),
+                    Color(0xFFE64A19).copy(alpha = 0.24f),
+                    Color(0xFFBF360C).copy(alpha = 0.09f),
+                    Color.Transparent
+                ),
+                outerGlowColors = listOf(
+                    Color(0xFFFF8A65).copy(alpha = 0.38f),
+                    Color(0xFFD84315).copy(alpha = 0.18f),
+                    Color(0xFF880E4F).copy(alpha = 0.05f),
+                    Color.Transparent
+                ),
+                ringAlphaScale = 0.0f,
+                rayAlphaScale = 0.20f - 0.12f * t,
+                diskScale = 1.08f + 0.08f * t,
+                horizonExtinction = horizonExtinction
+            )
+        }
+    }
+}
+
+/**
+ * 绘制白昼纯自然物理真实太阳系统（无任何生硬几何圆盘切边、无描边硬环、无生硬射线）
+ *
+ * 1. 远景广阔大气瑞利散射光晕 (超大范围环境柔和天幕光晕，随全天早中晚色温平滑染色)
+ * 2. 纯代码 OpenGL ES 2.0 程序化渲染的 3D 真实太阳连续 HDR 光场 (极亮过曝核心、等离子微扰动日冕、自然柔和星芒与无缝渐隐)
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1106,6 +1313,7 @@ private fun DrawScope.drawCrepuscularGodRays(
  * @param pulseProgress 太阳呼吸胀缩相位 (0f ~ 1f)
  * @param rotation 光芒自转角度 (0° ~ 360°)
  * @param isPartlyCloudy 是否有多云遮挡减弱光晕
+ * @param solarRenderer OpenGL ES 2.0 纯代码 3D 太阳程序化渲染器
  */
 private fun DrawScope.drawSunWithRays(
     width: Float,
@@ -1114,121 +1322,54 @@ private fun DrawScope.drawSunWithRays(
     dayProgress: Float,
     pulseProgress: Float,
     rotation: Float,
-    isPartlyCloudy: Boolean
+    isPartlyCloudy: Boolean,
+    solarRenderer: SolarOpenGlRenderer? = null
 ) {
-    val coreRadius = width * 0.085f
-    val outerGlowRadius = width * (0.32f + pulseProgress * 0.03f)
-    // 大气消光与地平线缓入缓出因子
-    val horizonFade = (sin(dayProgress * PI.toFloat()) * 2.8f).coerceIn(0.25f, 1.0f)
-    val maxAlpha = (if (isPartlyCloudy) 0.45f else 0.85f) * horizonFade
+    val state = calculateSolarPhysicalState(dayProgress)
+    val cloudDimming = if (isPartlyCloudy) 0.55f else 1.0f
+    val masterAlpha = state.horizonExtinction * cloudDimming
 
-    // 晨昏色温自适应：日出日落呈现壮丽暖橙红霞光，正午呈现璀璨白金光芒
-    val sunsetFactor = (abs(dayProgress - 0.5f) * 2f).coerceIn(0f, 1f)
-    val glowColorMid = if (sunsetFactor > 0.6f) Color(0xFFFFAB40) else Color(0xFFFFE082)
-    val glowColorOuter = if (sunsetFactor > 0.6f) Color(0xFFFF6D00) else Color(0xFFFFB300)
+    // 太阳发光跨度半径 (适度饱满舒展大气)
+    val sunSpanRadius = width * (0.25f + pulseProgress * 0.015f) * state.diskScale
 
-    // 1. 绘制最外层弥漫暖金色/朝夕橙光微晕
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                Color.White.copy(alpha = 0.35f * maxAlpha),
-                glowColorMid.copy(alpha = 0.20f * maxAlpha),
-                glowColorOuter.copy(alpha = 0.06f * maxAlpha),
-                Color.Transparent
-            ),
-            center = sunCenter,
-            radius = outerGlowRadius * 1.3f
-        ),
-        center = sunCenter,
-        radius = outerGlowRadius * 1.3f
+    // 纯代码 OpenGL ES 2.0 程序化渲染 3D 真实自然太阳光场 (单一物理辐射场，彻底消除任何同心分层环)
+    val openGlSunImage = solarRenderer?.renderSun(
+        sizePx = 512,
+        dayProgress = dayProgress,
+        timePhase = pulseProgress + rotation / 360f
     )
 
-    // 2. 绘制极具摄影质感的双层彩虹/青蓝光学镜头光晕环 (Optical Halo & Chromatic Aberration Rings)
-    val ringR1 = width * (0.34f + pulseProgress * 0.015f) // 内层青蓝光环
-    val ringR2 = width * (0.46f + pulseProgress * 0.020f) // 外层柔金光环
-
-    // 内层青蓝色镜头光圈
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                Color.Transparent,
-                Color(0xFF40C4FF).copy(alpha = 0.22f * maxAlpha),
-                Color(0xFF80D8FF).copy(alpha = 0.12f * maxAlpha),
-                Color.Transparent
-            ),
-            center = sunCenter,
-            radius = ringR1 + 10f
-        ),
-        center = sunCenter,
-        radius = ringR1,
-        style = Stroke(width = 6.0f)
-    )
-
-    // 外层金色柔和镜头光环
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                Color.Transparent,
-                Color(0xFFFFF59D).copy(alpha = 0.16f * maxAlpha),
-                Color(0xFFFFD54F).copy(alpha = 0.08f * maxAlpha),
-                Color.Transparent
-            ),
-            center = sunCenter,
-            radius = ringR2 + 14f
-        ),
-        center = sunCenter,
-        radius = ringR2,
-        style = Stroke(width = 8.5f)
-    )
-
-    // 3. 动态自转的放射状镜头光柱与下射光芒 (随时间缓慢旋转)
-    rotate(degrees = rotation, pivot = sunCenter) {
-        val rayCount = 16
-        for (i in 0 until rayCount) {
-            val angle = (i * (360f / rayCount)) * (PI / 180f)
-            val isPrimary = i % 4 == 0
-            val isSecondary = i % 2 == 0
-            val rayLength = outerGlowRadius * (if (isPrimary) 1.25f else if (isSecondary) 0.95f else 0.70f)
-            val rayEnd = Offset(
-                sunCenter.x + (rayLength * cos(angle)).toFloat(),
-                sunCenter.y + (rayLength * sin(angle)).toFloat()
-            )
-            val rayAlpha = (if (isPrimary) 0.22f else if (isSecondary) 0.14f else 0.07f) * maxAlpha
-
-            drawLine(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = rayAlpha),
-                        Color(0xFFFFF9C4).copy(alpha = rayAlpha * 0.45f),
-                        Color.Transparent
-                    ),
-                    center = sunCenter,
-                    radius = rayLength
+    if (openGlSunImage != null) {
+        val renderDiameter = sunSpanRadius * 2.05f
+        val renderRadius = renderDiameter / 2f
+        val dstSize = IntSize(renderDiameter.toInt(), renderDiameter.toInt())
+        val dstOffset = IntOffset(
+            (sunCenter.x - renderRadius).toInt(),
+            (sunCenter.y - renderRadius).toInt()
+        )
+        drawImage(
+            image = openGlSunImage,
+            dstOffset = dstOffset,
+            dstSize = dstSize,
+            alpha = masterAlpha,
+            filterQuality = FilterQuality.High
+        )
+    } else {
+        // 高保真单一单调平滑降级光晕 (中心纯白/亮色向外自然淡出)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    state.coreColors.first().copy(alpha = 0.95f * masterAlpha),
+                    state.innerGlowColors.first().copy(alpha = 0.35f * masterAlpha),
+                    Color.Transparent
                 ),
-                start = sunCenter,
-                end = rayEnd,
-                strokeWidth = if (isPrimary) 4.2f else if (isSecondary) 2.6f else 1.6f,
-                cap = StrokeCap.Round
-            )
-        }
-    }
-
-    // 4. 居中极高亮纯白金发光球核
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                Color.White,
-                Color.White.copy(alpha = 0.95f),
-                Color(0xFFFFF59D).copy(alpha = 0.75f * maxAlpha),
-                Color(0xFFFFD54F).copy(alpha = 0.30f * maxAlpha),
-                Color.Transparent
+                center = sunCenter,
+                radius = sunSpanRadius
             ),
             center = sunCenter,
-            radius = coreRadius * 1.4f
-        ),
-        center = sunCenter,
-        radius = coreRadius * 1.4f
-    )
+            radius = sunSpanRadius
+        )
+    }
 }
 
 /**
