@@ -1019,8 +1019,8 @@ private fun calculateSunCenter(width: Float, height: Float, progress: Float): Of
     val clampedProgress = progress.coerceIn(0f, 1f)
     // 水平天球时角正弦投影
     val sunX = width * (0.50f + 0.37f * sin((clampedProgress - 0.5f) * PI.toFloat() * 0.92f))
-    val horizonY = height * 0.165f
-    val zenithY = height * 0.075f
+    val horizonY = height * 0.240f
+    val zenithY = height * 0.150f
     // 天文高度角幂律平滑微弧
     val sunY = horizonY - (horizonY - zenithY) * (sin(clampedProgress * PI.toFloat())).pow(0.90f)
     return Offset(sunX, sunY)
@@ -1028,6 +1028,8 @@ private fun calculateSunCenter(width: Float, height: Float, progress: Float): Of
 
 /**
  * 根据城市夜幕月行进度计算明月在夜空弧线中的屏幕坐标（微弧自然天际线）
+ *
+ * 最高位置严格控制在顶部 Tag 指示器下方 (zenithY ≈ 0.150h)，并按此基准等比平移调整 (horizonY ≈ 0.225h)。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1037,8 +1039,8 @@ private fun calculateSunCenter(width: Float, height: Float, progress: Float): Of
 private fun calculateMoonCenter(width: Float, height: Float, progress: Float): Offset {
     val clampedProgress = progress.coerceIn(0f, 1f)
     val moonX = width * (0.50f + 0.40f * sin((clampedProgress - 0.5f) * PI.toFloat() * 0.94f))
-    val horizonY = height * 0.155f
-    val zenithY = height * 0.080f
+    val horizonY = height * 0.225f
+    val zenithY = height * 0.150f
     val moonY = horizonY - (horizonY - zenithY) * (sin(clampedProgress * PI.toFloat())).pow(0.90f)
     return Offset(moonX, moonY)
 }
@@ -1341,8 +1343,8 @@ private fun DrawScope.drawSunWithRays(
     val state = calculateSolarPhysicalState(dayProgress)
     val masterAlpha = state.horizonExtinction
 
-    // 太阳发光跨度半径 (适度饱满舒展大气)
-    val sunSpanRadius = width * (0.25f + pulseProgress * 0.015f) * state.diskScale
+    // 太阳发光跨度半径 (适度饱满舒展大气，等比放大 10%)
+    val sunSpanRadius = width * (0.25f + pulseProgress * 0.015f) * state.diskScale * 1.10f
 
     // 纯代码 OpenGL ES 2.0 程序化渲染 3D 真实自然太阳光场 (单一物理辐射场，彻底消除任何同心分层环)
     val openGlSunImage = solarRenderer?.renderSun(
