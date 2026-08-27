@@ -1,6 +1,7 @@
 package com.weather.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -142,6 +145,18 @@ fun WeatherScreen(
     val stableLocationDisplayMode = uiState.locationDisplayMode
     val stableWeatherCache = uiState.weatherCache
 
+    // 为每个城市页面独立维护持久化的 ScrollState
+    val pageScrollStates = remember { mutableStateMapOf<Int, ScrollState>() }
+
+    val activeWeather = uiState.getWeatherForCity(activeCity)
+    val weatherSubtitle = remember(activeWeather) {
+        if (activeWeather != null) {
+            "${activeWeather.current.temperature.toInt()}° | ${activeWeather.getDisplayWeatherText()}"
+        } else {
+            ""
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // 沉浸式动态真实天气天空背景 (支持昼夜即时刷新切换，滑动过程视差无缝过渡，停靠结算后播放景深推远动效)
         WeatherSkyBackground(
@@ -157,11 +172,13 @@ fun WeatherScreen(
                 .statusBarsPadding()
                 .navigationBarsPadding()
         ) {
-            // 顶部导航栏：居中当前城市名称 + 下方居中紧凑圆点指示器（严格对齐设计图）
+            // 顶部导航栏：居中当前城市名称 + 下方指示器/折叠时显现的固定【温度 | 天气】
             TopImmersiveWeatherBar(
                 currentCityName = activeCity.getDisplayName(stableLocationDisplayMode),
                 savedCities = stableSavedCities,
                 currentPage = currentPageIndex,
+                weatherSubtitle = weatherSubtitle,
+                scrollOffsetProvider = { pageScrollStates[currentPageIndex]?.value ?: 0 },
                 onMenuClick = {
                     viewModel.setCityManagementOpen(true)
                 },
@@ -197,12 +214,14 @@ fun WeatherScreen(
                 val pageWeather = remember(stableWeatherCache, pageCity) {
                     uiState.getWeatherForCity(pageCity)
                 }
+                val pageScrollState = pageScrollStates.getOrPut(page) { ScrollState(0) }
 
                 CityWeatherPageContent(
                     city = pageCity,
                     weatherData = pageWeather,
                     isRefreshing = uiState.isRefreshing,
                     isDailyChartMode = uiState.isDailyChartMode,
+                    scrollState = pageScrollState,
                     onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
                     onRefresh = { viewModel.refreshCityAtIndex(page) }
                 )
@@ -306,11 +325,13 @@ fun WeatherScreen(
 }
 
 /**
- * 顶部沉浸式标题栏（居中显示当前选中的城市名称，下方居中紧凑排列圆点指示器，与设计图一模一样）
+ * 顶部沉浸式标题栏（居中显示当前选中的城市名称，下方居中紧凑排列圆点指示器并在上滑时平滑过渡为固定温度与天气现象）
  *
  * @param currentCityName 当前选中的城市展示名称
  * @param savedCities 用户已保存的城市列表
  * @param currentPage 当前选中的城市页码索引
+ * @param weatherSubtitle 当前城市的天气副标题（如 "33° | 晴"）
+ * @param scrollOffsetProvider 垂直滚动偏移量提供者（单位：像素）
  * @param onMenuClick 点击左侧城市管理按钮回调
  * @param onSourceClick 点击切换天气源回调
  * @param onIntervalClick 点击设置更新间隔回调
@@ -321,6 +342,8 @@ private fun TopImmersiveWeatherBar(
     currentCityName: String,
     savedCities: List<CityInfo>,
     currentPage: Int,
+    weatherSubtitle: String,
+    scrollOffsetProvider: () -> Int,
     onMenuClick: () -> Unit,
     onSourceClick: () -> Unit,
     onIntervalClick: () -> Unit,
@@ -353,7 +376,7 @@ private fun TopImmersiveWeatherBar(
             }
         }
 
-        // 中间：居中当前城市名称 + 下方居中紧凑圆点指示器（严格对齐设计图）
+        // 中间：居中当前城市名称 + 下方指示器 / 折叠时显现的固定【温度 | 天气】
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 8.dp)
@@ -372,37 +395,74 @@ private fun TopImmersiveWeatherBar(
                 )
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
-            // 下方居中紧凑排列的圆点指示器（不平均拉伸分布，居中聚合紧凑排列）
-            if (pageCount > 1) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    for (i in 0 until pageCount) {
-                        val isSelected = i == safeSelectedIndex
-                        val city = savedCities.getOrNull(i)
-                        val isAutoLocated = i == 0 && (city?.isAutoLocated == true)
+            // 下方区域：容纳圆点指示器（未滚动时）与【温度 | 天气】固定展示（向上滚动收缩时）
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.height(20.dp)
+            ) {
+                // 圆点指示器（在未受到挤压前常驻展示）
+                if (pageCount > 1) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.graphicsLayer {
+                            val scroll = scrollOffsetProvider().toFloat()
+                            val linearProgress = ((scroll - 220f) / 140f).coerceIn(0f, 1f)
+                            val dampedProgress = kotlin.math.sin(linearProgress * (kotlin.math.PI / 2.0)).toFloat()
+                            alpha = 1f - dampedProgress
+                        }
+                    ) {
+                        for (i in 0 until pageCount) {
+                            val isSelected = i == safeSelectedIndex
+                            val city = savedCities.getOrNull(i)
+                            val isAutoLocated = i == 0 && (city?.isAutoLocated == true)
 
-                        if (isAutoLocated) {
-                            Icon(
-                                imageVector = Icons.Default.LocationOn,
-                                contentDescription = "当前定位城市",
-                                tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.40f),
-                                modifier = Modifier.size(11.dp)
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(5.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isSelected) Color.White else Color.White.copy(alpha = 0.40f)
+                            if (isAutoLocated) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = "当前定位城市",
+                                    tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.40f),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(5.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isSelected) Color.White else Color.White.copy(alpha = 0.40f)
+                                        )
                                     )
-                            )
+                            }
                         }
                     }
+                }
+
+                // 向上滚动折叠时显现的固定【温度 | 天气】（如 "33° | 晴"，带物理阻尼浮入感）
+                if (weatherSubtitle.isNotBlank()) {
+                    Text(
+                        text = weatherSubtitle,
+                        style = TextStyle(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = Color.White,
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.35f),
+                                offset = Offset(0f, 1.5f),
+                                blurRadius = 4f
+                            )
+                        ),
+                        modifier = Modifier.graphicsLayer {
+                            val scroll = scrollOffsetProvider().toFloat()
+                            // 在 220px ~ 380px 挤压区间应用阻尼缓动平滑淡入并自下微弹入位
+                            val linearProgress = ((scroll - 220f) / 160f).coerceIn(0f, 1f)
+                            val dampedProgress = kotlin.math.sin(linearProgress * (kotlin.math.PI / 2.0)).toFloat()
+                            alpha = dampedProgress
+                            translationY = (1f - dampedProgress) * 8f
+                        }
+                    )
                 }
             }
         }
@@ -443,6 +503,7 @@ private fun TopImmersiveWeatherBar(
  * @param weatherData 聚合天气数据 [WeatherData]
  * @param isRefreshing 是否处于刷新中
  * @param isDailyChartMode 近日天气是否为趋势折线图表模式
+ * @param scrollState 垂直滚动状态 [ScrollState]
  * @param onDailyChartModeChange 切换近日天气模式回调
  * @param onRefresh 下拉刷新触发回调
  */
@@ -453,6 +514,7 @@ private fun CityWeatherPageContent(
     weatherData: WeatherData?,
     isRefreshing: Boolean,
     isDailyChartMode: Boolean,
+    scrollState: ScrollState,
     onDailyChartModeChange: (Boolean) -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -491,11 +553,14 @@ private fun CityWeatherPageContent(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(scrollState),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 1. 顶部居中核心温度展示 (如 32° / 最高 32° 最低 25° / 空气优 多云)
-                HeroWeatherView(weatherData = weatherData)
+                // 1. 顶部居中核心温度展示 (分层级联渐隐与平滑缩小：空气优 -> 最高最低温 -> 当前温度)
+                HeroWeatherView(
+                    weatherData = weatherData,
+                    scrollOffsetProvider = { scrollState.value }
+                )
 
                 // 2. 官方气象灾害预警卡片 (严格遵从需求：有预警数据时才显示，无预警数据时不占位)
                 weatherData.alert?.let { alert ->

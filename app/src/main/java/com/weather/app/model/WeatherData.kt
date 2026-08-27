@@ -22,4 +22,18 @@ data class WeatherData(
     val alert: WeatherAlert? = null,
     val sourceName: String = "中央气象台",
     val updateTimestamp: Long = System.currentTimeMillis()
-)
+) {
+    /**
+     * 获取用于界面展示的天气现象描述文本
+     *
+     * @return 格式化后的天气现象描述文本（如“晴”、“多云”等）
+     */
+    fun getDisplayWeatherText(): String {
+        return when {
+            current.weatherText.isNotEmpty() && current.weatherText != "-" && current.weatherText != "无" && current.weatherText != "9999" -> current.weatherText
+            dailyForecasts.firstOrNull()?.dayWeatherText?.isNotEmpty() == true && dailyForecasts.firstOrNull()?.dayWeatherText != "-" && dailyForecasts.firstOrNull()?.dayWeatherText != "9999" -> dailyForecasts.first().dayWeatherText
+            dailyForecasts.firstOrNull()?.nightWeatherText?.isNotEmpty() == true && dailyForecasts.firstOrNull()?.nightWeatherText != "-" && dailyForecasts.firstOrNull()?.nightWeatherText != "9999" -> dailyForecasts.first().nightWeatherText
+            else -> "多云"
+        }
+    }
+}
