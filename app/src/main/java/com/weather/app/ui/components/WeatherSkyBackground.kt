@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -30,8 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -114,7 +118,7 @@ fun WeatherSkyBackground(
     val animatedMid by animateColorAsState(targetValue = targetMid, animationSpec = tween(durationMillis = 800), label = "midColor")
     val animatedBottom by animateColorAsState(targetValue = targetBottom, animationSpec = tween(durationMillis = 800), label = "bottomColor")
 
-    // 加载与转场动效驱动：只要 Tab 切换事件触发，立即清除当前动画并从 0f 重新加载 3000ms 景深推镜动效
+    // 加载与转场动效驱动：只要 Tab 切换事件触发，立即清除当前动画并从 0f 重新加载 3000ms 由快到慢景深推镜动效
     val entranceAnim = remember { Animatable(0f) }
     val tabSwitchKey = remember(city?.getCacheKey()) {
         city?.getCacheKey() ?: "default_city"
@@ -123,10 +127,10 @@ fun WeatherSkyBackground(
     LaunchedEffect(tabSwitchKey) {
         // 1. 立即清除/重置当前动画状态至初始近景特写帧 (0f: 1.50x 特写近景)
         entranceAnim.snapTo(0f)
-        // 2. 重新加载完整的 3000ms 电影级景深推远展开动效 (0f -> 1f: 1.50x -> 1.00x 全景舒展)
+        // 2. 重新加载完整的 3000ms 电影级景深推远展开动效（由快到慢渐速：起步快速推开，后段柔缓定格至 1.00x 全景）
         entranceAnim.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
+            animationSpec = tween(durationMillis = 3000, easing = LinearOutSlowInEasing)
         )
     }
 
@@ -284,6 +288,7 @@ fun WeatherSkyBackground(
             WeatherCategory.RAIN_HEAVY,
             WeatherCategory.THUNDERSTORM,
             WeatherCategory.OVERCAST,
+            WeatherCategory.OVERCAST_NIGHT,
             WeatherCategory.FOG,
             WeatherCategory.SNOW_LIGHT,
             WeatherCategory.SNOW_HEAVY -> R.drawable.bg_overcast_rain
@@ -297,7 +302,7 @@ fun WeatherSkyBackground(
     val moonProgress = celestial.moonProgress
     val moonPhase = celestial.moonPhase
     val isSunVisible = celestial.isSunVisible && (weatherCategory == WeatherCategory.SUNNY || weatherCategory == WeatherCategory.CLOUDY)
-    val isMoonVisible = (weatherCategory.isNight || celestial.isMoonVisible)
+    val isMoonVisible = (weatherCategory.isNight || celestial.isMoonVisible) && (weatherCategory != WeatherCategory.OVERCAST_NIGHT)
 
     Box(
         modifier = modifier
@@ -316,15 +321,28 @@ fun WeatherSkyBackground(
             val baseAlpha = when (weatherCategory) {
                 WeatherCategory.CLOUDY -> 0.75f
                 WeatherCategory.CLOUDY_NIGHT -> 0.68f
-                WeatherCategory.OVERCAST -> 0.88f
+                WeatherCategory.OVERCAST,
+                WeatherCategory.OVERCAST_NIGHT -> 0.88f
                 else -> 0.82f
             }
+
+            val nightCloudFilter = if (weatherCategory == WeatherCategory.CLOUDY_NIGHT) {
+                // 温和提升暗夜云层月光灰白质感，亮度适中深邃，防止过曝
+                val matrix = ColorMatrix(floatArrayOf(
+                    1.08f, 0f, 0f, 0f, 16f,
+                    0f, 1.08f, 0f, 0f, 22f,
+                    0f, 0f, 1.15f, 0f, 32f,
+                    0f, 0f, 0f, 1.0f, 0f
+                ))
+                ColorFilter.colorMatrix(matrix)
+            } else null
 
             // Layer 1: 底层主云海 (超屏尺寸 1.35x，伴随由近到远推镜加载展开)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
                 contentScale = ContentScale.Crop,
+                colorFilter = nightCloudFilter,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -344,6 +362,7 @@ fun WeatherSkyBackground(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "深景视差流云",
                 contentScale = ContentScale.Crop,
+                colorFilter = nightCloudFilter,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -444,9 +463,15 @@ fun WeatherSkyBackground(
                     width = width,
                     height = height,
                     isNight = weatherCategory.isNight,
-                    isOvercast = (weatherCategory == WeatherCategory.OVERCAST || weatherCategory == WeatherCategory.RAIN_HEAVY),
+                    isCloudyNight = (weatherCategory == WeatherCategory.CLOUDY_NIGHT),
+                    isOvercast = (weatherCategory == WeatherCategory.OVERCAST || weatherCategory == WeatherCategory.OVERCAST_NIGHT || weatherCategory == WeatherCategory.RAIN_HEAVY),
                     progress = cloudProgress
                 )
+            }
+
+            // 夜晚多云：绘制以灰白色为主调色的层次分明月光流云与银辉云海
+            if (weatherCategory == WeatherCategory.CLOUDY_NIGHT) {
+                drawNightCloudySilverClouds(width = width, height = height, progress = cloudProgress)
             }
 
             if (weatherCategory == WeatherCategory.FOG || weatherCategory == WeatherCategory.SANDSTORM) {
@@ -540,8 +565,10 @@ enum class WeatherCategory(val isNight: Boolean) {
     CLOUDY(isNight = false),
     /** 多云（夜间） */
     CLOUDY_NIGHT(isNight = true),
-    /** 阴天 */
+    /** 阴天（白昼） */
     OVERCAST(isNight = false),
+    /** 阴天（夜间） */
+    OVERCAST_NIGHT(isNight = true),
     /** 小雨 / 阵雨 */
     RAIN_LIGHT(isNight = false),
     /** 大雨 / 暴雨 */
@@ -704,7 +731,7 @@ private fun resolveWeatherCategory(text: String, isNight: Boolean): WeatherCateg
         text.contains("沙") || text.contains("尘") -> WeatherCategory.SANDSTORM
         text.contains("雾") || text.contains("霾") -> WeatherCategory.FOG
         text.contains("风") && !text.contains("微风") -> WeatherCategory.WINDY
-        text.contains("阴") -> if (isNight) WeatherCategory.CLOUDY_NIGHT else WeatherCategory.OVERCAST
+        text.contains("阴") -> if (isNight) WeatherCategory.OVERCAST_NIGHT else WeatherCategory.OVERCAST
         text.contains("云") -> if (isNight) WeatherCategory.CLOUDY_NIGHT else WeatherCategory.CLOUDY
         isNight -> WeatherCategory.SUNNY_NIGHT
         else -> WeatherCategory.SUNNY
@@ -722,8 +749,9 @@ private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, C
         WeatherCategory.SUNNY -> Triple(Color(0xFF1E75C4), Color(0xFF4B9DE8), Color(0xFF9AD3FC))
         WeatherCategory.SUNNY_NIGHT -> Triple(Color(0xFF2C3254), Color(0xFF4D5685), Color(0xFF6E78A8))
         WeatherCategory.CLOUDY -> Triple(Color(0xFF2C5E8A), Color(0xFF5582AA), Color(0xFF86AECF))
-        WeatherCategory.CLOUDY_NIGHT -> Triple(Color(0xFF262C4A), Color(0xFF454E78), Color(0xFF636D96))
+        WeatherCategory.CLOUDY_NIGHT -> Triple(Color(0xFF161C28), Color(0xFF263040), Color(0xFF3E4B5E))
         WeatherCategory.OVERCAST -> Triple(Color(0xFF3F4E5B), Color(0xFF5E6E7D), Color(0xFF7E8F9E))
+        WeatherCategory.OVERCAST_NIGHT -> Triple(Color(0xFF161B24), Color(0xFF28303E), Color(0xFF3C4656))
         WeatherCategory.RAIN_LIGHT -> Triple(Color(0xFF384956), Color(0xFF556776), Color(0xFF6E8090))
         WeatherCategory.RAIN_HEAVY -> Triple(Color(0xFF263440), Color(0xFF3E4F5D), Color(0xFF566877))
         WeatherCategory.THUNDERSTORM -> Triple(Color(0xFF1B242D), Color(0xFF2E3D4A), Color(0xFF455563))
@@ -743,6 +771,7 @@ private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, C
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
  * @param isNight 是否为夜间
+ * @param isCloudyNight 是否为夜晚多云
  * @param isOvercast 是否为阴天/雨天
  * @param progress 动画时间相位
  */
@@ -750,11 +779,13 @@ private fun DrawScope.drawAtmosphericSoftHaze(
     width: Float,
     height: Float,
     isNight: Boolean,
+    isCloudyNight: Boolean = false,
     isOvercast: Boolean,
     progress: Float
 ) {
     val hazeAlpha = (0.10f + kotlin.math.sin(progress * 2f * PI.toFloat()) * 0.03f).coerceIn(0.05f, 0.18f)
     val hazeColor = when {
+        isCloudyNight -> Color(0xFFCAD7E6) // 夜晚多云呈现明净优雅的灰白色月光漫射微雾
         isNight -> Color(0xFF1A2234)
         isOvercast -> Color(0xFF8899A6)
         else -> Color(0xFFD6E4F0)
@@ -764,8 +795,8 @@ private fun DrawScope.drawAtmosphericSoftHaze(
         brush = Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
-                hazeColor.copy(alpha = hazeAlpha * 0.25f),
-                hazeColor.copy(alpha = hazeAlpha * 0.60f),
+                hazeColor.copy(alpha = hazeAlpha * (if (isCloudyNight) 0.35f else 0.25f)),
+                hazeColor.copy(alpha = hazeAlpha * (if (isCloudyNight) 0.68f else 0.60f)),
                 Color.Transparent
             ),
             startY = height * 0.12f,
@@ -2093,4 +2124,89 @@ private fun DrawScope.drawWindRibbons(
         )
     }
 }
+
+/**
+ * 绘制夜晚多云天气下的灰白色月光流云与银辉云海
+ *
+ * 采用多层景深有机羽化曲线与柔和灰白、珍珠灰白、月夜银灰色彩体系，
+ * 呈现真实夜幕下被皎洁月华映照的清晰灰白色有机流云系统。
+ *
+ * @param width 画面宽度 (px)
+ * @param height 画面高度 (px)
+ * @param progress 动画时间相位
+ */
+private fun DrawScope.drawNightCloudySilverClouds(
+    width: Float,
+    height: Float,
+    progress: Float
+) {
+    // 4 层立体月夜柔和灰白流云与漫射云海（适度亮度，通透深邃不刺眼）
+    val cloudLayers = listOf(
+        // 顶层轻盈月华流云（柔和浅灰白）
+        Triple(height * 0.14f, 0.40f, Color(0xFFD6E2F0)),
+        // 中高层主力银灰月华云团
+        Triple(height * 0.32f, 0.32f, Color(0xFFB4C4D8)),
+        // 中层柔和优雅灰白云海
+        Triple(height * 0.52f, 0.25f, Color(0xFF8FA2B8)),
+        // 低空沉稳青灰云幕
+        Triple(height * 0.72f, 0.18f, Color(0xFF6E8096))
+    )
+
+    cloudLayers.forEachIndexed { idx, (baseY, baseAlpha, color) ->
+        val speed = 0.8f + idx * 0.35f
+        val drift = sin((progress * speed + idx * 0.28f) * 2f * PI.toFloat()) * (45f + idx * 28f)
+        val phaseOffset = (progress * speed + idx * 0.25f) % 1f
+
+        // 主体灰白云团 1（大面积柔焦漫射）
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    color.copy(alpha = baseAlpha * 0.42f),
+                    color.copy(alpha = baseAlpha * 0.20f),
+                    Color.Transparent
+                ),
+                center = Offset(width * (0.30f + idx * 0.20f) + drift, baseY),
+                radius = width * (0.52f + idx * 0.08f)
+            ),
+            center = Offset(width * (0.30f + idx * 0.20f) + drift, baseY),
+            radius = width * (0.52f + idx * 0.08f)
+        )
+
+        // 伴生灰白流云 2（反向视差互补）
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    color.copy(alpha = baseAlpha * 0.32f),
+                    color.copy(alpha = baseAlpha * 0.14f),
+                    Color.Transparent
+                ),
+                center = Offset(width * (0.78f - idx * 0.18f) - drift * 0.9f, baseY + height * 0.07f),
+                radius = width * (0.45f + idx * 0.06f)
+            ),
+            center = Offset(width * (0.78f - idx * 0.18f) - drift * 0.9f, baseY + height * 0.07f),
+            radius = width * (0.45f + idx * 0.06f)
+        )
+
+        // 横向舒展月光云隙丝带
+        val ribbonStartX = (phaseOffset * (width + 300f) - 150f)
+        drawLine(
+            brush = Brush.horizontalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    color.copy(alpha = baseAlpha * 0.18f),
+                    color.copy(alpha = baseAlpha * 0.28f),
+                    color.copy(alpha = baseAlpha * 0.10f),
+                    Color.Transparent
+                ),
+                startX = ribbonStartX - 180f,
+                endX = ribbonStartX + 280f
+            ),
+            start = Offset(ribbonStartX - 180f, baseY + sin(phaseOffset * 2f * PI.toFloat()) * 18f),
+            end = Offset(ribbonStartX + 280f, baseY - sin(phaseOffset * 2f * PI.toFloat()) * 12f),
+            strokeWidth = 20f + idx * 8f,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
 
