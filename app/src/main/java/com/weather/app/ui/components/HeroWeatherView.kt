@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,7 +36,7 @@ private fun easeOutDamped(progress: Float): Float {
 /**
  * 主界面核心温度与气象现象居中展示视图（支持物理阻尼联动）
  *
- * 集中展示顶部巨幅实时温度（大字）、温差范围与空气质量/天气状况说明，支持下拉弹性放大与向上滑动时的阻尼分层级联挤压隐藏。
+ * 集中展示顶部巨幅实时温度（大字，温度数值与度数单位独立拆分渲染并保持顶部对齐与数值绝对居中）、温差范围与空气质量/天气状况说明，支持下拉弹性放大与向上滑动时的阻尼分层级联挤压隐藏。
  *
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param scrollOffsetProvider 垂直滚动偏移量提供者（单位：像素）
@@ -61,55 +62,94 @@ fun HeroWeatherView(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 50.dp, bottom = 40.dp),
+            .padding(top = 46.dp, bottom = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 1. 巨幅主温度展示：
+        // 1. 巨幅主温度展示（温度数值与度数单位拆分独立 Text，数值水平绝对居中，单位与数值顶部对齐）：
         // - 下拉时：产生物理阻尼弹性放大与下拉位移
         // - 上滑未受挤压时（scroll <= 220px）：完全抵消向上位移，保持在圆点指示器下方静止且 100% 完整显示
         // - 上滑受挤压时（scroll > 220px）：伴随正弦阻尼缓动平滑缩小、上推并渐隐
-        Text(
-            text = "${current.temperature.toInt()}°",
-            style = TextStyle(
-                fontSize = 92.sp,
-                fontWeight = FontWeight.Light,
-                color = Color.White,
-                shadow = Shadow(
-                    color = Color.Black.copy(alpha = 0.38f),
-                    offset = Offset(0f, 3f),
-                    blurRadius = 8f
+        Layout(
+            content = {
+                // 温度主体数值 Text（严格水平居中）
+                Text(
+                    text = "${current.temperature.toInt()}",
+                    style = TextStyle(
+                        fontSize = 92.sp,
+                        fontWeight = FontWeight.Light,
+                        color = Color.White,
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.38f),
+                            offset = Offset(0f, 3f),
+                            blurRadius = 8f
+                        )
+                    )
                 )
-            ),
-            modifier = Modifier.graphicsLayer {
-                val scroll = scrollOffsetProvider().toFloat()
-                val squeezeThreshold = 350f // 挤压触发阈值（像素）
-                val squeezeDistance = 360f  // 阻尼挤压过渡距离（像素）
+                // 温度度数单位 Text（紧贴数值右侧并与数值顶部对齐）
+                Text(
+                    text = "°",
+                    style = TextStyle(
+                        fontSize = 92.sp,
+                        fontWeight = FontWeight.Light,
+                        color = Color.White,
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.38f),
+                            offset = Offset(0f, 3f),
+                            blurRadius = 8f
+                        )
+                    )
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    val scroll = scrollOffsetProvider().toFloat()
+                    val squeezeThreshold = 350f // 挤压触发阈值（像素）
+                    val squeezeDistance = 360f  // 阻尼挤压过渡距离（像素）
 
-                if (scroll < 0f) {
-                    // 下拉弹性阻尼阶段 (Overscroll)
-                    val overscrollProgress = (-scroll / 600f).coerceIn(0f, 0.30f)
-                    alpha = 1f
-                    scaleX = 1f + overscrollProgress
-                    scaleY = 1f + overscrollProgress
-                    translationY = -scroll * 0.30f
-                } else if (scroll <= squeezeThreshold) {
-                    // 未受挤压阶段：保持 100% 不透明，完全抵消滚动上移，绝对静止
-                    alpha = 1f
-                    scaleX = 1f
-                    scaleY = 1f
-                    translationY = scroll
-                } else {
-                    // 受卡片向上挤压阶段：应用阻尼缓动缩小并渐隐
-                    val linearProgress = ((scroll - squeezeThreshold) / squeezeDistance).coerceIn(0f, 1f)
-                    val dampedProgress = easeOutDamped(linearProgress)
-                    alpha = 1f - dampedProgress
-                    val scale = 1f - dampedProgress * 0.22f
-                    scaleX = scale
-                    scaleY = scale
-                    translationY = squeezeThreshold - dampedProgress * 32f
+                    if (scroll < 0f) {
+                        // 下拉弹性阻尼阶段 (Overscroll)
+                        val overscrollProgress = (-scroll / 600f).coerceIn(0f, 0.30f)
+                        alpha = 1f
+                        scaleX = 1f + overscrollProgress
+                        scaleY = 1f + overscrollProgress
+                        translationY = -scroll * 0.30f
+                    } else if (scroll <= squeezeThreshold) {
+                        // 未受挤压阶段：保持 100% 不透明，完全抵消滚动上移，绝对静止
+                        alpha = 1f
+                        scaleX = 1f
+                        scaleY = 1f
+                        translationY = scroll
+                    } else {
+                        // 受卡片向上挤压阶段：应用阻尼缓动缩小并渐隐
+                        val linearProgress = ((scroll - squeezeThreshold) / squeezeDistance).coerceIn(0f, 1f)
+                        val dampedProgress = easeOutDamped(linearProgress)
+                        alpha = 1f - dampedProgress
+                        val scale = 1f - dampedProgress * 0.22f
+                        scaleX = scale
+                        scaleY = scale
+                        translationY = squeezeThreshold - dampedProgress * 32f
+                    }
                 }
+        ) { measurables, constraints ->
+            val numPlaceable = measurables[0].measure(constraints.copy(minWidth = 0, minHeight = 0))
+            val unitPlaceable = measurables[1].measure(constraints.copy(minWidth = 0, minHeight = 0))
+
+            val layoutWidth = constraints.maxWidth
+            val layoutHeight = maxOf(numPlaceable.height, unitPlaceable.height)
+
+            layout(layoutWidth, layoutHeight) {
+                // 温度主体数值水平严格居中
+                val numX = (layoutWidth - numPlaceable.width) / 2
+                val numY = 0
+                numPlaceable.placeRelative(numX, numY)
+
+                // 度数单位紧贴数值右侧并与数值顶部严格对齐
+                val unitX = numX + numPlaceable.width
+                val unitY = 0
+                unitPlaceable.placeRelative(unitX, unitY)
             }
-        )
+        }
 
         Spacer(modifier = Modifier.height(0.dp))
 
