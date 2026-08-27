@@ -742,7 +742,7 @@ private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, C
     return when (category) {
         WeatherCategory.SUNNY -> Triple(Color(0xFF1E75C4), Color(0xFF4B9DE8), Color(0xFF9AD3FC))
         WeatherCategory.SUNNY_NIGHT -> Triple(Color(0xFF2C3254), Color(0xFF4D5685), Color(0xFF6E78A8))
-        WeatherCategory.CLOUDY -> Triple(Color(0xFF2C5E8A), Color(0xFF5582AA), Color(0xFF86AECF))
+        WeatherCategory.CLOUDY -> Triple(Color(0xFF2A72B2), Color(0xFF5698D4), Color(0xFF92C8F0))
         WeatherCategory.CLOUDY_NIGHT -> Triple(Color(0xFF161C28), Color(0xFF263040), Color(0xFF3E4B5E))
         WeatherCategory.OVERCAST -> Triple(Color(0xFF3F4E5B), Color(0xFF5E6E7D), Color(0xFF7E8F9E))
         WeatherCategory.OVERCAST_NIGHT -> Triple(Color(0xFF161B24), Color(0xFF28303E), Color(0xFF3C4656))
@@ -1326,8 +1326,7 @@ private fun DrawScope.drawSunWithRays(
     solarRenderer: SolarOpenGlRenderer? = null
 ) {
     val state = calculateSolarPhysicalState(dayProgress)
-    val cloudDimming = if (isPartlyCloudy) 0.55f else 1.0f
-    val masterAlpha = state.horizonExtinction * cloudDimming
+    val masterAlpha = state.horizonExtinction
 
     // 太阳发光跨度半径 (适度饱满舒展大气)
     val sunSpanRadius = width * (0.25f + pulseProgress * 0.015f) * state.diskScale
@@ -2272,6 +2271,16 @@ private fun DrawScope.drawWindRibbons(
     }
 }
 
+/**
+ * 绘制白昼多云天气下的轻盈通透柔白流云与微光云海
+ *
+ * 云层主要集中在屏幕上半部左右两侧，稀疏轻盈，中间保留天顶透光间隙，
+ * 与太阳光晕和丁达尔圣光相互映衬。
+ *
+ * @param width 画面宽度 (px)
+ * @param height 画面高度 (px)
+ * @param progress 动画时间相位 (0f ~ 1f)
+ */
 /**
  * 绘制白昼多云天气下的轻盈通透柔白流云与微光云海
  *
