@@ -324,30 +324,43 @@ fun WeatherSkyBackground(
             val fastDrift = sin((cloudProgress + 0.35f) * 2f * PI.toFloat()) * 65f
 
             val baseAlpha = when (weatherCategory) {
-                WeatherCategory.CLOUDY -> 0.32f
+                WeatherCategory.CLOUDY -> 0.35f
                 WeatherCategory.CLOUDY_NIGHT -> 0.26f
                 WeatherCategory.OVERCAST -> 0.48f
                 WeatherCategory.OVERCAST_NIGHT -> 0.42f
                 else -> 0.35f
             }
 
-            val nightCloudFilter = if (weatherCategory == WeatherCategory.CLOUDY_NIGHT) {
-                // 温和提升暗夜云层月光灰白质感，亮度适中深邃，防止过曝
-                val matrix = ColorMatrix(floatArrayOf(
-                    1.08f, 0f, 0f, 0f, 16f,
-                    0f, 1.08f, 0f, 0f, 22f,
-                    0f, 0f, 1.15f, 0f, 32f,
-                    0f, 0f, 0f, 1.0f, 0f
-                ))
-                ColorFilter.colorMatrix(matrix)
-            } else null
+            val cloudColorFilter = when (weatherCategory) {
+                WeatherCategory.CLOUDY -> {
+                    // 提升白天云海纯白通透感与雪白明亮度，消除发暗发灰
+                    val matrix = ColorMatrix(floatArrayOf(
+                        1.15f, 0f, 0f, 0f, 22f,
+                        0f, 1.15f, 0f, 0f, 22f,
+                        0f, 0f, 1.18f, 0f, 25f,
+                        0f, 0f, 0f, 1.0f, 0f
+                    ))
+                    ColorFilter.colorMatrix(matrix)
+                }
+                WeatherCategory.CLOUDY_NIGHT -> {
+                    // 温和提升暗夜云层月光灰白质感，亮度适中深邃，防止过曝
+                    val matrix = ColorMatrix(floatArrayOf(
+                        1.08f, 0f, 0f, 0f, 16f,
+                        0f, 1.08f, 0f, 0f, 22f,
+                        0f, 0f, 1.15f, 0f, 32f,
+                        0f, 0f, 0f, 1.0f, 0f
+                    ))
+                    ColorFilter.colorMatrix(matrix)
+                }
+                else -> null
+            }
 
             // Layer 1: 底层主云海 (全屏平滑自适应，轻透舒展)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
                 contentScale = ContentScale.Crop,
-                colorFilter = nightCloudFilter,
+                colorFilter = cloudColorFilter,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -367,7 +380,7 @@ fun WeatherSkyBackground(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "深景视差流云",
                 contentScale = ContentScale.Crop,
-                colorFilter = nightCloudFilter,
+                colorFilter = cloudColorFilter,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -2296,16 +2309,16 @@ private fun DrawScope.drawDayCloudySoftClouds(
     height: Float,
     progress: Float
 ) {
-    // 上半部左右分布的 4 团稀疏白昼轻云 (中心Offset, 基础Alpha, 颜色与半径Pair)
+    // 上半部左右分布的 4 团纯白雪白流云 (中心Offset, 基础Alpha, 颜色与半径Pair)
     val dayClouds = listOf(
-        // 左上翼轻盈白云 (主云团)
-        Triple(Offset(width * 0.18f, height * 0.14f), 0.16f, Color(0xFFFFFFFF) to width * 0.28f),
-        // 左中上轻薄微云 (侧翼)
-        Triple(Offset(width * 0.26f, height * 0.24f), 0.11f, Color(0xFFF0F5FA) to width * 0.20f),
-        // 右上翼轻盈白云 (主云团)
-        Triple(Offset(width * 0.82f, height * 0.16f), 0.15f, Color(0xFFFFFFFF) to width * 0.30f),
-        // 右中上轻薄微云 (侧翼)
-        Triple(Offset(width * 0.74f, height * 0.26f), 0.10f, Color(0xFFE8F1FA) to width * 0.22f)
+        // 左上翼轻盈纯白云 (主云团 - 纯净雪白)
+        Triple(Offset(width * 0.18f, height * 0.14f), 0.22f, Color(0xFFFFFFFF) to width * 0.28f),
+        // 左中上轻薄微云 (侧翼 - 极亮纯白)
+        Triple(Offset(width * 0.26f, height * 0.24f), 0.16f, Color(0xFFFAFDFF) to width * 0.20f),
+        // 右上翼轻盈纯白云 (主云团 - 纯净雪白)
+        Triple(Offset(width * 0.82f, height * 0.16f), 0.20f, Color(0xFFFFFFFF) to width * 0.30f),
+        // 右中上轻薄微云 (侧翼 - 极亮纯白)
+        Triple(Offset(width * 0.74f, height * 0.26f), 0.15f, Color(0xFFFAFDFF) to width * 0.22f)
     )
 
     dayClouds.forEachIndexed { idx, (centerPos, baseAlpha, colorAndRadius) ->
@@ -2314,12 +2327,12 @@ private fun DrawScope.drawDayCloudySoftClouds(
         val driftDir = if (idx < 2) 1.0f else -0.85f
         val drift = sin((progress * speed + idx * 0.32f) * 2f * PI.toFloat()) * 22f * driftDir
 
-        // 柔和羽化放射状轻云
+        // 柔和羽化纯白轻云 (纯净明亮，边缘自然淡出)
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
                     color.copy(alpha = baseAlpha),
-                    color.copy(alpha = baseAlpha * 0.40f),
+                    color.copy(alpha = baseAlpha * 0.45f),
                     Color.Transparent
                 ),
                 center = Offset(centerPos.x + drift, centerPos.y),
