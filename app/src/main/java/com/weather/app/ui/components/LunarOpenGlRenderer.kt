@@ -16,14 +16,14 @@ import java.nio.FloatBuffer
 /**
  * 摄影级 3D 真实月球 OpenGL ES 2.0 纯代码程序化渲染器
  *
- * 采用领域扭曲分形场（Domain-Warped Harmonic Field）与真实天体测光模型，
- * 采用皎洁明净的天然月岩【灰白色】基底色调（斜长岩优雅灰白与玄武岩深灰），
- * 渲染出完整的三维月球球体表面，并完美兼容上层天文月相晨昏线引擎（drawLunarPhaseShadow），
- * 确保月牙（Crescent）、凸月（Gibbous）与满月（Full Moon）呈现精确、优雅、唯美的天文学曲面阴影与地照透光：
- * 1. 真实月球正面有机月海轮廓（雨海、风暴洋、澄海、静海、危海等连贯流体熔岩平原）
- * 2. 皎洁典雅的灰白色系高地（象牙灰白与浅银灰白，反照率明润透亮）
- * 3. 柔和精致的第谷坑（Tycho）细微辐射纹与哥白尼明亮溅射晕
- * 4. 三维球面连续曲率、边缘自然减光与亚像素抗锯齿超清边缘
+ * 采用领域扭曲连续流体分形场（Domain-Warped Harmonic Field）与天体测光多矿物反射率模型，
+ * 采用深度柔焦羽化的【灰白色】基底色调（斜长岩优雅灰白与玄武岩柔和烟灰），
+ * 精准刻画真实月球正面经典「月兔」地貌、柔和朦胧的月海边缘、以及周边密集的环形山陨石坑群（南部环形山复合群、东西边缘陨石坑链）：
+ * 1. 深度柔焦羽化模糊的真实月球正面有机月海轮廓（雨海、风暴洋、澄海、静海、危海等柔和流体平原）
+ * 2. 密集的周边环形山陨石坑链（克拉维斯、朗戈蒙塔努斯、佩塔维乌斯、文德利努斯、格里马尔迪、贝利、希卡德等）
+ * 3. 柔焦弥散的第谷（Tycho）细微辐射纹与哥白尼明亮溅射晕
+ * 4. 皎洁典雅的灰白色系高地与斜长岩崩塌羽化过渡带
+ * 5. 三维球面连续曲率、边缘自然减光与亚像素抗锯齿超清边缘
  */
 class LunarOpenGlRenderer {
 
@@ -61,13 +61,13 @@ class LunarOpenGlRenderer {
         """
 
         /**
-         * 摄影级真实月球 GLSL 片段着色器源码（优雅灰白色调，完整 3D 球体纹理）
+         * 摄影级真实月球 GLSL 片段着色器源码（深度柔焦与密集周边陨石坑群）
          */
         private const val FRAGMENT_SHADER_SRC = """
             precision highp float;
             uniform vec2 u_resolution;
 
-            // ------------------ 高保真连续光滑 3D 噪声系统 ------------------
+            // ------------------ 3D 经典 Simplex / Perlin 高保真平滑噪声系统 ------------------
             vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -116,14 +116,14 @@ class LunarOpenGlRenderer {
                 return 42.0 * dot(m * m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
             }
 
-            // 领域扭曲分形布朗运动 (Domain-Warped fBm)
+            // 领域扭曲分形布朗运动 (Domain-Warped fBm: 柔和连续流体熔岩)
             float fbm(vec3 p) {
                 float v = 0.0;
                 float a = 0.5;
                 vec3 shift = vec3(100.0);
                 for (int i = 0; i < 4; i++) {
                     v += a * snoise(p);
-                    p = p * 2.08 + shift;
+                    p = p * 2.02 + shift;
                     a *= 0.5;
                 }
                 return v;
@@ -135,14 +135,26 @@ class LunarOpenGlRenderer {
                     fbm(p + vec3(5.2, 1.3, 2.8)),
                     fbm(p + vec3(1.8, 9.2, 4.4))
                 );
-                return fbm(p + 1.2 * q);
+                return fbm(p + 0.95 * q);
             }
 
-            // 柔和月海地质场计算
+            // 深度柔焦羽化月海地质场计算（超宽羽化，消除任何生硬边缘）
             float mareRegion(vec3 N, vec3 center, float radius, float softness, float noiseAmp) {
                 float d = length(N - center);
-                float warp = domainWarpFbm(N * 4.5) * noiseAmp;
+                float warp = domainWarpFbm(N * 3.2) * noiseAmp;
                 return smoothstep(radius * (1.0 + softness), radius * (1.0 - softness), d + warp);
+            }
+
+            // 周边单个环形山陨石坑剖面计算（包含柔和外壁亮圈与微弱深色坑底）
+            void evalCrater(vec3 N, vec3 center, float radius, float rimBright, float floorDark, inout float outRims, inout float outDarkFloors) {
+                float d = length(N - center);
+                float u = d / radius;
+                // 外圈抬升亮环
+                float rim = smoothstep(1.35, 0.95, u) * smoothstep(0.65, 0.95, u) * rimBright;
+                // 内部低洼暗坑底
+                float darkFloor = smoothstep(0.85, 0.25, u) * floorDark;
+                outRims += rim;
+                outDarkFloors += darkFloor;
             }
 
             void main() {
@@ -159,142 +171,194 @@ class LunarOpenGlRenderer {
                 float r = sqrt(r2);
                 float edgeAlpha = 1.0 - smoothstep(0.988, 1.0, r);
 
-                // 3D 正射球面法线 (真实视角透视收缩)
+                // 3D 正射球面法线 (真实透视收缩)
                 vec3 N = vec3(p.x, p.y, sqrt(max(0.0, 1.0 - r2)));
 
-                // ------------------ 1. 真实月球正面有机月海系统 (Maria System) ------------------
+                // ------------------ 1. 深度柔焦羽化月海系统 (Deeply Softened Maria) ------------------
                 float mare = 0.0;
+                float titanium = 0.0; // 静海高钛矿物标记
 
-                // 雨海 (Mare Imbrium) - 西北部主撞击盆地
-                float imbrium = mareRegion(N, vec3(-0.20, -0.30, 0.93), 0.36, 0.30, 0.12);
-                mare = max(mare, imbrium * 0.98);
+                // 雨海 (Mare Imbrium) - 西北部主圆形盆地（超宽柔焦羽化）
+                float imbrium = mareRegion(N, vec3(-0.20, -0.29, 0.93), 0.37, 0.55, 0.06);
+                mare = max(mare, imbrium * 0.95);
 
-                // 虹湾 (Sinus Iridum)
-                float iridum = mareRegion(N, vec3(-0.36, -0.44, 0.82), 0.14, 0.25, 0.08);
-                mare = max(mare, iridum * 0.90);
+                // 虹湾 (Sinus Iridum) - 雨海西北柔和月牙湾
+                float iridum = mareRegion(N, vec3(-0.35, -0.43, 0.83), 0.15, 0.45, 0.04);
+                mare = max(mare, iridum * 0.88);
 
-                // 柏拉图深黑熔岩平底坑 (Plato)
-                float plato = mareRegion(N, vec3(-0.10, -0.50, 0.85), 0.065, 0.18, 0.04);
-                mare = max(mare, plato * 1.10);
+                // 柏拉图深黑平底坑 (Plato) - 雨海北缘深黑熔岩平底坑
+                float plato = mareRegion(N, vec3(-0.10, -0.49, 0.86), 0.058, 0.26, 0.02);
+                mare = max(mare, plato * 1.08);
 
-                // 风暴洋 (Oceanus Procellarum) - 西侧广袤不规则暗区（多核有机连通）
-                float pro1 = mareRegion(N, vec3(-0.48, -0.06, 0.87), 0.44, 0.45, 0.16);
-                float pro2 = mareRegion(N, vec3(-0.40,  0.16, 0.90), 0.36, 0.40, 0.14);
-                float pro3 = mareRegion(N, vec3(-0.56, -0.24, 0.79), 0.32, 0.35, 0.12);
-                mare = max(mare, max(pro1, max(pro2, pro3)) * 0.92);
+                // 风暴洋 (Oceanus Procellarum) - 西侧广袤不规则暗区（柔和相连）
+                float pro1 = mareRegion(N, vec3(-0.48, -0.06, 0.87), 0.45, 0.60, 0.08);
+                float pro2 = mareRegion(N, vec3(-0.40,  0.18, 0.89), 0.38, 0.55, 0.07);
+                float pro3 = mareRegion(N, vec3(-0.58, -0.22, 0.78), 0.34, 0.50, 0.06);
+                mare = max(mare, max(pro1, max(pro2, pro3)) * 0.90);
 
-                // 澄海 (Mare Serenitatis) - 北部偏东圆形盆地
-                float seren = mareRegion(N, vec3(0.18, -0.28, 0.94), 0.26, 0.28, 0.10);
-                mare = max(mare, seren * 0.95);
+                // 澄海 (Mare Serenitatis) - 北部偏东双层同心环构造
+                float serenOuter = mareRegion(N, vec3(0.18, -0.27, 0.94), 0.27, 0.50, 0.05);
+                float serenInner = mareRegion(N, vec3(0.18, -0.27, 0.94), 0.18, 0.52, 0.04);
+                float seren = mix(serenOuter * 0.92, serenInner * 0.84, 0.30);
+                mare = max(mare, seren);
 
-                // 静海 (Mare Tranquillitatis) - 东部不规则暗海
-                float tranq = mareRegion(N, vec3(0.35, -0.06, 0.93), 0.30, 0.35, 0.12);
-                mare = max(mare, tranq * 0.96);
+                // 静海 (Mare Tranquillitatis) - 东部高钛玄武岩暗海
+                float tranq = mareRegion(N, vec3(0.35, -0.06, 0.93), 0.31, 0.55, 0.06);
+                mare = max(mare, tranq * 0.94);
+                titanium = max(titanium, tranq);
 
                 // 澄海与静海交汇通道
-                float tranqSerenConn = mareRegion(N, vec3(0.25, -0.16, 0.95), 0.16, 0.30, 0.08);
-                mare = max(mare, tranqSerenConn * 0.85);
+                float tranqSerenConn = mareRegion(N, vec3(0.24, -0.15, 0.96), 0.17, 0.50, 0.04);
+                mare = max(mare, tranqSerenConn * 0.82);
 
-                // 危海 (Mare Crisium) - 极东边缘透视压缩椭圆暗盆
+                // 汽海与中央湾 (Mare Vaporum / Sinus Medii)
+                float vaporum = mareRegion(N, vec3(0.04, -0.08, 0.99), 0.15, 0.52, 0.04);
+                mare = max(mare, vaporum * 0.75);
+
+                // 危海 (Mare Crisium) - 极东边缘透视压缩纵椭圆深色盆地
                 vec3 crisiumN = vec3(N.x, N.y * 0.76, N.z);
-                float crisium = mareRegion(crisiumN, vec3(0.66, -0.16 * 0.76, 0.73), 0.19, 0.22, 0.08);
-                mare = max(mare, crisium * 1.05);
+                float crisiumOuter = mareRegion(crisiumN, vec3(0.66, -0.16 * 0.76, 0.73), 0.19, 0.42, 0.04);
+                float crisiumCore = mareRegion(crisiumN, vec3(0.66, -0.16 * 0.76, 0.73), 0.11, 0.32, 0.02);
+                float crisium = max(crisiumOuter * 0.88, crisiumCore * 1.06);
+                mare = max(mare, crisium);
 
                 // 丰富海 (Mare Fecunditatis)
-                float fecund = mareRegion(N, vec3(0.48, 0.18, 0.85), 0.26, 0.32, 0.10);
-                mare = max(mare, fecund * 0.88);
+                float fecund = mareRegion(N, vec3(0.48, 0.18, 0.85), 0.27, 0.52, 0.05);
+                mare = max(mare, fecund * 0.86);
 
                 // 云海 (Mare Nubium)
-                float nubium = mareRegion(N, vec3(-0.16, 0.28, 0.94), 0.26, 0.30, 0.10);
-                mare = max(mare, nubium * 0.90);
+                float nubium = mareRegion(N, vec3(-0.16, 0.28, 0.94), 0.27, 0.50, 0.05);
+                mare = max(mare, nubium * 0.87);
 
                 // 湿海 (Mare Humorum)
-                float humorum = mareRegion(N, vec3(-0.44, 0.36, 0.82), 0.16, 0.22, 0.08);
-                mare = max(mare, humorum * 0.92);
+                float humorum = mareRegion(N, vec3(-0.44, 0.36, 0.82), 0.17, 0.42, 0.04);
+                mare = max(mare, humorum * 0.90);
 
                 // 神海 (Mare Nectaris)
-                float nectaris = mareRegion(N, vec3(0.32, 0.24, 0.91), 0.14, 0.25, 0.08);
-                mare = max(mare, nectaris * 0.88);
+                float nectaris = mareRegion(N, vec3(0.32, 0.24, 0.91), 0.15, 0.45, 0.04);
+                mare = max(mare, nectaris * 0.86);
 
                 // 冷海 (Mare Frigoris) - 北部细长纬向暗弧带
                 vec3 frigorisN = vec3(N.x * 0.45, N.y, N.z);
-                float frigoris = mareRegion(frigorisN, vec3(0.04 * 0.45, -0.56, 0.82), 0.13, 0.35, 0.06);
-                mare = max(mare, frigoris * 0.85);
+                float frigoris = mareRegion(frigorisN, vec3(0.04 * 0.45, -0.56, 0.82), 0.14, 0.52, 0.03);
+                mare = max(mare, frigoris * 0.82);
 
-                // ------------------ 2. 标志性著名环形山与辐射纹系 (柔和灰白色亮点) ------------------
-                // 第谷坑 (Tycho) 辐射纹
+                // ------------------ 2. 密集周边环形山与陨石坑链 (Dense Perimeter Crater Field) ------------------
+                float craterRims = 0.0;
+                float craterDarkFloors = 0.0;
+
+                // 南部密集古老环形山区 (Southern Cratered Highlands - 复合大撞击坑带)
+                evalCrater(N, vec3(-0.14, 0.62, 0.77), 0.068, 0.42, 0.20, craterRims, craterDarkFloors); // 克拉维斯 (Clavius)
+                evalCrater(N, vec3(-0.08, 0.72, 0.69), 0.048, 0.45, 0.16, craterRims, craterDarkFloors); // 莫雷图斯 (Moretus)
+                evalCrater(N, vec3(-0.12, 0.54, 0.83), 0.055, 0.38, 0.18, craterRims, craterDarkFloors); // 马吉努斯 (Maginus)
+                evalCrater(N, vec3( 0.04, 0.65, 0.76), 0.050, 0.40, 0.16, craterRims, craterDarkFloors); // 曼齐尼 (Manzinus)
+                evalCrater(N, vec3(-0.25, 0.58, 0.77), 0.052, 0.38, 0.18, craterRims, craterDarkFloors); // 朗戈蒙塔努斯 (Longomontanus)
+                evalCrater(N, vec3(-0.20, 0.68, 0.70), 0.045, 0.36, 0.16, craterRims, craterDarkFloors); // 维廉 (Wilhelm)
+                evalCrater(N, vec3( 0.18, 0.56, 0.81), 0.048, 0.38, 0.18, craterRims, craterDarkFloors); // 毛罗利科斯 (Maurolycus)
+                evalCrater(N, vec3( 0.10, 0.48, 0.87), 0.044, 0.35, 0.15, craterRims, craterDarkFloors); // 施特夫勒 (Stöfler)
+                evalCrater(N, vec3(-0.02, 0.38, 0.92), 0.040, 0.36, 0.14, craterRims, craterDarkFloors); // 瓦尔特 (Walter)
+                evalCrater(N, vec3(-0.22, 0.38, 0.89), 0.042, 0.38, 0.22, craterRims, craterDarkFloors); // 皮塔图斯 (Pitatus)
+
+                // 东部边缘带环形坑链 (Eastern Limb Crater Chain)
+                evalCrater(N, vec3(0.62, 0.12, 0.77), 0.046, 0.42, 0.14, craterRims, craterDarkFloors);  // 朗格勒努斯 (Langrenus)
+                evalCrater(N, vec3(0.58, 0.32, 0.75), 0.054, 0.45, 0.16, craterRims, craterDarkFloors);  // 佩塔维乌斯 (Petavius)
+                evalCrater(N, vec3(0.64, 0.22, 0.74), 0.046, 0.38, 0.15, craterRims, craterDarkFloors);  // 文德利努斯 (Vendelinus)
+                evalCrater(N, vec3(0.52, 0.45, 0.72), 0.044, 0.36, 0.14, craterRims, craterDarkFloors);  // 富内留斯 (Furnerius)
+                evalCrater(N, vec3(0.60, -0.28, 0.74), 0.044, 0.40, 0.14, craterRims, craterDarkFloors); // 克利奥迈季斯 (Cleomedes)
+                evalCrater(N, vec3(0.48, -0.58, 0.65), 0.048, 0.38, 0.28, craterRims, craterDarkFloors); // 恩底弥翁 (Endymion)
+                evalCrater(N, vec3(0.38, -0.42, 0.82), 0.040, 0.35, 0.12, craterRims, craterDarkFloors); // 波希多尼 (Posidonius)
+
+                // 西部边缘带环形坑链 (Western Limb Crater Chain)
+                evalCrater(N, vec3(-0.68, -0.08, 0.73), 0.058, 0.35, 0.40, craterRims, craterDarkFloors); // 格里马尔迪 (Grimaldi - 著名深黑熔岩底)
+                evalCrater(N, vec3(-0.72, -0.02, 0.69), 0.042, 0.34, 0.35, craterRims, craterDarkFloors); // 里乔利 (Riccioli)
+                evalCrater(N, vec3(-0.65, 0.06, 0.75), 0.048, 0.38, 0.14, craterRims, craterDarkFloors);  // 赫维留 (Hevelius)
+                evalCrater(N, vec3(-0.48, 0.54, 0.69), 0.065, 0.38, 0.35, craterRims, craterDarkFloors);  // 希卡德 (Schickard - 巨大深色坑底)
+                evalCrater(N, vec3(-0.55, 0.64, 0.53), 0.068, 0.36, 0.25, craterRims, craterDarkFloors);  // 贝利 (Bailly - 月面最大陨坑)
+                evalCrater(N, vec3(-0.40, 0.28, 0.87), 0.046, 0.40, 0.14, craterRims, craterDarkFloors);  // 伽森狄 (Gassendi)
+                evalCrater(N, vec3(-0.28, 0.22, 0.93), 0.038, 0.38, 0.12, craterRims, craterDarkFloors);  // 布利奥 (Bullialdus)
+
+                // 北部极区环形坑 (Northern Polar Craters)
+                evalCrater(N, vec3(-0.12, -0.73, 0.67), 0.040, 0.48, 0.10, craterRims, craterDarkFloors); // 阿那克萨哥拉 (Anaxagoras)
+                evalCrater(N, vec3( 0.18, -0.70, 0.69), 0.050, 0.34, 0.14, craterRims, craterDarkFloors); // 梅冬 (Meton)
+                evalCrater(N, vec3(-0.02, -0.78, 0.62), 0.046, 0.36, 0.14, craterRims, craterDarkFloors); // 戈尔德施米特 (Goldschmidt)
+
+                // 叠加深色平底坑到底层月海掩码
+                mare = max(mare, clamp(craterDarkFloors, 0.0, 0.90));
+
+                // ------------------ 3. 标志性著名环形山与柔焦辐射纹系统 ------------------
+                // 第谷坑 (Tycho) 柔焦辐射纹
                 vec3 tychoC = vec3(-0.10, 0.48, 0.87);
                 vec3 dt = N - tychoC;
                 float rTycho = length(dt);
                 float aTycho = atan(dt.y, dt.x);
 
-                // 柔和纤细角向射线
+                // 柔和弥散发散射线
                 float rays = 0.0;
-                rays += pow(abs(sin(aTycho * 9.0 + snoise(N * 4.0) * 1.5)), 8.0) * exp(-rTycho * 1.3) * 0.50;
-                rays += pow(abs(sin(aTycho * 23.0 + snoise(N * 8.0) * 1.2)), 6.0) * exp(-rTycho * 1.7) * 0.30;
+                rays += pow(abs(sin(aTycho * 9.0 + snoise(N * 3.0) * 1.4)), 8.0) * exp(-rTycho * 1.2) * 0.40;
+                rays += pow(abs(sin(aTycho * 19.0 + snoise(N * 6.0) * 1.2)), 6.0) * exp(-rTycho * 1.6) * 0.24;
 
                 // 第谷亮核与柔和晕
-                float tychoCore = smoothstep(0.045, 0.012, rTycho) * 0.65;
-                float tychoHalo = smoothstep(0.09, 0.035, rTycho) * 0.35;
+                float tychoCore = smoothstep(0.042, 0.010, rTycho) * 0.52;
+                float tychoHalo = smoothstep(0.095, 0.035, rTycho) * 0.28;
 
-                // 哥白尼坑 (Copernicus)
+                // 哥白尼坑 (Copernicus) - 柔焦三环多层羽化结构
                 float rCopernicus = length(N - vec3(-0.22, -0.12, 0.96));
-                float copernicusCore = smoothstep(0.035, 0.010, rCopernicus) * 0.55;
-                float copernicusHalo = smoothstep(0.12, 0.025, rCopernicus) * 0.38;
+                float copernicusCore = smoothstep(0.032, 0.008, rCopernicus) * 0.46;
+                float copernicusHalo = smoothstep(0.13, 0.025, rCopernicus) * 0.32;
+                float aCopernicus = atan(N.y - (-0.12), N.x - (-0.22));
+                float copernicusRays = pow(abs(sin(aCopernicus * 11.0 + snoise(N * 6.0) * 1.2)), 4.0) * exp(-rCopernicus * 3.6) * 0.18;
 
                 // 开普勒坑 (Kepler)
-                float rKepler = length(N - vec3(-0.40, -0.09, 0.91));
-                float keplerSpot = smoothstep(0.06, 0.015, rKepler) * 0.35;
+                float rKepler = length(N - vec3(-0.39, -0.09, 0.91));
+                float keplerSpot = smoothstep(0.055, 0.012, rKepler) * 0.28;
 
-                // 阿里斯塔克斯 (Aristarchus)
-                float rAris = length(N - vec3(-0.50, -0.26, 0.82));
-                float arisSpot = smoothstep(0.030, 0.008, rAris) * 0.70;
+                // 阿里斯塔克斯 (Aristarchus) - 柔和明亮极亮点
+                float rAris = length(N - vec3(-0.49, -0.25, 0.83));
+                float arisSpot = smoothstep(0.028, 0.006, rAris) * 0.58;
 
-                // 亚平宁山脉 (Montes Apenninus) 雨海边缘自然山脊
-                float dApennines = abs(length(N - vec3(-0.06, -0.16, 0.98)) - 0.25);
-                float aApennines = atan(N.y - (-0.16), N.x - (-0.06));
-                float apennineMask = smoothstep(0.1, 0.5, aApennines) * (1.0 - smoothstep(1.9, 2.3, aApennines));
-                float apennines = smoothstep(0.03, 0.005, dApennines) * apennineMask * 0.38;
+                // 亚平宁山脉 (Montes Apenninus) - 雨海东南侧柔和山脊
+                float dApennines = abs(length(N - vec3(-0.06, -0.15, 0.98)) - 0.26);
+                float aApennines = atan(N.y - (-0.15), N.x - (-0.06));
+                float apennineMask = smoothstep(0.1, 0.45, aApennines) * (1.0 - smoothstep(1.9, 2.35, aApennines));
+                float apennines = smoothstep(0.035, 0.005, dApennines) * apennineMask * 0.30;
 
-                // 特征亮斑集合
+                // 特征高亮反照集合 (包含周边环形山坑沿)
                 float brightFeatures = rays + tychoCore + tychoHalo +
-                                       copernicusCore + copernicusHalo +
-                                       keplerSpot + arisSpot + apennines;
+                                       copernicusCore + copernicusHalo + copernicusRays +
+                                       keplerSpot + arisSpot + apennines +
+                                       craterRims * 0.65;
 
-                // ------------------ 3. 真实典雅的【灰白色】基调色彩系统 ------------------
-                // 高地：明润透亮的【灰白/象牙浅银白】（柔和、皎洁、无过曝纯白）
-                vec3 highlandBase = vec3(0.80, 0.79, 0.76);
-                vec3 highlandLight = vec3(0.89, 0.87, 0.84);
-                float highlandDetail = domainWarpFbm(N * 8.0) * 0.5 + 0.5;
+                // ------------------ 4. 真实温润【灰白色】基调与柔和烟灰色彩系统 ------------------
+                // 高地：温润象牙灰白（柔和、皎洁、无过曝纯白）
+                vec3 highlandBase = vec3(0.81, 0.80, 0.77);
+                vec3 highlandLight = vec3(0.88, 0.87, 0.84);
+                float highlandDetail = domainWarpFbm(N * 5.5) * 0.5 + 0.5;
                 vec3 highlandColor = mix(highlandBase, highlandLight, highlandDetail);
 
-                // 月海：玄武岩深炭灰与冷岩灰（与灰白高地形成优美反差）
-                vec3 mareDark = vec3(0.42, 0.40, 0.38);
-                vec3 mareMid = vec3(0.55, 0.53, 0.50);
-                float mareDetail = fbm(N * 6.0) * 0.5 + 0.5;
+                // 月海：柔和烟石墨灰（收敛色差对比，消除突兀死黑，形成丝绸般温润平原）
+                vec3 mareDark = vec3(0.52, 0.50, 0.47);
+                vec3 mareMid = vec3(0.62, 0.60, 0.57);
+                float mareDetail = fbm(N * 4.2) * 0.5 + 0.5;
                 vec3 mareColor = mix(mareDark, mareMid, mareDetail);
 
                 // 静海高钛矿物微调
-                mareColor = mix(mareColor, vec3(0.44, 0.45, 0.48), tranq * 0.35);
+                mareColor = mix(mareColor, vec3(0.53, 0.54, 0.57), titanium * 0.30);
 
                 // 辐射纹与撞击坑亮斑：明净浅银灰白
-                vec3 rayGreyWhite = vec3(0.93, 0.91, 0.88);
+                vec3 rayGreyWhite = vec3(0.92, 0.90, 0.88);
 
-                // 地表基础反照率合成
+                // 地表基础反照率合成（高地与月海深度柔焦自然过渡）
                 vec3 surfaceAlbedo = mix(highlandColor, mareColor, clamp(mare, 0.0, 1.0));
-                surfaceAlbedo = mix(surfaceAlbedo, rayGreyWhite, clamp(brightFeatures, 0.0, 0.65));
+                surfaceAlbedo = mix(surfaceAlbedo, rayGreyWhite, clamp(brightFeatures, 0.0, 0.48));
 
-                // 细腻月壤微晶体质感
-                surfaceAlbedo += vec3(snoise(N * 36.0) * 0.012);
-
-                // ------------------ 4. 真实月球光度学物理散射与 3D 立体感 ------------------
+                // ------------------ 5. 真实月球光度学物理散射与 3D 球体感 ------------------
                 vec3 V = vec3(0.0, 0.0, 1.0); // 视线方向
                 float mu = max(0.001, dot(N, V)); // N.z
 
-                // 边缘自然减光（Limb Softening / 立体球形感）
+                // 边缘自然减光（Limb Softening / 真实圆润 3D 球形体积感）
                 float limb = pow(mu, 0.20);
 
-                // 最终三维物理月球表面合成（完整 3D 球体，明润灰白，由外层 drawLunarPhaseShadow 精确控制月相与月牙）
+                // 最终三维物理月球表面合成（完整 3D 灰白球体，由外层 drawLunarPhaseShadow 精确控制月相与月牙）
                 vec3 finalColor = surfaceAlbedo * limb;
 
                 gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), edgeAlpha);
