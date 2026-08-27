@@ -49,6 +49,7 @@ import androidx.compose.ui.window.PopupProperties
  * @param expanded 菜单是否展开可见
  * @param onDismissRequest 关闭菜单回调
  * @param onSelectSourceClick 点击“天气数据源”回调
+ * @param onCardSettingsClick 点击“卡片显示设置”回调
  * @param onIntervalClick 点击“更新间隔”回调
  * @param onLocationSettingsClick 点击“定位设置”回调
  * @param onPrivacyClick 点击“隐私与免责声明”回调
@@ -58,6 +59,7 @@ fun WeatherSettingsMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     onSelectSourceClick: () -> Unit,
+    onCardSettingsClick: () -> Unit = {},
     onIntervalClick: () -> Unit = {},
     onLocationSettingsClick: () -> Unit = {},
     onPrivacyClick: () -> Unit = {}
@@ -115,6 +117,7 @@ fun WeatherSettingsMenu(
                         .padding(vertical = 3.dp)
                 ) {
                     val menuItems = listOf(
+                        "卡片显示" to { onCardSettingsClick() },
                         "更新间隔" to { onIntervalClick() },
                         "天气数据源" to { onSelectSourceClick() },
                         "定位设置" to { onLocationSettingsClick() },

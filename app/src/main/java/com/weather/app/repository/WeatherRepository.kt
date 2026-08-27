@@ -49,6 +49,31 @@ class WeatherRepository(
         private const val KEY_UPDATE_INTERVAL_HOURS = "update_interval_hours"
         private const val KEY_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
         private const val KEY_PRIVACY_AGREED = "privacy_agreed"
+        private const val KEY_CARD_DISPLAY_CONFIG = "card_display_config_json"
+    }
+
+    /**
+     * 获取用户自定义卡片显示配置
+     *
+     * @return 当前持久化的卡片显示配置对象 [com.weather.app.model.CardDisplayConfig]
+     */
+    fun getCardDisplayConfig(): com.weather.app.model.CardDisplayConfig {
+        val json = prefs.getString(KEY_CARD_DISPLAY_CONFIG, null) ?: return com.weather.app.model.CardDisplayConfig()
+        return try {
+            gson.fromJson(json, com.weather.app.model.CardDisplayConfig::class.java) ?: com.weather.app.model.CardDisplayConfig()
+        } catch (e: Exception) {
+            com.weather.app.model.CardDisplayConfig()
+        }
+    }
+
+    /**
+     * 持久化保存用户自定义卡片显示配置
+     *
+     * @param config 待保存的卡片显示配置实体 [com.weather.app.model.CardDisplayConfig]
+     */
+    fun setCardDisplayConfig(config: com.weather.app.model.CardDisplayConfig) {
+        val json = gson.toJson(config)
+        prefs.edit().putString(KEY_CARD_DISPLAY_CONFIG, json).apply()
     }
 
     /**
@@ -330,16 +355,17 @@ class WeatherRepository(
      *
      * 遵循当前定位设置展示模式（地标/街道 或 区县），优先尝试设备原生 GPS/基站网络定位与逆地理编码匹配。
      *
+     * @param forceRefresh 是否强制触发实时定位更新
      * @return 包含聚合天气数据 [WeatherData] 的结果 [Result]
      */
-    suspend fun autoLocateAndFetchWeather(): Result<WeatherData> = withContext(Dispatchers.IO) {
+    suspend fun autoLocateAndFetchWeather(forceRefresh: Boolean = true): Result<WeatherData> = withContext(Dispatchers.IO) {
         val currentSource = getActiveDataSource()
         val displayMode = getLocationDisplayMode()
 
         // 1. 尝试使用设备 GPS / 网络定位
         var locatedCity: CityInfo? = null
         if (locationManager.hasLocationPermission()) {
-            val location = locationManager.getCurrentLocation()
+            val location = locationManager.getCurrentLocation(forceRefresh = forceRefresh)
             if (location != null) {
                 val geocodedCity = locationManager.reverseGeocode(location.latitude, location.longitude, displayMode)
                 if (geocodedCity != null) {
@@ -355,7 +381,7 @@ class WeatherRepository(
         }
 
         // 3. 更新已保存城市列表中的定位城市
-        val targetCity = locatedCity ?: getSavedCities().firstOrNull() ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true)
+        val targetCity = locatedCity ?: getSavedCities().firstOrNull { it.isAutoLocated } ?: getSavedCities().firstOrNull() ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true)
         updateAutoLocatedCity(targetCity)
 
         // 4. 获取目标城市的天气数据并回写可靠气象站点编码

@@ -30,6 +30,8 @@ class WeatherAutoUpdateWorker(
     /**
      * 执行后台静默更新任务的具体业务逻辑
      *
+     * 针对自动定位城市优先重新执行定位与天气获取，其余城市直接请求最新天气数据并持久化缓存。
+     *
      * @return 执行结果 [Result.success] 或 [Result.retry]
      */
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -40,9 +42,19 @@ class WeatherAutoUpdateWorker(
             if (savedCities.isNotEmpty()) {
                 for (city in savedCities) {
                     try {
-                        val result = repository.fetchWeather(city)
-                        result.onSuccess { weatherData ->
-                            repository.saveCachedWeatherData(city, weatherData)
+                        if (city.isAutoLocated) {
+                            val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
+                            if (locateResult.isFailure) {
+                                val fallbackResult = repository.fetchWeather(city)
+                                fallbackResult.onSuccess { weatherData ->
+                                    repository.saveCachedWeatherData(city, weatherData)
+                                }
+                            }
+                        } else {
+                            val result = repository.fetchWeather(city)
+                            result.onSuccess { weatherData ->
+                                repository.saveCachedWeatherData(city, weatherData)
+                            }
                         }
                     } catch (e: Exception) {
                         // 单个城市更新异常不阻断其他城市更新

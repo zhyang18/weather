@@ -85,10 +85,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import com.weather.app.ui.util.ScrollDirectionLock
+import com.weather.app.ui.util.directionLockDetector
+
 /**
  * 沉浸式多城市左右滑动天气主界面 Composable
  *
  * 严格遵从视觉与功能规范：全屏沉浸式拟真动态天空、由当前主页色驱动的全屏城市管理、左右手势滑屏切城、原生下拉刷新（带上次刷新时间）、条件展示气象预警与短时降水预测卡片，以及 80% 半透明大圆角设置弹窗。
+ * 内置双向手势方向仲裁与防抖机制，彻底解决水平切页与上下翻阅卡片/下拉刷新的手势冲突与抖动。
  *
  * @param viewModel 天气业务 ViewModel [WeatherViewModel]
  * @param onRequestLocationPermission 请求系统定位权限时的触发回调
@@ -102,6 +106,9 @@ fun WeatherScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 手势滑动主方向锁定状态（用于仲裁水平左右切页与垂直上下翻阅卡片/下拉刷新）
+    var gestureDirectionLock by remember { mutableStateOf(ScrollDirectionLock.UNDETERMINED) }
 
     // 错误提示响应
     LaunchedEffect(uiState.errorMessage) {
@@ -161,13 +168,26 @@ fun WeatherScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // 沉浸式动态真实天气天空背景 (支持昼夜即时刷新切换，滑动过程视差无缝过渡，停靠结算后播放景深推远动效)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .directionLockDetector { lock ->
+                gestureDirectionLock = lock
+            }
+    ) {
+        // 沉浸式动态真实天气天空背景 (支持昼夜即时刷新切换，滑动过程视差无缝过渡，停靠结算后播放景深推远动效；带死区过滤防抖)
         WeatherSkyBackground(
             weatherText = weatherText,
             city = settledCity,
             lastUpdatedTimestamp = settledWeather?.updateTimestamp ?: System.currentTimeMillis(),
-            parallaxOffsetProvider = { pagerState.currentPageOffsetFraction }
+            parallaxOffsetProvider = {
+                if (gestureDirectionLock == ScrollDirectionLock.VERTICAL) {
+                    0f
+                } else {
+                    val offset = pagerState.currentPageOffsetFraction
+                    if (kotlin.math.abs(offset) < 0.003f) 0f else offset
+                }
+            }
         )
 
         Column(
@@ -186,6 +206,7 @@ fun WeatherScreen(
                 onMenuClick = {
                     viewModel.setCityManagementOpen(true)
                 },
+                onCardSettingsClick = { viewModel.setShowCardSettingsDialog(true) },
                 onSourceClick = { viewModel.setShowSourceDialog(true) },
                 onIntervalClick = { viewModel.showIntervalDialog(true) },
                 onLocationSettingsClick = { viewModel.setShowLocationSettings(true) },
@@ -194,13 +215,15 @@ fun WeatherScreen(
 
             // 水平滑动手势分页器 (左右滑动切换城市)
             // 启用 beyondBoundsPageCount = 1 预热前后邻近页面
-            // 配置 snapPositionalThreshold = 0.15f，大幅减少手势滑动触发切换的最小位移门槛，轻轻一划即可灵敏切页
+            // 配置 snapPositionalThreshold = 0.35f，提供充裕的容错空间，消除斜向滑动导致的剧烈回弹与误切页
+            // 依据手势方向判决动态设置 userScrollEnabled，垂直上下滑动时完全锁死横向晃动
             HorizontalPager(
                 state = pagerState,
                 beyondBoundsPageCount = 1,
+                userScrollEnabled = gestureDirectionLock != ScrollDirectionLock.VERTICAL,
                 flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
                     state = pagerState,
-                    snapPositionalThreshold = 0.15f,
+                    snapPositionalThreshold = 0.35f,
                     snapAnimationSpec = androidx.compose.animation.core.spring(
                         dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
                         stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
@@ -224,9 +247,11 @@ fun WeatherScreen(
                 CityWeatherPageContent(
                     city = pageCity,
                     weatherData = pageWeather,
+                    cardConfig = uiState.cardDisplayConfig,
                     isRefreshing = uiState.isRefreshing,
                     isDailyChartMode = uiState.isDailyChartMode,
                     scrollState = pageScrollState,
+                    isVerticalScrollEnabled = gestureDirectionLock != ScrollDirectionLock.HORIZONTAL,
                     onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
                     onRefresh = { viewModel.refreshCityAtIndex(page) }
                 )
@@ -328,6 +353,22 @@ fun WeatherScreen(
         )
     }
 
+    // 卡片显示设置底部抽屉弹窗 (由设置菜单触发)
+    if (uiState.showCardSettingsDialog) {
+        com.weather.app.ui.dialogs.CardSettingsSheet(
+            config = uiState.cardDisplayConfig,
+            onToggleCard = { key, enabled ->
+                viewModel.toggleCardDisplay(key, enabled)
+            },
+            onUpdateAll = { newConfig ->
+                viewModel.updateCardDisplayConfig(newConfig)
+            },
+            onDismiss = {
+                viewModel.setShowCardSettingsDialog(false)
+            }
+        )
+    }
+
     // 用户协议、隐私政策与免责声明弹窗 (首次启动强制确认，或在设置菜单中主动查阅)
     if (uiState.showPrivacyDialog) {
         if (!uiState.isPrivacyAgreed) {
@@ -366,6 +407,7 @@ fun WeatherScreen(
  * @param weatherSubtitle 当前城市的天气副标题（如 "33° | 晴"）
  * @param scrollOffsetProvider 垂直滚动偏移量提供者（单位：像素）
  * @param onMenuClick 点击左侧城市管理按钮回调
+ * @param onCardSettingsClick 点击打开卡片显示设置回调
  * @param onSourceClick 点击切换天气源回调
  * @param onIntervalClick 点击设置更新间隔回调
  * @param onLocationSettingsClick 点击打开定位设置回调
@@ -379,6 +421,7 @@ private fun TopImmersiveWeatherBar(
     weatherSubtitle: String,
     scrollOffsetProvider: () -> Int,
     onMenuClick: () -> Unit,
+    onCardSettingsClick: () -> Unit = {},
     onSourceClick: () -> Unit,
     onIntervalClick: () -> Unit,
     onLocationSettingsClick: () -> Unit,
@@ -519,10 +562,11 @@ private fun TopImmersiveWeatherBar(
                 }
             }
 
-            // 80% 半透明大圆角设置弹窗菜单（包含更新间隔、天气数据源、定位设置、隐私与免责）
+            // 80% 半透明大圆角设置弹窗菜单（包含卡片显示、更新间隔、天气数据源、定位设置、隐私与免责）
             WeatherSettingsMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
+                onCardSettingsClick = onCardSettingsClick,
                 onSelectSourceClick = onSourceClick,
                 onIntervalClick = onIntervalClick,
                 onLocationSettingsClick = onLocationSettingsClick,
@@ -537,9 +581,11 @@ private fun TopImmersiveWeatherBar(
  *
  * @param city 城市信息 [CityInfo]
  * @param weatherData 聚合天气数据 [WeatherData]
+ * @param cardConfig 卡片显隐自定义配置 [com.weather.app.model.CardDisplayConfig]
  * @param isRefreshing 是否处于刷新中
  * @param isDailyChartMode 近日天气是否为趋势折线图表模式
  * @param scrollState 垂直滚动状态 [ScrollState]
+ * @param isVerticalScrollEnabled 是否允许垂直滚动与下拉刷新（用于手势冲突防抖与方向锁定联动）
  * @param onDailyChartModeChange 切换近日天气模式回调
  * @param onRefresh 下拉刷新触发回调
  */
@@ -548,9 +594,11 @@ private fun TopImmersiveWeatherBar(
 private fun CityWeatherPageContent(
     city: CityInfo,
     weatherData: WeatherData?,
+    cardConfig: com.weather.app.model.CardDisplayConfig = com.weather.app.model.CardDisplayConfig(),
     isRefreshing: Boolean,
     isDailyChartMode: Boolean,
     scrollState: ScrollState,
+    isVerticalScrollEnabled: Boolean = true,
     onDailyChartModeChange: (Boolean) -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -568,7 +616,7 @@ private fun CityWeatherPageContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pullRefresh(pullRefreshState)
+            .pullRefresh(pullRefreshState, enabled = isVerticalScrollEnabled)
     ) {
         if (weatherData == null) {
             Box(
@@ -589,7 +637,7 @@ private fun CityWeatherPageContent(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(scrollState),
+                    .verticalScroll(scrollState, enabled = isVerticalScrollEnabled),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // 1. 顶部居中核心温度展示 (分层级联渐隐与平滑缩小：空气优 -> 最高最低温 -> 当前温度)
@@ -598,39 +646,44 @@ private fun CityWeatherPageContent(
                     scrollOffsetProvider = { scrollState.value }
                 )
 
-                // 2. 官方气象灾害预警卡片 (严格遵从需求：有预警数据时才显示，无预警数据时不占位)
-                weatherData.alert?.let { alert ->
-                    WeatherAlertCard(alert = alert)
-                    Spacer(modifier = Modifier.height(4.dp))
+                // 2. 官方气象灾害预警卡片 (用户开启且有预警数据时展示)
+                if (cardConfig.showWeatherAlert) {
+                    weatherData.alert?.let { alert ->
+                        WeatherAlertCard(alert = alert)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
                 }
 
-                // 3. 2小时分钟级短时降水预测走势卡片 (仅当下雨、有降水预测或雨情预警时展示)
+                // 3. 2小时分钟级短时降水预测走势卡片 (用户开启且当下雨、有降水预测或雨情预警时展示)
                 val hasRainCondition = weatherData.current.precipitation > 0.0 ||
                         weatherData.current.weatherText.contains("雨") ||
                         weatherData.hourlyForecasts.take(3).any { it.rain > 0.0 }
 
-                if (hasRainCondition) {
+                if (cardConfig.showMinutelyPrecipitation && hasRainCondition) {
                     MinutelyPrecipitationCard(weatherData = weatherData)
                     Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                // 4. 24小时逐时预报卡片 (带公告提示与逐时滑动)
-                HourlyForecastCard(weatherData = weatherData)
+                // 4. 24小时逐时预报卡片 (用户开启时展示)
+                if (cardConfig.showHourlyForecast) {
+                    HourlyForecastCard(weatherData = weatherData)
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                // 5. 近日天气预报卡片 (用户开启时展示)
+                if (cardConfig.showDailyForecast) {
+                    DailyForecastCard(
+                        dailyList = weatherData.dailyForecasts,
+                        isChartMode = isDailyChartMode,
+                        onChartModeChange = onDailyChartModeChange
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
 
-                // 5. 近日天气预报卡片 (对齐设计稿 7 天预报列表，持久化记住切换状态)
-                DailyForecastCard(
-                    dailyList = weatherData.dailyForecasts,
-                    isChartMode = isDailyChartMode,
-                    onChartModeChange = onDailyChartModeChange
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // 6. 详细气象指标指标宫格 (底部依次展示数据来源、气象观测发布时间与上次刷新时间)
+                // 6. 详细气象指标指标宫格 (由内部 cardConfig 进一步过滤各项详细指标卡片与月相卡片)
                 WeatherDetailGrid(
                     weatherData = weatherData,
+                    cardConfig = cardConfig,
                     lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText
                 )
 

@@ -50,12 +50,23 @@ class LunarOpenGlRenderer {
         private var globalCachedSize: Int = 0
 
         /**
+         * 获取已预先缓存的月球 ImageBitmap（非阻塞，若未就绪返回 null）
+         *
+         * @param sizePx 输出纹理尺寸像素值（默认 384x384）
+         * @return 已缓存的高精度月球 ImageBitmap [ImageBitmap]，若未生成则为 null
+         */
+        fun getPrecachedMoon(sizePx: Int = 384): ImageBitmap? {
+            val targetSize = sizePx.coerceIn(256, 1024)
+            return globalCachedImageBitmap?.takeIf { globalCachedSize == targetSize }
+        }
+
+        /**
          * 获取全局缓存的月球 ImageBitmap 或使用默认渲染器渲染
          *
-         * @param sizePx 输出纹理尺寸像素值（默认 512x512）
+         * @param sizePx 输出纹理尺寸像素值（默认 384x384）
          * @return 渲染完成的高精度月球 ImageBitmap [ImageBitmap]
          */
-        fun getOrRenderMoon(sizePx: Int = 512): ImageBitmap? {
+        fun getOrRenderMoon(sizePx: Int = 384): ImageBitmap? {
             val targetSize = sizePx.coerceIn(256, 1024)
             globalCachedImageBitmap?.takeIf { globalCachedSize == targetSize }?.let {
                 return it

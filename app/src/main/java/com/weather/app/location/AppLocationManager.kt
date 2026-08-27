@@ -52,10 +52,11 @@ class AppLocationManager(private val context: Context) {
     /**
      * 异步获取设备当前地理位置经纬度
      *
+     * @param forceRefresh 是否强制触发实时定位更新（为 true 时跳过短期缓存优先请求最新位置更新）
      * @return 包含系统位置对象的 [Location] 或 null（超时/未授权/无法获取）
      */
     @SuppressLint("MissingPermission")
-    suspend fun getCurrentLocation(): Location? = withContext(Dispatchers.Main) {
+    suspend fun getCurrentLocation(forceRefresh: Boolean = false): Location? = withContext(Dispatchers.Main) {
         if (!hasLocationPermission() || locationManager == null) {
             return@withContext null
         }
@@ -68,8 +69,8 @@ class AppLocationManager(private val context: Context) {
         val bestLastKnown = listOfNotNull(lastGps, lastNetwork, lastPassive)
             .maxByOrNull { it.time }
 
-        // 如果最后已知位置在 5 分钟内，则直接使用
-        if (bestLastKnown != null && System.currentTimeMillis() - bestLastKnown.time < 5 * 60 * 1000) {
+        // 非强制刷新模式下，如果最后已知位置在 5 分钟内，则直接使用
+        if (!forceRefresh && bestLastKnown != null && System.currentTimeMillis() - bestLastKnown.time < 5 * 60 * 1000) {
             return@withContext bestLastKnown
         }
 

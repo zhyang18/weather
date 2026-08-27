@@ -70,7 +70,9 @@ data class WeatherUiState(
     val autoUpdateIntervalHours: Int = 1,
     val showIntervalDialog: Boolean = false,
     val isPrivacyAgreed: Boolean = false,
-    val showPrivacyDialog: Boolean = false
+    val showPrivacyDialog: Boolean = false,
+    val cardDisplayConfig: com.weather.app.model.CardDisplayConfig = com.weather.app.model.CardDisplayConfig(),
+    val showCardSettingsDialog: Boolean = false
 ) {
     /**
      * 获取当前选中的城市实体
@@ -132,6 +134,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val isDailyChart = repository.isDailyChartMode()
         val locationMode = repository.getLocationDisplayMode()
         val intervalMinutes = repository.getAutoUpdateIntervalMinutes()
+        val cardConfig = repository.getCardDisplayConfig()
 
         // 预加载各城市持久化天气快照缓存，保障冷启动秒开
         val initialCache = mutableMapOf<String, WeatherData>()
@@ -156,6 +159,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 locationDisplayMode = locationMode,
                 autoUpdateIntervalMinutes = intervalMinutes,
                 autoUpdateIntervalHours = (intervalMinutes / 60).coerceAtLeast(0),
+                cardDisplayConfig = cardConfig,
                 weatherCache = initialCache,
                 isLoading = initialCache.isEmpty() && isPrivacyAgreed
             )
@@ -237,32 +241,80 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     /**
      * 下拉刷新指定索引处城市的天气数据
      *
+     * 若该城市为自动定位城市，则重新触发设备定位与逆地理编码，更新城市信息并拉取对应最新天气数据；
+     * 若为普通手动添加的城市，则直接发起天气数据请求。
+     *
      * @param index 城市索引序号
      */
     fun refreshCityAtIndex(index: Int) {
         val city = _uiState.value.savedCities.getOrNull(index) ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
-            val result = repository.fetchWeather(city)
-            result.onSuccess { data ->
-                repository.saveCachedWeatherData(city, data)
-                val cache = _uiState.value.weatherCache.toMutableMap()
-                cache[city.getCacheKey()] = data
-                cache[city.code.ifEmpty { city.name }] = data
-                cache[city.name] = data
-                _uiState.update {
-                    it.copy(
-                        isRefreshing = false,
-                        weatherCache = cache,
-                        errorMessage = null
-                    )
+            if (city.isAutoLocated) {
+                // 自动定位城市：重新触发定位并刷新天气数据
+                val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
+                locateResult.onSuccess { data ->
+                    val updatedList = repository.getSavedCities()
+                    val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[data.city.getCacheKey()] = data
+                    cache[data.city.code.ifEmpty { data.city.name }] = data
+                    cache[data.city.name] = data
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            savedCities = updatedList,
+                            weatherCache = cache,
+                            errorMessage = null
+                        )
+                    }
+                }.onFailure { error ->
+                    // 定位失败时，降级使用当前已有定位城市信息直接刷新天气
+                    val fallbackResult = repository.fetchWeather(city)
+                    fallbackResult.onSuccess { data ->
+                        repository.saveCachedWeatherData(city, data)
+                        val cache = _uiState.value.weatherCache.toMutableMap()
+                        cache[city.getCacheKey()] = data
+                        cache[city.code.ifEmpty { city.name }] = data
+                        cache[city.name] = data
+                        _uiState.update {
+                            it.copy(
+                                isRefreshing = false,
+                                weatherCache = cache,
+                                errorMessage = null
+                            )
+                        }
+                    }.onFailure { fallbackError ->
+                        _uiState.update {
+                            it.copy(
+                                isRefreshing = false,
+                                errorMessage = "刷新【${city.name}】定位及天气失败: ${error.localizedMessage ?: fallbackError.localizedMessage ?: "网络异常"}"
+                            )
+                        }
+                    }
                 }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        isRefreshing = false,
-                        errorMessage = "刷新【${city.name}】天气失败: ${error.localizedMessage ?: "网络异常"}"
-                    )
+            } else {
+                // 普通手动添加城市：直接拉取天气
+                val result = repository.fetchWeather(city)
+                result.onSuccess { data ->
+                    repository.saveCachedWeatherData(city, data)
+                    val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[city.getCacheKey()] = data
+                    cache[city.code.ifEmpty { city.name }] = data
+                    cache[city.name] = data
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            weatherCache = cache,
+                            errorMessage = null
+                        )
+                    }
+                }.onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            errorMessage = "刷新【${city.name}】天气失败: ${error.localizedMessage ?: "网络异常"}"
+                        )
+                    }
                 }
             }
         }
@@ -664,21 +716,40 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
     /**
      * 静默刷新所有已保存城市的天气数据（不打扰用户当前操作，后台拉取完毕后平滑更新 UI）
+     *
+     * 若遇到自动定位城市，则重新触发设备定位并同步更新气象实况；针对普通已保存城市则直接请求天气。
      */
     suspend fun refreshAllSavedCitiesSilent() {
         val cities = _uiState.value.savedCities
         if (cities.isEmpty()) return
 
         for (city in cities) {
-            val key = city.getCacheKey()
-            val result = repository.fetchWeather(city)
-            result.onSuccess { data ->
-                repository.saveCachedWeatherData(city, data)
-                val cache = _uiState.value.weatherCache.toMutableMap()
-                cache[key] = data
-                cache[city.code.ifEmpty { city.name }] = data
-                cache[city.name] = data
-                _uiState.update { it.copy(weatherCache = cache) }
+            if (city.isAutoLocated) {
+                val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
+                locateResult.onSuccess { data ->
+                    val updatedCities = repository.getSavedCities()
+                    val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[data.city.getCacheKey()] = data
+                    cache[data.city.code.ifEmpty { data.city.name }] = data
+                    cache[data.city.name] = data
+                    _uiState.update {
+                        it.copy(
+                            savedCities = updatedCities,
+                            weatherCache = cache
+                        )
+                    }
+                }
+            } else {
+                val key = city.getCacheKey()
+                val result = repository.fetchWeather(city)
+                result.onSuccess { data ->
+                    repository.saveCachedWeatherData(city, data)
+                    val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[key] = data
+                    cache[city.code.ifEmpty { city.name }] = data
+                    cache[city.name] = data
+                    _uiState.update { it.copy(weatherCache = cache) }
+                }
             }
         }
     }
@@ -762,6 +833,37 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      */
     fun setShowPrivacyDialog(show: Boolean) {
         _uiState.update { it.copy(showPrivacyDialog = show) }
+    }
+
+    /**
+     * 设置是否展示卡片显示配置底部弹窗
+     *
+     * @param show 是否展示弹窗
+     */
+    fun setShowCardSettingsDialog(show: Boolean) {
+        _uiState.update { it.copy(showCardSettingsDialog = show) }
+    }
+
+    /**
+     * 更新并持久化卡片显示配置
+     *
+     * @param config 待生效的新卡片配置对象 [com.weather.app.model.CardDisplayConfig]
+     */
+    fun updateCardDisplayConfig(config: com.weather.app.model.CardDisplayConfig) {
+        repository.setCardDisplayConfig(config)
+        _uiState.update { it.copy(cardDisplayConfig = config) }
+    }
+
+    /**
+     * 切换指定卡片的显示状态并自动持久化
+     *
+     * @param cardKey 卡片唯一标识键名
+     * @param enabled 是否开启显示
+     */
+    fun toggleCardDisplay(cardKey: String, enabled: Boolean) {
+        val currentConfig = _uiState.value.cardDisplayConfig
+        val newConfig = currentConfig.withCardToggled(cardKey, enabled)
+        updateCardDisplayConfig(newConfig)
     }
 
     /**

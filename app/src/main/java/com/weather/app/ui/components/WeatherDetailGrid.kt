@@ -60,60 +60,67 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+import com.weather.app.model.CardDisplayConfig
+
 /**
  * 气象真实观测指标详情宫格组件
  *
- * 严格遵循真实数据原则：所有卡片必须由气象台返回的真实数据字段构建；
- * 若某项数据缺失或为无效值（9999/空），则该卡片直接不渲染展示，杜绝假数据。
- * 所有卡片高度保持严格一致（152.dp），除主界面的当前温度外其余文字均不加粗。
- * 底部依次展示数据来源、气象观测发布时间与上次刷新时间。
+ * 严格遵循真实数据原则与用户自定义卡片显示配置：
+ * 1. 支持通过 [CardDisplayConfig] 动态开启或关闭任意指标卡片；
+ * 2. 所有卡片必须由气象台返回的真实数据字段构建，若某项数据缺失或为无效值（9999/空），则该卡片直接不渲染展示；
+ * 3. 所有卡片高度保持严格一致（152.dp），自适应成对双列排布；
+ * 4. 底部依次展示数据来源、气象观测发布时间与上次刷新时间。
  *
  * @param weatherData 聚合天气数据模型 [WeatherData]
+ * @param cardConfig 卡片自定义显隐配置实体 [CardDisplayConfig]
  * @param lastUpdatedText 上次刷新时间说明文本（如 "上次刷新 15:53"）
  * @param modifier 外部修饰符
  */
 @Composable
 fun WeatherDetailGrid(
     weatherData: WeatherData,
+    cardConfig: CardDisplayConfig = CardDisplayConfig(),
     lastUpdatedText: String = "",
     modifier: Modifier = Modifier
 ) {
     val current = weatherData.current
     val aqi = weatherData.airQuality
 
-    // 收集所有有效真实存在的指标卡片内容
+    // 收集所有有效真实存在且用户已开启的指标卡片内容
     val validCards = mutableListOf<@Composable (Modifier) -> Unit>()
 
-    // 1. 空气质量卡片 (仅当存在真实 AQI 数据时展示)
-    if (aqi != null && aqi.aqi > 0 && aqi.aqi != 9999) {
+    // 1. 空气质量卡片 (当用户开启且存在真实 AQI 数据时展示)
+    if (cardConfig.showAirQuality && aqi != null && aqi.aqi > 0 && aqi.aqi != 9999) {
         validCards.add { mod -> AirQualityRealCard(aqi = aqi, modifier = mod) }
     }
 
-    // 2. 日出日落卡片 (结合当前城市地理经纬度与 NOAA 高精度天文算法，常驻展示)
-    validCards.add { mod -> SunriseSunsetRealCard(city = weatherData.city, modifier = mod) }
+    // 2. 日出日落卡片 (当用户开启时结合当前城市经纬度与天文算法展示)
+    if (cardConfig.showSunriseSunset) {
+        validCards.add { mod -> SunriseSunsetRealCard(city = weatherData.city, modifier = mod) }
+    }
 
-    // 3. 体感温度卡片 (仅当存在真实体感或温度差时展示)
-    if (current.feelsLike != null && current.feelsLike != 9999.0) {
+    // 3. 体感温度卡片 (当用户开启且存在真实体感或温度时展示)
+    if (cardConfig.showFeelsLike && current.feelsLike != null && current.feelsLike != 9999.0) {
         validCards.add { mod -> FeelsLikeRealCard(current = current, modifier = mod) }
     }
 
-    // 4. 风向风速卡片 (仅当存在真实风力数据时展示)
-    if (current.windDirection.isNotEmpty() || current.windPower.isNotEmpty() || current.windSpeed > 0.0) {
+    // 4. 风向风速卡片 (当用户开启且存在真实风力数据时展示)
+    if (cardConfig.showWind && (current.windDirection.isNotEmpty() || current.windPower.isNotEmpty() || current.windSpeed > 0.0)) {
         validCards.add { mod -> WindRealCard(current = current, modifier = mod) }
     }
 
-    // 5. 相对湿度卡片 (仅当存在真实湿度数据时展示)
-    if (current.humidity > 0.0 && current.humidity != 9999.0) {
+    // 5. 相对湿度卡片 (当用户开启且存在真实湿度数据时展示)
+    if (cardConfig.showHumidity && current.humidity > 0.0 && current.humidity != 9999.0) {
         validCards.add { mod -> HumidityRealCard(humidity = current.humidity.toInt(), modifier = mod) }
     }
 
-    // 6. 大气压强卡片 (仅当存在真实气压数据时展示)
-    if (current.pressure > 0.0 && current.pressure != 9999.0) {
+    // 6. 大气压强卡片 (当用户开启且存在真实气压数据时展示)
+    if (cardConfig.showPressure && current.pressure > 0.0 && current.pressure != 9999.0) {
         validCards.add { mod -> PressureRealCard(pressureHpa = current.pressure.toInt(), modifier = mod) }
     }
 
-    // 7. 实时降水量卡片 (仅当发生真实降水时展示)
-    if (current.precipitation > 0.0 && current.precipitation != 9999.0) {
+    // 7. 实时降水量卡片 (当用户开启且发生真实降水时展示)
+    if (cardConfig.showPrecipitation && current.precipitation > 0.0 && current.precipitation != 9999.0) {
         validCards.add { mod -> PrecipitationRealCard(precipitation = current.precipitation, modifier = mod) }
     }
 
@@ -123,46 +130,68 @@ fun WeatherDetailGrid(
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 第一批双列卡片（空气质量 + 日出日落）
-        val firstBatch = validCards.take(2)
-        if (firstBatch.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                firstBatch[0](Modifier.weight(1f))
+        if (cardConfig.showMoonPhase) {
+            // 当月相开启时：前 2 张卡片排首行，月相全宽单列居中，剩余卡片两两排布
+            val firstBatch = validCards.take(2)
+            if (firstBatch.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    firstBatch[0](Modifier.weight(1f))
 
-                if (firstBatch.size > 1) {
-                    firstBatch[1](Modifier.weight(1f))
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
+                    if (firstBatch.size > 1) {
+                        firstBatch[1](Modifier.weight(1f))
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
-        }
 
-        // 月相卡片：水平空间独占一整行全宽展示
-        MoonPhaseRealCard(
-            city = weatherData.city,
-            modifier = Modifier.fillMaxWidth()
-        )
+            // 月相卡片：水平空间独占一整行全宽展示
+            MoonPhaseRealCard(
+                city = weatherData.city,
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        // 其余双列指标卡片（体感温度、风向风速、湿度、气压、降水等）
-        val remainingCards = validCards.drop(2)
-        val remainingRowCount = (remainingCards.size + 1) / 2
-        for (rowIndex in 0 until remainingRowCount) {
-            val firstIdx = rowIndex * 2
-            val secondIdx = firstIdx + 1
+            // 其余双列指标卡片
+            val remainingCards = validCards.drop(2)
+            val remainingRowCount = (remainingCards.size + 1) / 2
+            for (rowIndex in 0 until remainingRowCount) {
+                val firstIdx = rowIndex * 2
+                val secondIdx = firstIdx + 1
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                remainingCards[firstIdx](Modifier.weight(1f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    remainingCards[firstIdx](Modifier.weight(1f))
 
-                if (secondIdx < remainingCards.size) {
-                    remainingCards[secondIdx](Modifier.weight(1f))
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
+                    if (secondIdx < remainingCards.size) {
+                        remainingCards[secondIdx](Modifier.weight(1f))
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        } else {
+            // 当月相关闭时：所有指标卡片直接自适应双列连续排列
+            val rowCount = (validCards.size + 1) / 2
+            for (rowIndex in 0 until rowCount) {
+                val firstIdx = rowIndex * 2
+                val secondIdx = firstIdx + 1
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    validCards[firstIdx](Modifier.weight(1f))
+
+                    if (secondIdx < validCards.size) {
+                        validCards[secondIdx](Modifier.weight(1f))
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }
