@@ -53,6 +53,7 @@ import com.weather.app.model.CityInfo
 import java.util.Calendar
 import java.util.TimeZone
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -429,11 +430,12 @@ fun WeatherSkyBackground(
                     rotation = continuousRotation,
                     isPartlyCloudy = (weatherCategory == WeatherCategory.CLOUDY)
                 )
-                // 丁达尔云隙圣光（God Rays 随太阳实时位置向下发散）
+                // 丁达尔云隙圣光（God Rays 随太阳实时位置向下发散与晨昏色温自适应）
                 drawCrepuscularGodRays(
                     width = width,
                     height = height,
                     sunCenter = sunCenter,
+                    dayProgress = sunProgress,
                     progress = slowProgress,
                     isCloudy = (weatherCategory == WeatherCategory.CLOUDY)
                 )
@@ -1022,11 +1024,12 @@ private fun calculateMoonCenter(width: Float, height: Float, progress: Float): O
 }
 
 /**
- * 绘制白天丁达尔云隙圣光（God Rays）（随太阳实时大弧线位置自适应角度向下发散）
+ * 绘制白天丁达尔云隙圣光（God Rays）（随太阳实时大弧线位置自适应角度与晨昏色温向下发散）
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
  * @param sunCenter 太阳实时天顶屏幕坐标 [Offset]
+ * @param dayProgress 日照时间进度 (0.0f ~ 1.0f)
  * @param progress 呼吸动画相位 (0f ~ 1f)
  * @param isCloudy 是否为多云天气（多云时云隙光更明显）
  */
@@ -1034,15 +1037,21 @@ private fun DrawScope.drawCrepuscularGodRays(
     width: Float,
     height: Float,
     sunCenter: Offset,
+    dayProgress: Float,
     progress: Float,
     isCloudy: Boolean
 ) {
     val maxRayLength = width * 1.35f
-    val rayAlphaBase = if (isCloudy) 0.06f else 0.045f
+    val rayAlphaBase = if (isCloudy) 0.065f else 0.045f
 
     // 依太阳在屏幕左右大弧线位置自适应调整发散角度基准 (左边朝右下 50° ~ 正中 90° ~ 右边朝左下 130°)
     val sunXRatio = (sunCenter.x / width).coerceIn(0.05f, 0.95f)
     val baseAngleDeg = 50f + ((sunXRatio - 0.05f) / 0.90f) * 80f
+
+    // 晨昏色温自适应：清晨与黄昏呈现温暖朝夕金霞光束，正午呈现明净白金光束
+    val duskDawnFactor = (abs(dayProgress - 0.5f) * 2f).coerceIn(0f, 1f)
+    val rayColorCenter = if (duskDawnFactor > 0.5f) Color(0xFFFFE082) else Color(0xFFFFF9C4)
+    val rayColorEdge = if (duskDawnFactor > 0.5f) Color(0xFFFFB74D) else Color(0xFFFFECB3)
 
     val rayAngles = listOf(baseAngleDeg - 36f, baseAngleDeg - 18f, baseAngleDeg, baseAngleDeg + 18f, baseAngleDeg + 36f)
     val rayWidths = listOf(14f, 20f, 16f, 22f, 15f)
@@ -1076,8 +1085,8 @@ private fun DrawScope.drawCrepuscularGodRays(
             path = beamPath,
             brush = Brush.radialGradient(
                 colors = listOf(
-                    Color(0xFFFFF9C4).copy(alpha = currentAlpha),
-                    Color(0xFFFFECB3).copy(alpha = currentAlpha * 0.40f),
+                    rayColorCenter.copy(alpha = currentAlpha),
+                    rayColorEdge.copy(alpha = currentAlpha * 0.40f),
                     Color.Transparent
                 ),
                 center = sunCenter,
@@ -1088,7 +1097,7 @@ private fun DrawScope.drawCrepuscularGodRays(
 }
 
 /**
- * 绘制白昼太阳光晕、核心发光球与自转辐射光芒（100% 对齐设计图：纯白金光核 + 青蓝/金黄双层彩虹镜头光晕环 + 动态自转呼吸光柱）
+ * 绘制白昼太阳光晕、核心发光球与自转辐射光芒（自适应晨昏朝夕色温演化与大气消光，对齐摄影级天象质感）
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1109,15 +1118,22 @@ private fun DrawScope.drawSunWithRays(
 ) {
     val coreRadius = width * 0.085f
     val outerGlowRadius = width * (0.32f + pulseProgress * 0.03f)
-    val maxAlpha = if (isPartlyCloudy) 0.45f else 0.85f
+    // 大气消光与地平线缓入缓出因子
+    val horizonFade = (sin(dayProgress * PI.toFloat()) * 2.8f).coerceIn(0.25f, 1.0f)
+    val maxAlpha = (if (isPartlyCloudy) 0.45f else 0.85f) * horizonFade
 
-    // 1. 绘制最外层弥漫暖金色微光
+    // 晨昏色温自适应：日出日落呈现壮丽暖橙红霞光，正午呈现璀璨白金光芒
+    val sunsetFactor = (abs(dayProgress - 0.5f) * 2f).coerceIn(0f, 1f)
+    val glowColorMid = if (sunsetFactor > 0.6f) Color(0xFFFFAB40) else Color(0xFFFFE082)
+    val glowColorOuter = if (sunsetFactor > 0.6f) Color(0xFFFF6D00) else Color(0xFFFFB300)
+
+    // 1. 绘制最外层弥漫暖金色/朝夕橙光微晕
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
                 Color.White.copy(alpha = 0.35f * maxAlpha),
-                Color(0xFFFFE082).copy(alpha = 0.20f * maxAlpha),
-                Color(0xFFFFB300).copy(alpha = 0.06f * maxAlpha),
+                glowColorMid.copy(alpha = 0.20f * maxAlpha),
+                glowColorOuter.copy(alpha = 0.06f * maxAlpha),
                 Color.Transparent
             ),
             center = sunCenter,
@@ -1127,7 +1143,7 @@ private fun DrawScope.drawSunWithRays(
         radius = outerGlowRadius * 1.3f
     )
 
-    // 2. 绘制设计图中极具摄影质感的双层彩虹/青蓝光学镜头光晕环 (Optical Halo & Chromatic Aberration Rings)
+    // 2. 绘制极具摄影质感的双层彩虹/青蓝光学镜头光晕环 (Optical Halo & Chromatic Aberration Rings)
     val ringR1 = width * (0.34f + pulseProgress * 0.015f) // 内层青蓝光环
     val ringR2 = width * (0.46f + pulseProgress * 0.020f) // 外层柔金光环
 
