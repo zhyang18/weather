@@ -268,6 +268,44 @@ class WeatherDataSourceTest {
         assertTrue(weatherData?.dailyForecasts?.isNotEmpty() == true)
         assertTrue(weatherData?.hourlyForecasts?.isNotEmpty() == true)
     }
+
+    /**
+     * 测试城市日出日落与天体运行高精度天文计算算法
+     */
+    @Test
+    fun testCelestialTimesCalculation() {
+        val beijing = CityInfo(
+            code = "Wqsps",
+            name = "北京",
+            province = "北京市",
+            latitude = 39.9042,
+            longitude = 116.4074
+        )
+
+        // 构造固定公历日期：2026年8月27日 12:00
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.YEAR, 2026)
+            set(java.util.Calendar.MONTH, java.util.Calendar.AUGUST)
+            set(java.util.Calendar.DAY_OF_MONTH, 27)
+            set(java.util.Calendar.HOUR_OF_DAY, 12)
+            set(java.util.Calendar.MINUTE, 0)
+        }
+
+        val celestial = com.weather.app.ui.components.SunMoonCalculator.calculateCelestialTimes(beijing, calendar)
+
+        // 验证北京夏末日出时间在 05:00 ~ 06:00 之间 (300 ~ 360 分钟)
+        assertTrue("Beijing sunrise minutes ${celestial.sunriseMinutes} should be in [300, 360]", celestial.sunriseMinutes in 300..360)
+
+        // 验证北京夏末日落时间在 18:30 ~ 19:30 之间 (1110 ~ 1170 分钟)
+        assertTrue("Beijing sunset minutes ${celestial.sunsetMinutes} should be in [1110, 1170]", celestial.sunsetMinutes in 1110..1170)
+
+        // 验证中午 12:00 为白天且太阳可见
+        assertTrue(!celestial.isNight)
+        assertTrue(celestial.isSunVisible)
+
+        // 验证中午日照进度在 0.4 ~ 0.6 之间
+        assertTrue("Sun progress ${celestial.sunProgress} should be around 0.5", celestial.sunProgress in 0.4f..0.6f)
+    }
 }
 
 

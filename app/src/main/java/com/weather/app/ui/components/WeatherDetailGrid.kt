@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,17 +21,29 @@ import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.delay
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -38,8 +51,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weather.app.model.AirQuality
+import com.weather.app.model.CityInfo
 import com.weather.app.model.CurrentWeather
 import com.weather.app.model.WeatherData
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -73,27 +89,30 @@ fun WeatherDetailGrid(
         validCards.add { mod -> AirQualityRealCard(aqi = aqi, modifier = mod) }
     }
 
-    // 2. 体感温度卡片 (仅当存在真实体感或温度差时展示)
+    // 2. 日出日落卡片 (结合当前城市地理经纬度与 NOAA 高精度天文算法，常驻展示)
+    validCards.add { mod -> SunriseSunsetRealCard(city = weatherData.city, modifier = mod) }
+
+    // 3. 体感温度卡片 (仅当存在真实体感或温度差时展示)
     if (current.feelsLike != null && current.feelsLike != 9999.0) {
         validCards.add { mod -> FeelsLikeRealCard(current = current, modifier = mod) }
     }
 
-    // 3. 风向风速卡片 (仅当存在真实风力数据时展示)
+    // 4. 风向风速卡片 (仅当存在真实风力数据时展示)
     if (current.windDirection.isNotEmpty() || current.windPower.isNotEmpty() || current.windSpeed > 0.0) {
         validCards.add { mod -> WindRealCard(current = current, modifier = mod) }
     }
 
-    // 4. 相对湿度卡片 (仅当存在真实湿度数据时展示)
+    // 5. 相对湿度卡片 (仅当存在真实湿度数据时展示)
     if (current.humidity > 0.0 && current.humidity != 9999.0) {
         validCards.add { mod -> HumidityRealCard(humidity = current.humidity.toInt(), modifier = mod) }
     }
 
-    // 5. 大气压强卡片 (仅当存在真实气压数据时展示)
+    // 6. 大气压强卡片 (仅当存在真实气压数据时展示)
     if (current.pressure > 0.0 && current.pressure != 9999.0) {
         validCards.add { mod -> PressureRealCard(pressureHpa = current.pressure.toInt(), modifier = mod) }
     }
 
-    // 6. 实时降水量卡片 (仅当发生真实降水时展示)
+    // 7. 实时降水量卡片 (仅当发生真实降水时展示)
     if (current.precipitation > 0.0 && current.precipitation != 9999.0) {
         validCards.add { mod -> PrecipitationRealCard(precipitation = current.precipitation, modifier = mod) }
     }
@@ -770,6 +789,264 @@ private fun PrecipitationRealCard(
                 fontWeight = FontWeight.Normal,
                 maxLines = 2
             )
+        }
+    }
+}
+
+// ==================== 7. 真实日出日落卡片 ====================
+
+/**
+ * 格式化日历分钟数为 24 小时制时间文本（如 348 -> "05:48"）
+ *
+ * @param minutes 当天从 00:00 起经过的分钟数
+ * @return 格式化后的时间字符串（格式为 HH:mm）
+ */
+private fun formatMinutesToTime(minutes: Int): String {
+    val h = (minutes / 60) % 24
+    val m = minutes % 60
+    return String.format(Locale.CHINA, "%02d:%02d", h, m)
+}
+
+/**
+ * 真实日出日落卡片组件
+ *
+ * 结合当前城市地理经纬度与 NOAA 高精度天文算法，展示当日日出日落时间、太阳实时运行轨迹拱弧与白昼时长。
+ * 支持系统时间修改及应用返回前台时的秒级即时动态刷新。
+ *
+ * @param city 当前城市实体 [CityInfo]
+ * @param modifier 外部修饰符
+ */
+@Composable
+private fun SunriseSunsetRealCard(
+    city: CityInfo,
+    modifier: Modifier = Modifier
+) {
+    // 实时系统时钟（每秒自动校准，用户在系统设置修改时间或切回 App 时即时刷新生效）
+    var currentSystemTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                currentSystemTimeMillis = System.currentTimeMillis()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentSystemTimeMillis = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+
+    val calendar = remember(currentSystemTimeMillis / 10000L) {
+        Calendar.getInstance().apply { timeInMillis = currentSystemTimeMillis }
+    }
+
+    val celestial = remember(city.getCacheKey(), currentSystemTimeMillis / 10000L) {
+        SunMoonCalculator.calculateCelestialTimes(city, calendar)
+    }
+
+    val currentMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+    val sunriseStr = formatMinutesToTime(celestial.sunriseMinutes)
+    val sunsetStr = formatMinutesToTime(celestial.sunsetMinutes)
+
+    // 计算距离下一个事件（日落或日出）的剩余时间
+    val isNight = celestial.isNight
+    val (primaryTime, remainingText) = if (!isNight) {
+        // 白天：主要聚焦今日日落时刻
+        val remaining = (celestial.sunsetMinutes - currentMinutes).coerceAtLeast(0)
+        val remH = remaining / 60
+        val remM = remaining % 60
+        val remDesc = if (remH > 0) "${remH}小时${remM}分" else "${remM}分钟"
+        Pair(sunsetStr, "距日落还有 $remDesc")
+    } else {
+        // 夜间：主要聚焦次日日出时刻
+        val remaining = if (currentMinutes >= celestial.sunsetMinutes) {
+            celestial.sunriseMinutes + 1440 - currentMinutes
+        } else {
+            celestial.sunriseMinutes - currentMinutes
+        }.coerceAtLeast(0)
+        val remH = remaining / 60
+        val remM = remaining % 60
+        val remDesc = if (remH > 0) "${remH}小时${remM}分" else "${remM}分钟"
+        Pair(sunriseStr, "距日出还有 $remDesc")
+    }
+
+    MetricBaseCard(
+        icon = Icons.Default.WbSunny,
+        title = "日出日落",
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.Center
+        ) {
+            // 1. 顶部大字展示下一个事件时刻（如 18:37）
+            Text(
+                text = primaryTime,
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Normal,
+                lineHeight = 24.sp
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // 2. 大字下方提示小字（与其他卡片小字完全一致的统一风格：11.sp, alpha = 0.70f）
+            Text(
+                text = remainingText,
+                color = Color.White.copy(alpha = 0.70f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // 3. 太阳天球拱形轨迹 Canvas
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(34.dp)
+            ) {
+                val w = size.width
+                val h = size.height
+
+                val startX = 4.dp.toPx()
+                val endX = w - 4.dp.toPx()
+                val horizonY = h - 1.5.dp.toPx()
+                val arcHeight = h * 0.88f
+
+                // 1. 绘制地平线细线
+                drawLine(
+                    color = Color.White.copy(alpha = 0.30f),
+                    start = Offset(startX - 2.dp.toPx(), horizonY),
+                    end = Offset(endX + 2.dp.toPx(), horizonY),
+                    strokeWidth = 1.2f,
+                    cap = StrokeCap.Round
+                )
+
+                // 2. 绘制完整白昼拱形轨迹路径
+                val arcPath = Path().apply {
+                    moveTo(startX, horizonY)
+                    cubicTo(
+                        startX + (endX - startX) * 0.22f, horizonY - arcHeight * 1.10f,
+                        startX + (endX - startX) * 0.78f, horizonY - arcHeight * 1.10f,
+                        endX, horizonY
+                    )
+                }
+
+                // 轨迹底虚线
+                drawPath(
+                    path = arcPath,
+                    color = Color.White.copy(alpha = 0.35f),
+                    style = Stroke(
+                        width = 2.0f,
+                        cap = StrokeCap.Round,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                    )
+                )
+
+                // 3. 计算当前太阳位置
+                val progress = celestial.sunProgress.coerceIn(0f, 1f)
+                val sunX = startX + progress * (endX - startX)
+                val sunY = horizonY - sin(progress * PI.toFloat()) * (arcHeight * 0.88f)
+
+                // 如果处于白天，绘制已走过轨迹的高亮渐变弧线与天光漫射填充
+                if (!isNight && progress > 0f) {
+                    val passedPath = Path().apply {
+                        moveTo(startX, horizonY)
+                        val stepCount = (progress * 30).toInt().coerceAtLeast(1)
+                        for (i in 1..stepCount) {
+                            val t = (i.toFloat() / 30f).coerceAtMost(progress)
+                            val px = startX + t * (endX - startX)
+                            val py = horizonY - sin(t * PI.toFloat()) * (arcHeight * 0.88f)
+                            lineTo(px, py)
+                        }
+                        lineTo(sunX, horizonY)
+                        close()
+                    }
+
+                    drawPath(
+                        path = passedPath,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFFFFD54F).copy(alpha = 0.25f),
+                                Color(0xFFFFD54F).copy(alpha = 0.02f)
+                            ),
+                            startY = sunY,
+                            endY = horizonY
+                        )
+                    )
+                }
+
+                // 4. 绘制太阳实体发光粒子
+                if (!isNight) {
+                    // 外层柔光日晕
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFFD54F).copy(alpha = 0.70f),
+                                Color(0xFFFFB300).copy(alpha = 0.25f),
+                                Color.Transparent
+                            ),
+                            center = Offset(sunX, sunY),
+                            radius = 13.dp.toPx()
+                        ),
+                        radius = 13.dp.toPx(),
+                        center = Offset(sunX, sunY)
+                    )
+                    // 中层暖金核心
+                    drawCircle(
+                        color = Color(0xFFFFD54F),
+                        radius = 4.2.dp.toPx(),
+                        center = Offset(sunX, sunY)
+                    )
+                    // 内层纯白极高光点
+                    drawCircle(
+                        color = Color.White,
+                        radius = 2.4.dp.toPx(),
+                        center = Offset(sunX, sunY)
+                    )
+                } else {
+                    // 夜间模式：地平线下方轻微沉落标识
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.45f),
+                        radius = 3.5.dp.toPx(),
+                        center = Offset(if (currentMinutes >= celestial.sunsetMinutes) endX else startX, horizonY + 2.dp.toPx())
+                    )
+                }
+            }
+
+            // 4. 拱形轨迹与下方时间小字之间的留白间隔
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // 5. 地平线两端日出日落时间标注（纯白色高保真文字）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "日出 $sunriseStr",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Normal
+                )
+                Text(
+                    text = "日落 $sunsetStr",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
         }
     }
 }
