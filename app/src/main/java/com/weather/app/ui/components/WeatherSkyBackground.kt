@@ -1874,8 +1874,8 @@ private fun DrawScope.drawGlowingMoon(
  *
  * 严格基于天体几何正交投影规律，采用半椭圆晨昏线（Terminator）曲面路径、
  * 16 级高密度平滑微偏移渐进半透明阶梯阴影与 5 级高斯级物理光学羽化描边；
- * 将除月牙亮色外的暗面阴影整体不透明度精准控制在 90%（保留 10% 细腻透光度），
- * 呈现极其深邃沉静的夜空暗部，同时在 10% 微弱透光下保留月球球体轮廓、月海与地貌撞击坑的隐约可见感；
+ * 将除月牙亮色外的暗面阴影整体不透明度精准控制在 80%（保留 20% 细腻透光度），
+ * 呈现深邃沉静的夜空暗部，同时在 20% 细腻透光下保留月球球体轮廓、月海与地貌撞击坑的隐约可见感；
  * 具备满月（Full Moon）自适应天文窗口判定，满月前后（如农历十五、十六）呈现皎洁无瑕的完整满月，消除黑影瑕疵。
  *
  * @param moonCenter 月球在屏幕上的中心坐标 [Offset]
@@ -1908,24 +1908,24 @@ private fun DrawScope.drawLunarPhaseShadow(
     val adaptScale = ((darkFraction - 0.025f) / 0.225f).coerceIn(0f, 1f)
     val featherPx = maxFeatherAllowed * adaptScale
 
-    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（全层复合叠加后，暗面核心区域不透明度精准稳定在 90%，保留 10% 透光度呈现月球球体表面与月海地貌）
+    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（全层复合叠加后，暗面核心区域不透明度精准稳定在 80%，保留 20% 细腻透光度呈现月球球体表面与月海地貌）
     val shadowLayers = listOf(
-        Pair(featherPx * 1.00f, Color(0x0C060A14)), // 1. 极外缘若隐若现漫射微晕 (~4.7%)
-        Pair(featherPx * 0.92f, Color(0x12060A14)), // 2. 外缘极弱暮光 (~7.1%)
-        Pair(featherPx * 0.84f, Color(0x18060A14)), // 3. 外层暮光漫射 (~9.4%)
-        Pair(featherPx * 0.76f, Color(0x1E060A14)), // 4. 次外层柔焦过渡 (~11.8%)
-        Pair(featherPx * 0.68f, Color(0x22060A14)), // 5. 暮光渐浓层 (~13.3%)
-        Pair(featherPx * 0.60f, Color(0x24060A14)), // 6. 中外层自然过渡 (~14.1%)
-        Pair(featherPx * 0.52f, Color(0x26060A14)), // 7. 中层阴影渗透 (~14.9%)
-        Pair(featherPx * 0.44f, Color(0x26060A14)), // 8. 中层温润递进 (~14.9%)
-        Pair(featherPx * 0.36f, Color(0x26060A14)), // 9. 中内层阴影加深 (~14.9%)
-        Pair(featherPx * 0.28f, Color(0x28060A14)), // 10. 次内层半影沉降 (~15.7%)
-        Pair(featherPx * 0.21f, Color(0x28060A14)), // 11. 近核心深色沉降 (~15.7%)
-        Pair(featherPx * 0.15f, Color(0x28060A14)), // 12. 核心深色聚拢 (~15.7%)
-        Pair(featherPx * 0.10f, Color(0x26060A14)), // 13. 深邃半影过渡 (~14.9%)
-        Pair(featherPx * 0.06f, Color(0x24060A14)), // 14. 核心深影层 (~14.1%)
-        Pair(featherPx * 0.03f, Color(0x20060A14)), // 15. 核心致密半透层 (~12.5%)
-        Pair(0f,                Color(0x1C060A14))  // 16. 核心暗面通透基准区 (16 层全部叠加后总遮罩率精准约为 90%，保留 10% 细腻透光度)
+        Pair(featherPx * 1.00f, Color(0x09060A14)), // 1. 极外缘若隐若现漫射微晕 (~3.5%)
+        Pair(featherPx * 0.92f, Color(0x0D060A14)), // 2. 外缘极弱暮光 (~5.1%)
+        Pair(featherPx * 0.84f, Color(0x11060A14)), // 3. 外层暮光漫射 (~6.7%)
+        Pair(featherPx * 0.76f, Color(0x15060A14)), // 4. 次外层柔焦过渡 (~8.2%)
+        Pair(featherPx * 0.68f, Color(0x19060A14)), // 5. 暮光渐浓层 (~9.8%)
+        Pair(featherPx * 0.60f, Color(0x1A060A14)), // 6. 中外层自然过渡 (~10.2%)
+        Pair(featherPx * 0.52f, Color(0x1C060A14)), // 7. 中层阴影渗透 (~11.0%)
+        Pair(featherPx * 0.44f, Color(0x1C060A14)), // 8. 中层温润递进 (~11.0%)
+        Pair(featherPx * 0.36f, Color(0x1C060A14)), // 9. 中内层阴影加深 (~11.0%)
+        Pair(featherPx * 0.28f, Color(0x1D060A14)), // 10. 次内层半影沉降 (~11.4%)
+        Pair(featherPx * 0.21f, Color(0x1D060A14)), // 11. 近核心深色沉降 (~11.4%)
+        Pair(featherPx * 0.15f, Color(0x1D060A14)), // 12. 核心深色聚拢 (~11.4%)
+        Pair(featherPx * 0.10f, Color(0x1C060A14)), // 13. 深邃半影过渡 (~11.0%)
+        Pair(featherPx * 0.06f, Color(0x1A060A14)), // 14. 核心深影层 (~10.2%)
+        Pair(featherPx * 0.03f, Color(0x17060A14)), // 15. 核心致密半透层 (~9.0%)
+        Pair(0f,                Color(0x14060A14))  // 16. 核心暗面通透基准区 (16 层全部叠加后总遮罩率精准约为 80%，保留 20% 细腻透光度)
     )
 
     shadowLayers.forEach { (offset, color) ->
@@ -1938,11 +1938,11 @@ private fun DrawScope.drawLunarPhaseShadow(
     if (adaptScale > 0.05f) {
         val maxStroke = (brightWidthPx * 0.30f).coerceAtMost(moonRadius * 0.20f)
         val strokeLayers = listOf(
-            Pair(featherPx * 0.75f, Pair(maxStroke * 1.00f * adaptScale, Color(0x080B101E))),
-            Pair(featherPx * 0.55f, Pair(maxStroke * 0.75f * adaptScale, Color(0x0E0B101E))),
-            Pair(featherPx * 0.35f, Pair(maxStroke * 0.50f * adaptScale, Color(0x140A0F1C))),
-            Pair(featherPx * 0.18f, Pair(maxStroke * 0.30f * adaptScale, Color(0x1A090E1A))),
-            Pair(0f,                Pair(maxStroke * 0.15f * adaptScale, Color(0x20080D18)))
+            Pair(featherPx * 0.75f, Pair(maxStroke * 1.00f * adaptScale, Color(0x060B101E))),
+            Pair(featherPx * 0.55f, Pair(maxStroke * 0.75f * adaptScale, Color(0x0A0B101E))),
+            Pair(featherPx * 0.35f, Pair(maxStroke * 0.50f * adaptScale, Color(0x0F0A0F1C))),
+            Pair(featherPx * 0.18f, Pair(maxStroke * 0.30f * adaptScale, Color(0x13090E1A))),
+            Pair(0f,                Pair(maxStroke * 0.15f * adaptScale, Color(0x17080D18)))
         )
 
         strokeLayers.forEach { (offset, strokeInfo) ->
