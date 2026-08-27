@@ -73,6 +73,9 @@ import com.weather.app.ui.components.MinutelyPrecipitationCard
 import com.weather.app.ui.components.WeatherAlertCard
 import com.weather.app.ui.components.WeatherDetailGrid
 import com.weather.app.ui.components.WeatherSkyBackground
+import android.app.Activity
+import androidx.compose.ui.platform.LocalContext
+import com.weather.app.ui.dialogs.PrivacyAgreementDialog
 import com.weather.app.ui.dialogs.CitySelectionSheet
 import com.weather.app.ui.dialogs.SourceSelectionSheet
 import com.weather.app.ui.dialogs.UpdateIntervalDialog
@@ -96,6 +99,7 @@ fun WeatherScreen(
     viewModel: WeatherViewModel,
     onRequestLocationPermission: () -> Unit
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -184,7 +188,8 @@ fun WeatherScreen(
                 },
                 onSourceClick = { viewModel.setShowSourceDialog(true) },
                 onIntervalClick = { viewModel.showIntervalDialog(true) },
-                onLocationSettingsClick = { viewModel.setShowLocationSettings(true) }
+                onLocationSettingsClick = { viewModel.setShowLocationSettings(true) },
+                onPrivacyClick = { viewModel.setShowPrivacyDialog(true) }
             )
 
             // 水平滑动手势分页器 (左右滑动切换城市)
@@ -322,6 +327,34 @@ fun WeatherScreen(
             onDismiss = { viewModel.setShowAddCityDialog(false) }
         )
     }
+
+    // 用户协议、隐私政策与免责声明弹窗 (首次启动强制确认，或在设置菜单中主动查阅)
+    if (uiState.showPrivacyDialog) {
+        if (!uiState.isPrivacyAgreed) {
+            // 首次启动强制确认模式：需用户明确同意方可进入
+            PrivacyAgreementDialog(
+                isReadOnly = false,
+                onAgree = {
+                    viewModel.agreePrivacy {
+                        onRequestLocationPermission()
+                        viewModel.autoLocateAndPreload()
+                    }
+                },
+                onDisagree = {
+                    viewModel.disagreePrivacy()
+                    (context as? Activity)?.finish()
+                }
+            )
+        } else {
+            // 设置中主动查阅模式：允许直接关闭
+            PrivacyAgreementDialog(
+                isReadOnly = true,
+                onAgree = {},
+                onDisagree = {},
+                onDismiss = { viewModel.setShowPrivacyDialog(false) }
+            )
+        }
+    }
 }
 
 /**
@@ -336,6 +369,7 @@ fun WeatherScreen(
  * @param onSourceClick 点击切换天气源回调
  * @param onIntervalClick 点击设置更新间隔回调
  * @param onLocationSettingsClick 点击打开定位设置回调
+ * @param onPrivacyClick 点击打开隐私协议与免责声明回调
  */
 @Composable
 private fun TopImmersiveWeatherBar(
@@ -347,7 +381,8 @@ private fun TopImmersiveWeatherBar(
     onMenuClick: () -> Unit,
     onSourceClick: () -> Unit,
     onIntervalClick: () -> Unit,
-    onLocationSettingsClick: () -> Unit
+    onLocationSettingsClick: () -> Unit,
+    onPrivacyClick: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val pageCount = savedCities.size.coerceAtLeast(1)
@@ -484,13 +519,14 @@ private fun TopImmersiveWeatherBar(
                 }
             }
 
-            // 80% 半透明大圆角设置弹窗菜单（仅保留更新间隔、天气数据源、定位设置）
+            // 80% 半透明大圆角设置弹窗菜单（包含更新间隔、天气数据源、定位设置、隐私与免责）
             WeatherSettingsMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
                 onSelectSourceClick = onSourceClick,
                 onIntervalClick = onIntervalClick,
-                onLocationSettingsClick = onLocationSettingsClick
+                onLocationSettingsClick = onLocationSettingsClick,
+                onPrivacyClick = onPrivacyClick
             )
         }
     }

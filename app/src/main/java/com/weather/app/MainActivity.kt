@@ -47,8 +47,10 @@ class MainActivity : ComponentActivity() {
         // 启用沉浸式全屏布局
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // 检查并请求定位权限
-        checkAndRequestLocationPermission()
+        // 若用户已同意隐私协议，则检查并请求定位权限；首次启动未同意时由隐私确认弹窗点击同意后触发
+        if (weatherViewModel.uiState.value.isPrivacyAgreed) {
+            checkAndRequestLocationPermission()
+        }
 
         setContent {
             WeatherAppTheme {

@@ -48,6 +48,25 @@ class WeatherRepository(
         private const val KEY_LOCATION_DISPLAY_MODE = "location_display_mode"
         private const val KEY_UPDATE_INTERVAL_HOURS = "update_interval_hours"
         private const val KEY_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
+        private const val KEY_PRIVACY_AGREED = "privacy_agreed"
+    }
+
+    /**
+     * 查询用户是否已同意隐私协议与免责声明
+     *
+     * @return true 表示已同意，false 表示尚未同意（首次启动）
+     */
+    fun isPrivacyAgreed(): Boolean {
+        return prefs.getBoolean(KEY_PRIVACY_AGREED, false)
+    }
+
+    /**
+     * 持久化设置用户对隐私协议与免责声明的同意状态
+     *
+     * @param agreed 是否同意隐私协议
+     */
+    fun setPrivacyAgreed(agreed: Boolean) {
+        prefs.edit().putBoolean(KEY_PRIVACY_AGREED, agreed).apply()
     }
 
     /**

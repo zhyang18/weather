@@ -51,6 +51,7 @@ import androidx.compose.ui.res.painterResource
 import com.weather.app.R
 import com.weather.app.model.CityInfo
 import java.util.Calendar
+import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.PI
 import kotlin.math.abs
@@ -842,6 +843,23 @@ data class CelestialTimes(
 )
 
 /**
+ * 月相详细数据模型
+ *
+ * @property phaseName 月相中文名称（如“渐盈凸月”、“满月”、“新月”等）
+ * @property moonriseTimeStr 月出时间文本（如“18:10”）
+ * @property nextFullMoonDateStr 下次满月公历日期文本（如“8月28日”）
+ * @property moonPhase 归一化月相周期值（0.0f ~ 1.0f）
+ * @property moonAge 月龄天数（0.0 ~ 29.53）
+ */
+data class MoonPhaseInfo(
+    val phaseName: String,
+    val moonriseTimeStr: String,
+    val nextFullMoonDateStr: String,
+    val moonPhase: Float,
+    val moonAge: Double
+)
+
+/**
  * 城市日出、日落、月出、月落与天体运行高精度天文计算器
  *
  * 依据当前城市的地理坐标（经度、纬度）、公历日期与朔望月相周期，
@@ -975,6 +993,62 @@ object SunMoonCalculator {
             moonProgress = moonProgress,
             moonPhase = moonPhase,
             isNight = isNight
+        )
+    }
+
+    /**
+     * 计算当前城市与日期的月相详细信息（包含月相名称、月出时间、下次满月日期）
+     *
+     * 依据标准 J2000 朔望周期（29.530588853天）与当地月升月落时间滞后推算，
+     * 生成包含当前月相名称（如“渐盈凸月”）、月出时间（如“18:10”）与下次满月公历日期（如“8月28日”）的完整模型。
+     *
+     * @param city 待计算的城市信息对象 [CityInfo]
+     * @param calendar 当前时钟日历实例 [Calendar]
+     * @return 包含月相名称、月出时间与下次满月日期的详细月相模型 [MoonPhaseInfo]
+     */
+    fun calculateMoonPhaseInfo(
+        city: CityInfo? = null,
+        calendar: Calendar = Calendar.getInstance()
+    ): MoonPhaseInfo {
+        val celestialTimes = calculateCelestialTimes(city, calendar)
+        val epochNewMoonMillis = 947182440000L
+        val diffMillis = calendar.timeInMillis - epochNewMoonMillis
+        val diffDays = diffMillis.toDouble() / (1000.0 * 60.0 * 60.0 * 24.0)
+        val synodicMonth = 29.530588853
+        val moonAge = (diffDays % synodicMonth + synodicMonth) % synodicMonth
+        val phase = celestialTimes.moonPhase
+
+        val phaseName = when {
+            phase >= 0.975f || phase <= 0.025f -> "新月"
+            phase in 0.025f..0.225f -> "峨眉月"
+            phase in 0.225f..0.275f -> "上弦月"
+            phase in 0.275f..0.475f -> "渐盈凸月"
+            phase in 0.475f..0.525f -> "满月"
+            phase in 0.525f..0.725f -> "渐亏凸月"
+            phase in 0.725f..0.775f -> "下弦月"
+            else -> "残月"
+        }
+
+        val fullMoonAge = synodicMonth * 0.5
+        val daysToFullMoon = if (moonAge < fullMoonAge) {
+            fullMoonAge - moonAge
+        } else {
+            (synodicMonth - moonAge) + fullMoonAge
+        }
+        val targetFullMoonMillis = calendar.timeInMillis + (daysToFullMoon * 86400000.0).toLong()
+        val targetCal = Calendar.getInstance().apply { timeInMillis = targetFullMoonMillis }
+        val nextFullMoonDateStr = "${targetCal.get(Calendar.MONTH) + 1}月${targetCal.get(Calendar.DAY_OF_MONTH)}日"
+
+        val h = (celestialTimes.moonriseMinutes / 60) % 24
+        val m = celestialTimes.moonriseMinutes % 60
+        val moonriseTimeStr = String.format(Locale.CHINA, "%02d:%02d", h, m)
+
+        return MoonPhaseInfo(
+            phaseName = phaseName,
+            moonriseTimeStr = moonriseTimeStr,
+            nextFullMoonDateStr = nextFullMoonDateStr,
+            moonPhase = phase,
+            moonAge = moonAge
         )
     }
 

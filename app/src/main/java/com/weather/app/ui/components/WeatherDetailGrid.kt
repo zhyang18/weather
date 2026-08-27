@@ -117,17 +117,39 @@ fun WeatherDetailGrid(
         validCards.add { mod -> PrecipitationRealCard(precipitation = current.precipitation, modifier = mod) }
     }
 
-    if (validCards.isEmpty()) return
-
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 双列自适应排布，各行等高齐平
-        val rowCount = (validCards.size + 1) / 2
-        for (rowIndex in 0 until rowCount) {
+        // 第一批双列卡片（空气质量 + 日出日落）
+        val firstBatch = validCards.take(2)
+        if (firstBatch.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                firstBatch[0](Modifier.weight(1f))
+
+                if (firstBatch.size > 1) {
+                    firstBatch[1](Modifier.weight(1f))
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+
+        // 月相卡片：水平空间独占一整行全宽展示
+        MoonPhaseRealCard(
+            city = weatherData.city,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // 其余双列指标卡片（体感温度、风向风速、湿度、气压、降水等）
+        val remainingCards = validCards.drop(2)
+        val remainingRowCount = (remainingCards.size + 1) / 2
+        for (rowIndex in 0 until remainingRowCount) {
             val firstIdx = rowIndex * 2
             val secondIdx = firstIdx + 1
 
@@ -135,10 +157,10 @@ fun WeatherDetailGrid(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                validCards[firstIdx](Modifier.weight(1f))
+                remainingCards[firstIdx](Modifier.weight(1f))
 
-                if (secondIdx < validCards.size) {
-                    validCards[secondIdx](Modifier.weight(1f))
+                if (secondIdx < remainingCards.size) {
+                    remainingCards[secondIdx](Modifier.weight(1f))
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
                 }

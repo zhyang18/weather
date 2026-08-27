@@ -49,6 +49,23 @@ class LunarOpenGlRenderer {
         private var globalCachedImageBitmap: ImageBitmap? = null
         private var globalCachedSize: Int = 0
 
+        /**
+         * 获取全局缓存的月球 ImageBitmap 或使用默认渲染器渲染
+         *
+         * @param sizePx 输出纹理尺寸像素值（默认 512x512）
+         * @return 渲染完成的高精度月球 ImageBitmap [ImageBitmap]
+         */
+        fun getOrRenderMoon(sizePx: Int = 512): ImageBitmap? {
+            val targetSize = sizePx.coerceIn(256, 1024)
+            globalCachedImageBitmap?.takeIf { globalCachedSize == targetSize }?.let {
+                return it
+            }
+            val renderer = LunarOpenGlRenderer()
+            val result = renderer.renderMoon(targetSize)
+            renderer.release()
+            return result
+        }
+
         /** 全屏四边形顶点数据 */
         private val QUAD_VERTICES = floatArrayOf(
             -1.0f, -1.0f,
@@ -583,7 +600,6 @@ class LunarOpenGlRenderer {
                 GLES20.glDeleteProgram(programId)
                 programId = 0
             }
-            cachedBitmap?.recycle()
             cachedBitmap = null
             cachedImageBitmap = null
         }

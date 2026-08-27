@@ -51,6 +51,7 @@ import androidx.compose.ui.window.PopupProperties
  * @param onSelectSourceClick 点击“天气数据源”回调
  * @param onIntervalClick 点击“更新间隔”回调
  * @param onLocationSettingsClick 点击“定位设置”回调
+ * @param onPrivacyClick 点击“隐私与免责声明”回调
  */
 @Composable
 fun WeatherSettingsMenu(
@@ -58,7 +59,8 @@ fun WeatherSettingsMenu(
     onDismissRequest: () -> Unit,
     onSelectSourceClick: () -> Unit,
     onIntervalClick: () -> Unit = {},
-    onLocationSettingsClick: () -> Unit = {}
+    onLocationSettingsClick: () -> Unit = {},
+    onPrivacyClick: () -> Unit = {}
 ) {
     if (!expanded) return
 
@@ -105,7 +107,7 @@ fun WeatherSettingsMenu(
                 border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.15f)),
                 modifier = Modifier
                     .wrapContentWidth()
-                    .widthIn(min = 106.dp, max = 126.dp)
+                    .widthIn(min = 110.dp, max = 132.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -115,7 +117,8 @@ fun WeatherSettingsMenu(
                     val menuItems = listOf(
                         "更新间隔" to { onIntervalClick() },
                         "天气数据源" to { onSelectSourceClick() },
-                        "定位设置" to { onLocationSettingsClick() }
+                        "定位设置" to { onLocationSettingsClick() },
+                        "隐私与免责" to { onPrivacyClick() }
                     )
 
                     menuItems.forEachIndexed { index, (title, action) ->

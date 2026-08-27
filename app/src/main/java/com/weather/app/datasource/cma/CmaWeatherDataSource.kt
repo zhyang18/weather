@@ -998,47 +998,52 @@ class CmaWeatherDataSource : WeatherDataSource {
 
     /**
      * 构建气象灾害预警实体（若无有效预警条件则返回 null）
+     *
+     * @param cityName 城市名称
+     * @param currentWeather 实时天气数据模型
+     * @param dailyForecasts 每日预报列表
+     * @return 预警数据实体 [WeatherAlert]，若无恶劣天气则返回 null
      */
-    private fun buildWeatherAlert(
-        cityName: String,
-        currentWeather: CurrentWeather,
-        dailyForecasts: List<DailyForecast>
-    ): WeatherAlert? {
-        val todayForecast = dailyForecasts.firstOrNull()
-        val maxTemp = todayForecast?.maxTemperature ?: currentWeather.temperature
+     private fun buildWeatherAlert(
+         cityName: String,
+         currentWeather: CurrentWeather,
+         dailyForecasts: List<DailyForecast>
+     ): WeatherAlert? {
+         val todayForecast = dailyForecasts.firstOrNull()
+         val maxTemp = todayForecast?.maxTemperature ?: currentWeather.temperature
 
-        return when {
-            maxTemp >= 35.0 -> {
-                val nowTime = SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINA).format(Calendar.getInstance().time)
-                WeatherAlert(
-                    title = "高温黄色预警",
-                    level = "黄色",
-                    content = "${cityName}气象台发布高温黄色预警信号：预计今天白天${cityName}最高气温将升至35℃以上，请注意做好防暑降温与用电安全。",
-                    publisher = "国家预警信息发布中心",
-                    publishTime = "$nowTime 发布"
-                )
-            }
-            currentWeather.weatherText.contains("雷") -> {
-                val nowTime = SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINA).format(Calendar.getInstance().time)
-                WeatherAlert(
-                    title = "雷雨大风预警",
-                    level = "蓝色",
-                    content = "${cityName}气象台发布雷雨大风蓝色预警信号：预计未来2小时内将出现雷电活动，并伴有7级以上短时阵风，请注意防范。",
-                    publisher = "国家预警信息发布中心",
-                    publishTime = "$nowTime 发布"
-                )
-            }
-            currentWeather.precipitation >= 20.0 || currentWeather.weatherText.contains("暴雨") -> {
-                val nowTime = SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINA).format(Calendar.getInstance().time)
-                WeatherAlert(
-                    title = "暴雨蓝色预警",
-                    level = "蓝色",
-                    content = "${cityName}气象台发布暴雨蓝色预警信号：预计未来6小时内累积降雨量将达到50毫米以上，请注意防范地质灾害与城市积涝。",
-                    publisher = "国家预警信息发布中心",
-                    publishTime = "$nowTime 发布"
-                )
-            }
-            else -> null // 无恶劣预警时返回 null，卡片不显示
-        }
-    }
+         return when {
+             maxTemp >= 35.0 -> {
+                 val nowTime = SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINA).format(Calendar.getInstance().time)
+                 WeatherAlert(
+                     title = "高温黄色预警",
+                     level = "黄色",
+                     content = "${cityName}气象台发布高温黄色预警信号：预计今天白天${cityName}最高气温将升至35℃以上，请注意做好防暑降温与用电安全。",
+                     publisher = "预警信息发布中心",
+                     publishTime = "$nowTime 发布"
+                 )
+             }
+             currentWeather.weatherText.contains("雷") -> {
+                 val nowTime = SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINA).format(Calendar.getInstance().time)
+                 WeatherAlert(
+                     title = "雷雨大风预警",
+                     level = "蓝色",
+                     content = "${cityName}气象台发布雷雨大风蓝色预警信号：预计未来2小时内将出现雷电活动，并伴有7级以上短时阵风，请注意防范。",
+                     publisher = "预警信息发布中心",
+                     publishTime = "$nowTime 发布"
+                 )
+             }
+             currentWeather.precipitation >= 20.0 || currentWeather.weatherText.contains("暴雨") -> {
+                 val nowTime = SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINA).format(Calendar.getInstance().time)
+                 WeatherAlert(
+                     title = "暴雨蓝色预警",
+                     level = "蓝色",
+                     content = "${cityName}气象台发布暴雨蓝色预警信号：预计未来6小时内累积降雨量将达到50毫米以上，请注意防范地质灾害与城市积涝。",
+                     publisher = "预警信息发布中心",
+                     publishTime = "$nowTime 发布"
+                 )
+             }
+             else -> null // 无恶劣预警时返回 null，卡片不显示
+         }
+     }
 }

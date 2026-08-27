@@ -420,7 +420,6 @@ class SolarOpenGlRenderer {
             val matrix = android.graphics.Matrix().apply { postScale(1f, -1f) }
             val flippedBitmap = Bitmap.createBitmap(bitmap, 0, 0, targetSize, targetSize, matrix, true)
 
-            cachedBitmap?.recycle()
             cachedBitmap = flippedBitmap
             val imgBitmap = flippedBitmap.asImageBitmap()
             cachedImageBitmap = imgBitmap
@@ -454,7 +453,6 @@ class SolarOpenGlRenderer {
                 GLES20.glDeleteProgram(programId)
                 programId = 0
             }
-            cachedBitmap?.recycle()
             cachedBitmap = null
             cachedImageBitmap = null
         }

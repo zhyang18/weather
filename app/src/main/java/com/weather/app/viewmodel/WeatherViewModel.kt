@@ -68,7 +68,9 @@ data class WeatherUiState(
     val showLocationSettings: Boolean = false,
     val autoUpdateIntervalMinutes: Int = 60,
     val autoUpdateIntervalHours: Int = 1,
-    val showIntervalDialog: Boolean = false
+    val showIntervalDialog: Boolean = false,
+    val isPrivacyAgreed: Boolean = false,
+    val showPrivacyDialog: Boolean = false
 ) {
     /**
      * 获取当前选中的城市实体
@@ -123,6 +125,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     private var autoRefreshJob: Job? = null
 
     init {
+        val isPrivacyAgreed = repository.isPrivacyAgreed()
         val activeSource = repository.getActiveDataSource().getSourceInfo()
         val sources = repository.getAvailableSources()
         val savedCities = repository.getSavedCities()
@@ -143,6 +146,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
         _uiState.update {
             it.copy(
+                isPrivacyAgreed = isPrivacyAgreed,
+                showPrivacyDialog = !isPrivacyAgreed,
                 currentSource = activeSource,
                 availableSources = sources,
                 savedCities = savedCities,
@@ -152,18 +157,20 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 autoUpdateIntervalMinutes = intervalMinutes,
                 autoUpdateIntervalHours = (intervalMinutes / 60).coerceAtLeast(0),
                 weatherCache = initialCache,
-                isLoading = initialCache.isEmpty()
+                isLoading = initialCache.isEmpty() && isPrivacyAgreed
             )
         }
 
-        // 注册/更新后台省电定时自动更新任务 (WorkManager)
-        com.weather.app.worker.WeatherAutoUpdateScheduler.scheduleAutoUpdate(application, intervalMinutes)
+        if (isPrivacyAgreed) {
+            // 注册/更新后台省电定时自动更新任务 (WorkManager)
+            com.weather.app.worker.WeatherAutoUpdateScheduler.scheduleAutoUpdate(application, intervalMinutes)
 
-        // 启动前台定时自动刷新检查轮询
-        startAutoRefreshLoop()
+            // 启动前台定时自动刷新检查轮询
+            startAutoRefreshLoop()
 
-        // 启动时自动定位并预加载城市天气
-        autoLocateAndPreload()
+            // 启动时自动定位并预加载城市天气
+            autoLocateAndPreload()
+        }
     }
 
     /**
@@ -682,6 +689,10 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      * 同步可能在后台被 WorkManager 更新的离线缓存，并检查是否需要即时自动刷新。
      */
     fun onAppResume() {
+        if (!_uiState.value.isPrivacyAgreed) {
+            return
+        }
+
         // 1. 同步磁盘中可能已被后台 Worker 更新的最新快照
         val savedCities = _uiState.value.savedCities
         val updatedCache = _uiState.value.weatherCache.toMutableMap()
@@ -705,6 +716,52 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         checkAndAutoRefresh()
         // 3. 确保前台定时器处于激活状态
         startAutoRefreshLoop()
+    }
+
+    /**
+     * 用户同意隐私协议与免责声明
+     *
+     * 持久化保存同意状态，注册后台定时更新任务，并触发定位权限请求或天气加载。
+     *
+     * @param onAgreed 确认同意后的回调（如触发申请系统定位权限）
+     */
+    fun agreePrivacy(onAgreed: () -> Unit) {
+        repository.setPrivacyAgreed(true)
+        _uiState.update {
+            it.copy(
+                isPrivacyAgreed = true,
+                showPrivacyDialog = false,
+                isLoading = it.weatherCache.isEmpty()
+            )
+        }
+
+        // 注册后台定时更新任务
+        com.weather.app.worker.WeatherAutoUpdateScheduler.scheduleAutoUpdate(
+            getApplication(),
+            _uiState.value.autoUpdateIntervalMinutes
+        )
+
+        // 启动前台定时刷新轮询
+        startAutoRefreshLoop()
+
+        // 触发外部回调（请求定位权限）
+        onAgreed()
+    }
+
+    /**
+     * 用户拒绝隐私协议与免责声明
+     */
+    fun disagreePrivacy() {
+        _uiState.update { it.copy(showPrivacyDialog = false) }
+    }
+
+    /**
+     * 设置是否展示用户协议、隐私政策与免责声明弹窗
+     *
+     * @param show 是否展示弹窗
+     */
+    fun setShowPrivacyDialog(show: Boolean) {
+        _uiState.update { it.copy(showPrivacyDialog = show) }
     }
 
     /**
