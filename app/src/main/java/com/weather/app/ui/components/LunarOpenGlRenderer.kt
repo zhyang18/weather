@@ -44,6 +44,11 @@ class LunarOpenGlRenderer {
     private var cachedHeight: Int = 0
 
     companion object {
+        /** 全局静态 ImageBitmap 缓存，跨页面与切页过程零开销共享复用 */
+        @Volatile
+        private var globalCachedImageBitmap: ImageBitmap? = null
+        private var globalCachedSize: Int = 0
+
         /** 全屏四边形顶点数据 */
         private val QUAD_VERTICES = floatArrayOf(
             -1.0f, -1.0f,
@@ -490,7 +495,12 @@ class LunarOpenGlRenderer {
     fun renderMoon(sizePx: Int = 512): ImageBitmap? {
         val targetSize = sizePx.coerceIn(256, 1024)
 
-        // 若尺寸未变则直接复用缓存，保障每帧 0ms 极佳性能
+        // 优先复用全局静态缓存，保障切页与滑动 0ms 零掉帧
+        globalCachedImageBitmap?.takeIf { globalCachedSize == targetSize }?.let {
+            return it
+        }
+
+        // 若局部尺寸未变则直接复用缓存
         if (cachedImageBitmap != null &&
             cachedWidth == targetSize &&
             cachedHeight == targetSize
@@ -499,6 +509,10 @@ class LunarOpenGlRenderer {
         }
 
         synchronized(this) {
+            globalCachedImageBitmap?.takeIf { globalCachedSize == targetSize }?.let {
+                return it
+            }
+
             if (!initEGL(targetSize, targetSize)) {
                 return null
             }
@@ -535,11 +549,15 @@ class LunarOpenGlRenderer {
             val flippedBitmap = Bitmap.createBitmap(bitmap, 0, 0, targetSize, targetSize, matrix, true)
 
             cachedBitmap = flippedBitmap
-            cachedImageBitmap = flippedBitmap.asImageBitmap()
+            val imgBitmap = flippedBitmap.asImageBitmap()
+            cachedImageBitmap = imgBitmap
             cachedWidth = targetSize
             cachedHeight = targetSize
 
-            return cachedImageBitmap
+            globalCachedImageBitmap = imgBitmap
+            globalCachedSize = targetSize
+
+            return imgBitmap
         }
     }
 

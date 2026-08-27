@@ -126,13 +126,16 @@ fun WeatherScreen(
 
     val currentCity = uiState.getCurrentCity()
 
-    // 仅在滑页停靠后更新主页顶部栏与沉浸式背景，避免滑动中间帧高频重组
-    val settledPage by remember { derivedStateOf { pagerState.settledPage } }
-    val displayedCity = uiState.savedCities.getOrNull(settledPage) ?: currentCity
-    val displayedWeather = uiState.getWeatherForCity(displayedCity)
-    val weatherText = displayedWeather?.current?.weatherText ?: "多云"
+    // 联动当前页面的城市与天气：
+    // 1. 顶部栏与指示器：响应滑动过半 (currentPage)，保证手势极其灵动跟手
+    val currentPageIndex by remember { derivedStateOf { pagerState.currentPage } }
+    val activeCity = uiState.savedCities.getOrNull(currentPageIndex) ?: currentCity
 
-    val coroutineScope = rememberCoroutineScope()
+    // 2. 沉浸式天空背景：在手势滑动停靠后 (settledPage) 稳定触发景深推远展开动效，手势滑动过程中通过 parallaxOffsetProvider 实时视差位移
+    val settledPageIndex by remember { derivedStateOf { pagerState.settledPage } }
+    val settledCity = uiState.savedCities.getOrNull(settledPageIndex) ?: currentCity
+    val settledWeather = uiState.getWeatherForCity(settledCity)
+    val weatherText = settledWeather?.current?.weatherText ?: "多云"
 
     // 预先缓存稳定的 savedCities 快照引用，避免每次重组生成新列表
     val stableSavedCities = remember(uiState.savedCities) { uiState.savedCities.ifEmpty { listOf(currentCity) } }
@@ -140,11 +143,11 @@ fun WeatherScreen(
     val stableWeatherCache = uiState.weatherCache
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 沉浸式动态真实天气天空背景 (滑动完成停靠后触发镜头景深推远展开动效，支持昼夜即时刷新切换)
+        // 沉浸式动态真实天气天空背景 (支持昼夜即时刷新切换，滑动过程视差无缝过渡，停靠结算后播放景深推远动效)
         WeatherSkyBackground(
             weatherText = weatherText,
-            city = displayedCity,
-            lastUpdatedTimestamp = displayedWeather?.updateTimestamp ?: System.currentTimeMillis(),
+            city = settledCity,
+            lastUpdatedTimestamp = settledWeather?.updateTimestamp ?: System.currentTimeMillis(),
             parallaxOffsetProvider = { pagerState.currentPageOffsetFraction }
         )
 
@@ -156,9 +159,9 @@ fun WeatherScreen(
         ) {
             // 顶部导航栏：居中当前城市名称 + 下方居中紧凑圆点指示器（严格对齐设计图）
             TopImmersiveWeatherBar(
-                currentCityName = displayedCity.getDisplayName(stableLocationDisplayMode),
+                currentCityName = activeCity.getDisplayName(stableLocationDisplayMode),
                 savedCities = stableSavedCities,
-                currentPage = settledPage,
+                currentPage = currentPageIndex,
                 onMenuClick = {
                     viewModel.setCityManagementOpen(true)
                 },

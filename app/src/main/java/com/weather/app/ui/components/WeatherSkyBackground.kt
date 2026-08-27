@@ -114,27 +114,20 @@ fun WeatherSkyBackground(
     val animatedMid by animateColorAsState(targetValue = targetMid, animationSpec = tween(durationMillis = 800), label = "midColor")
     val animatedBottom by animateColorAsState(targetValue = targetBottom, animationSpec = tween(durationMillis = 800), label = "bottomColor")
 
-    // 加载动效驱动 (仅当城市或天气类型实际发生变化时触发，0ms 立即启动 1.35x 近景推远至 1.00x 全景)：
-    // 新天气背景由近及远优雅推远至 1.00x 开阔全景，状态在 graphicsLayer Draw 阶段消费，实现零重组 120 FPS
-    val entranceAnim = remember { Animatable(1f) }
-    var lastSettledCityKey by remember { mutableStateOf<String?>(null) }
-    val currentCityKey = remember(city?.getCacheKey(), weatherCategory) {
-        "${city?.getCacheKey()}_$weatherCategory"
+    // 加载与转场动效驱动：只要 Tab 切换事件触发，立即清除当前动画并从 0f 重新加载 3000ms 景深推镜动效
+    val entranceAnim = remember { Animatable(0f) }
+    val tabSwitchKey = remember(city?.getCacheKey()) {
+        city?.getCacheKey() ?: "default_city"
     }
 
-    LaunchedEffect(currentCityKey) {
-        if (lastSettledCityKey != null && lastSettledCityKey != currentCityKey) {
-            // 城市或天气发生实际切换时，触发 3000ms 镜头景深推远展开动效（由近及远优雅推镜）
-            entranceAnim.snapTo(0f)
-            entranceAnim.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
-            )
-        } else if (lastSettledCityKey == null) {
-            // 初次进场初始化
-            entranceAnim.snapTo(1f)
-        }
-        lastSettledCityKey = currentCityKey
+    LaunchedEffect(tabSwitchKey) {
+        // 1. 立即清除/重置当前动画状态至初始近景特写帧 (0f: 1.50x 特写近景)
+        entranceAnim.snapTo(0f)
+        // 2. 重新加载完整的 3000ms 电影级景深推远展开动效 (0f -> 1f: 1.50x -> 1.00x 全景舒展)
+        entranceAnim.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing)
+        )
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "dynamicWeatherTransition")
@@ -337,8 +330,8 @@ fun WeatherSkyBackground(
                     .graphicsLayer {
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
-                        val entranceZoom = 1.0f + (1f - entranceProgress) * 0.35f
-                        val entranceAlpha = (0.20f + 0.80f * entranceProgress).coerceIn(0f, 1f)
+                        val entranceZoom = 1.0f + (1f - entranceProgress) * 0.50f
+                        val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
                         translationX = baseDrift - offset * 80f
                         scaleX = 1.35f * entranceZoom
                         scaleY = 1.35f * entranceZoom
@@ -356,8 +349,8 @@ fun WeatherSkyBackground(
                     .graphicsLayer {
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
-                        val layerZoom = 1.0f + (1f - entranceProgress) * 0.35f
-                        val entranceAlpha = (0.20f + 0.80f * entranceProgress).coerceIn(0f, 1f)
+                        val layerZoom = 1.0f + (1f - entranceProgress) * 0.50f
+                        val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
                         translationX = fastDrift - offset * 140f
                         scaleX = -1.50f * layerZoom
                         scaleY = 1.50f * layerZoom
@@ -401,8 +394,8 @@ fun WeatherSkyBackground(
                 .graphicsLayer {
                     val offset = parallaxOffsetProvider()
                     val entranceProgress = entranceAnim.value
-                    val canvasZoom = 1.0f + (1f - entranceProgress) * 0.35f
-                    val canvasAlpha = (0.20f + 0.80f * entranceProgress).coerceIn(0f, 1f)
+                    val canvasZoom = 1.0f + (1f - entranceProgress) * 0.50f
+                    val canvasAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
                     translationX = -offset * 60f
                     scaleX = canvasZoom
                     scaleY = canvasZoom
