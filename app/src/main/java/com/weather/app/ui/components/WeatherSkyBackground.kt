@@ -2168,8 +2168,7 @@ private fun DrawScope.drawDayCloudySoftClouds(
 /**
  * 绘制夜晚多云天气下的灰白色月光流云与银辉云海
  *
- * 云层主要集中在屏幕上半部左右两侧，稀疏灵动，中间通透，
- * 呈现真实夜幕下月华映照的清冷典雅氛围。
+ * 云层主要集中在屏幕上半部左右两侧，稀疏灵动，中间通透，纯自然径向柔焦漫射，无任何横向硬线条纹。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -2197,9 +2196,8 @@ private fun DrawScope.drawNightCloudySilverClouds(
         val speed = 0.60f + idx * 0.20f
         val driftDir = if (idx < 2) 1.0f else -0.90f
         val drift = sin((progress * speed + idx * 0.35f) * 2f * PI.toFloat()) * 24f * driftDir
-        val phaseOffset = (progress * speed + idx * 0.25f) % 1f
 
-        // 主体柔和月光灰白云团（稀疏小范围漫射）
+        // 主体柔和月光灰白云团（纯径向高斯柔焦漫射，边缘平滑渐隐）
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
@@ -2213,29 +2211,6 @@ private fun DrawScope.drawNightCloudySilverClouds(
             center = Offset(centerPos.x + drift, centerPos.y),
             radius = radius
         )
-
-        // 上半部轻盈细月光云丝 (仅顶部两翼，不遮挡中间)
-        if (idx == 0 || idx == 2) {
-            val ribbonBaseX = if (idx == 0) width * 0.12f else width * 0.68f
-            val ribbonStartX = ribbonBaseX + sin(phaseOffset * 2f * PI.toFloat()) * 18f
-            val ribbonLen = width * 0.26f
-            drawLine(
-                brush = Brush.horizontalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        color.copy(alpha = baseAlpha * 0.22f),
-                        color.copy(alpha = baseAlpha * 0.32f),
-                        Color.Transparent
-                    ),
-                    startX = ribbonStartX,
-                    endX = ribbonStartX + ribbonLen
-                ),
-                start = Offset(ribbonStartX, centerPos.y + sin(phaseOffset * 2f * PI.toFloat()) * 6f),
-                end = Offset(ribbonStartX + ribbonLen, centerPos.y - sin(phaseOffset * 2f * PI.toFloat()) * 5f),
-                strokeWidth = 8f,
-                cap = StrokeCap.Round
-            )
-        }
     }
 }
 
