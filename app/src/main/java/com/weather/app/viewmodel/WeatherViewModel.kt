@@ -48,7 +48,7 @@ data class WeatherUiState(
     val currentSource: WeatherSourceInfo = WeatherSourceInfo(
         id = "cma",
         name = "中央气象台",
-        description = "国家气象中心官方权威气象实况与预报",
+        description = "国家气象中心官方，不支持精确定位查询",
         isDefault = true,
         isAvailable = true
     ),
@@ -351,21 +351,72 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 切换当前激活的天气数据源并重新加载所有城市天气
+     * 切换当前激活的天气数据源并刷新所有城市天气，保持当前展示的城市 Tab 索引不变
      *
-     * @param sourceId 目标天气源标识符（如 "cma"）
+     * 切换数据源后优先立即请求并刷新当前停靠展示的城市天气，同时在后台静默预加载更新其余保存城市的数据，
+     * 避免因重新自动定位导致当前选中的城市 Tab 索引被重置为 0。
+     *
+     * @param sourceId 目标天气源标识符（如 "cma", "open_meteo"）
      */
     fun switchWeatherSource(sourceId: String) {
         val newSourceInfo = repository.switchDataSource(sourceId)
+        val currentIndex = _uiState.value.currentCityIndex
+        val cities = _uiState.value.savedCities
+        val safeIndex = currentIndex.coerceIn(0, (cities.size - 1).coerceAtLeast(0))
+
         _uiState.update {
             it.copy(
                 currentSource = newSourceInfo,
                 showSourceDialog = false,
-                weatherCache = emptyMap(),
-                isLoading = true
+                isRefreshing = true,
+                currentCityIndex = safeIndex
             )
         }
-        autoLocateAndPreload()
+
+        viewModelScope.launch {
+            val currentCity = cities.getOrNull(safeIndex)
+            if (currentCity != null) {
+                // 1. 优先立即刷新当前城市在新天气源下的实况与预报
+                val result = repository.fetchWeather(currentCity)
+                result.onSuccess { data ->
+                    repository.saveCachedWeatherData(currentCity, data)
+                    val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[currentCity.getCacheKey()] = data
+                    cache[currentCity.code.ifEmpty { currentCity.name }] = data
+                    cache[currentCity.name] = data
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            weatherCache = cache,
+                            errorMessage = null
+                        )
+                    }
+                }.onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            errorMessage = "切换天气源后刷新【${currentCity.name}】失败: ${error.localizedMessage ?: "网络异常"}"
+                        )
+                    }
+                }
+            } else {
+                _uiState.update { it.copy(isRefreshing = false) }
+            }
+
+            // 2. 异步拉取并刷新其余已保存城市的新天气源数据
+            for ((index, city) in cities.withIndex()) {
+                if (index == safeIndex) continue
+                val res = repository.fetchWeather(city)
+                res.onSuccess { data ->
+                    repository.saveCachedWeatherData(city, data)
+                    val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[city.getCacheKey()] = data
+                    cache[city.code.ifEmpty { city.name }] = data
+                    cache[city.name] = data
+                    _uiState.update { it.copy(weatherCache = cache) }
+                }
+            }
+        }
     }
 
     /**

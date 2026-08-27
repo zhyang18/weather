@@ -384,7 +384,7 @@ class CmaWeatherDataSource : WeatherDataSource {
         return WeatherSourceInfo(
             id = "cma",
             name = "中央气象台",
-            description = "国家气象中心官方权威气象实况与预报",
+            description = "国家气象中心官方，不支持精确定位查询",
             isDefault = true,
             isAvailable = true
         )
