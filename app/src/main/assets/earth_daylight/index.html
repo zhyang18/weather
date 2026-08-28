@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>地球实时日光</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030710;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            touch-action: none;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            display: block;
+        }
+
+        .hud-tips {
+            position: absolute;
+            bottom: 88px;
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+            pointer-events: none;
+            color: rgba(255, 255, 255, 0.45);
+            font-size: 11px;
+            padding: 0 16px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+            letter-spacing: 0.5px;
+        }
+    </style>
+    <script src="three.min.js"></script>
+    <script src="earth_texture_data.js"></script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div class="hud-tips">
+        单指拖动旋转视角 · 双指捏合自由缩放 · 实时模拟全球昼夜晨昏圈
+    </div>
+
+    <script>
+        const PI = Math.PI;
+        const TWO_PI = PI * 2;
+        const Sp = -PI;
+        const Ep = TWO_PI / 1440;
+        const LIGHT_DIST = 5;
+        
+        // 强化宇宙真实明暗对比度：降低背光环境光(0.05)，增强日光直射(1.45)，使昼夜晨昏分界极其清晰
+        const LIGHT_INTENSITY = 1.45;
+        const AMBIENT_INTENSITY = 0.05;
+        
+        // 正交相机保持在离球心 10.0 的安全固定距离，缩放纯靠正交视界 ot 调节，永不发生近裁剪面穿模变黑
+        const CAMERA_DIST = 10.0;
+        const DEFAULT_ZOOM = 1.35;
+        const MIN_ZOOM = 0.25;
+        const MAX_ZOOM = 3.5;
+
+        let ot = DEFAULT_ZOOM;
+        let isTouching = false;
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+        let initialPinchDist = 0;
+        let initialZoom = DEFAULT_ZOOM;
+
+        // 默认视角微偏20度（cr = PI/2 + 0.35），开屏即可清晰观察到昼夜半球与晨昏线分割弧线
+        let cr = PI / 2 + 0.35;
+        let Cn = PI / 2;
+
+        let isSimulating = false;
+        let simulatedTime = null;
+        let currentWidth = 0;
+        let currentHeight = 0;
+
+        // 计算指定日期的太阳赤纬角 (Solar Declination)
+        function calculateSolarDeclination(date) {
+            const startOfYear = new Date(date.getFullYear(), 0, 0);
+            const dayOfYear = Math.floor((date - startOfYear) / (1000 * 60 * 60 * 24));
+            return Math.asin(0.398 * Math.cos(TWO_PI * (dayOfYear - 173) / 365.242));
+        }
+
+        // Three.js 场景初始化
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x030710);
+
+        const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
+        camera.position.set(0, 0, CAMERA_DIST);
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: false,
+            powerPreference: "high-performance"
+        });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
+        if (THREE.sRGBEncoding) {
+            renderer.outputEncoding = THREE.sRGBEncoding;
+        }
+        container.appendChild(renderer.domElement);
+
+        // 微弱宇宙漫反射冷光
+        const ambientLight = new THREE.AmbientLight(0xdbeafe, AMBIENT_INTENSITY);
+        scene.add(ambientLight);
+
+        // 地球与光源容器组 (支持整体倾斜)
+        const earthGroup = new THREE.Group();
+        scene.add(earthGroup);
+
+        // 太阳平行光
+        const sunLight = new THREE.DirectionalLight(0xffffff, LIGHT_INTENSITY);
+        sunLight.position.set(0, 0, LIGHT_DIST);
+        earthGroup.add(sunLight);
+
+        // 地球球体
+        const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+        
+        function createProceduralFallbackTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1e3a8a';
+            ctx.fillRect(0, 0, 512, 256);
+            ctx.fillStyle = '#15803d';
+            ctx.beginPath();
+            ctx.arc(300, 100, 50, 0, Math.PI * 2);
+            ctx.arc(150, 90, 40, 0, Math.PI * 2);
+            ctx.arc(180, 180, 45, 0, Math.PI * 2);
+            ctx.fill();
+            const tex = new THREE.CanvasTexture(canvas);
+            if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+            return tex;
+        }
+
+        const textureSource = (typeof window.EARTH_TEXTURE_BASE64 !== 'undefined' && window.EARTH_TEXTURE_BASE64)
+            ? window.EARTH_TEXTURE_BASE64
+            : '2k_earth_daymap.jpg';
+
+        const textureLoader = new THREE.TextureLoader();
+        const earthTexture = textureLoader.load(
+            textureSource,
+            function(tex) {
+                if (THREE.sRGBEncoding) {
+                    tex.encoding = THREE.sRGBEncoding;
+                }
+                tex.needsUpdate = true;
+                renderer.render(scene, camera);
+            },
+            undefined,
+            function(err) {
+                console.warn('Texture load fallback:', err);
+                earthMaterial.map = createProceduralFallbackTexture();
+                earthMaterial.needsUpdate = true;
+            }
+        );
+        if (THREE.sRGBEncoding) {
+            earthTexture.encoding = THREE.sRGBEncoding;
+        }
+
+        const earthMaterial = new THREE.MeshLambertMaterial({
+            map: earthTexture
+        });
+        const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
+        earthMesh.position.set(0, 0, 0);
+        earthGroup.add(earthMesh);
+        sunLight.target = earthMesh;
+
+        // 晨昏线 (黄金光晕大圆圈，精准指示日出与日落交界线)
+        const terminatorRingGeom = new THREE.CylinderGeometry(1.002, 1.002, 0.005, 64, 1, true);
+        const terminatorMat = new THREE.MeshBasicMaterial({
+            color: 0xfbbf24,
+            transparent: true,
+            opacity: 0.85,
+            side: THREE.DoubleSide
+        });
+        const terminatorRing = new THREE.Mesh(terminatorRingGeom, terminatorMat);
+        terminatorRing.position.set(0, 0, 0);
+        terminatorRing.visible = true; // 默认清晰标出晨昏圈
+        earthGroup.add(terminatorRing);
+
+        // 午时线 (半圆环：红色与蓝色两段)
+        const meridianRingGeom = new THREE.CylinderGeometry(1.003, 1.003, 0.004, 64, 1, true, 0, PI);
+        const redMeridianMat = new THREE.MeshBasicMaterial({ color: 0xff3b30, side: THREE.DoubleSide });
+        const blueMeridianMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, side: THREE.DoubleSide });
+
+        const redMeridian = new THREE.Mesh(meridianRingGeom, redMeridianMat);
+        redMeridian.rotation.set(PI / 2, 0, PI / 2);
+        redMeridian.visible = false;
+        earthGroup.add(redMeridian);
+
+        const blueMeridian = new THREE.Mesh(meridianRingGeom, blueMeridianMat);
+        blueMeridian.rotation.set(PI / 2, 0, -PI / 2);
+        blueMeridian.visible = false;
+        earthGroup.add(blueMeridian);
+
+        // 地轴 (贯穿南北极的白光轴线)
+        const axisGeom = new THREE.CylinderGeometry(0.0025, 0.0025, 2.6, 16, 1, true);
+        const axisMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+        const earthAxis = new THREE.Mesh(axisGeom, axisMat);
+        earthAxis.position.set(0, 0, 0);
+        earthAxis.visible = false;
+        earthGroup.add(earthAxis);
+
+        // 背景星空微粒
+        const starsGeom = new THREE.BufferGeometry();
+        const starsCount = 200;
+        const starsPositions = new Float32Array(starsCount * 3);
+        for(let i = 0; i < starsCount * 3; i += 3) {
+            starsPositions[i] = (Math.random() - 0.5) * 40;
+            starsPositions[i+1] = (Math.random() - 0.5) * 40;
+            starsPositions[i+2] = -10 - Math.random() * 20;
+        }
+        starsGeom.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
+        const starsMat = new THREE.PointsMaterial({ color: 0x94a3b8, size: 0.06, transparent: true, opacity: 0.6 });
+        const starField = new THREE.Points(starsGeom, starsMat);
+        scene.add(starField);
+
+        // 更新相机三维球面坐标与朝向
+        function updateCameraPosition() {
+            const x = CAMERA_DIST * Math.sin(Cn) * Math.cos(cr);
+            const y = CAMERA_DIST * Math.cos(Cn);
+            const z = CAMERA_DIST * Math.sin(Cn) * Math.sin(cr);
+            camera.position.set(x, y, z);
+            camera.lookAt(earthMesh.position);
+        }
+
+        // 视口与投影矩阵适配 (兼容手机竖屏与横屏)
+        function updateCameraProjection() {
+            const w = window.innerWidth || document.documentElement.clientWidth || 360;
+            const h = window.innerHeight || document.documentElement.clientHeight || 640;
+            const aspect = w / h;
+
+            if (aspect < 1.0) {
+                camera.left = -ot;
+                camera.right = ot;
+                camera.top = ot / aspect;
+                camera.bottom = -ot / aspect;
+            } else {
+                camera.left = -ot * aspect;
+                camera.right = ot * aspect;
+                camera.top = ot;
+                camera.bottom = -ot;
+            }
+            camera.updateProjectionMatrix();
+        }
+
+        function checkResize() {
+            const w = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+            const h = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+            if (w > 0 && h > 0 && (w !== currentWidth || h !== currentHeight)) {
+                currentWidth = w;
+                currentHeight = h;
+                updateCameraProjection();
+                renderer.setSize(w, h);
+            }
+        }
+
+        // 旋转相机视图
+        function rotateCamera(deltaX, deltaY) {
+            cr += deltaX * 0.008;
+            Cn -= deltaY * 0.008;
+            Cn = Math.max(Math.min(Cn, PI - 0.01), 0.01);
+            updateCameraPosition();
+        }
+
+        // 缩放相机距离
+        function zoomCamera(factor) {
+            ot = Math.max(Math.min(ot * factor, MAX_ZOOM), MIN_ZOOM);
+            updateCameraProjection();
+        }
+
+        // 重置相机视角
+        function resetCameraView() {
+            ot = DEFAULT_ZOOM;
+            cr = PI / 2 + 0.35;
+            Cn = PI / 2;
+            updateCameraProjection();
+            updateCameraPosition();
+        }
+
+        // 更新地球自转角度 (根据当前时间 UTC 分钟数)
+        function updateEarthRotation(date) {
+            const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes() + date.getUTCSeconds() / 60;
+            earthMesh.rotation.y = utcMinutes * Ep + Sp - PI / 2;
+        }
+
+        // 更新太阳光线倾斜角与晨昏线姿态
+        function updateSunPosition(date) {
+            const declination = calculateSolarDeclination(date);
+            sunLight.position.set(0, LIGHT_DIST * Math.tan(declination), LIGHT_DIST);
+            terminatorRing.rotation.x = declination;
+        }
+
+        // 调整整体倾斜角
+        function setTilt(angleOffset) {
+            let tilt = earthGroup.rotation.x + angleOffset;
+            tilt = Math.max(Math.min(tilt, PI / 2), -PI / 2);
+            earthGroup.rotation.x = tilt;
+        }
+
+        // 赤道对齐
+        function alignEquator() {
+            earthGroup.rotation.x = 0;
+        }
+
+        // 黄道对齐
+        function alignEcliptic() {
+            const now = getCurrentDisplayDate();
+            earthGroup.rotation.x = calculateSolarDeclination(now);
+        }
+
+        // 切换晨昏线
+        function toggleTerminatorLine() {
+            terminatorRing.visible = !terminatorRing.visible;
+            return terminatorRing.visible;
+        }
+
+        // 切换午时线
+        function toggleMeridianLine() {
+            const visible = !redMeridian.visible;
+            redMeridian.visible = visible;
+            blueMeridian.visible = visible;
+            return visible;
+        }
+
+        // 切换地轴
+        function toggleEarthAxis() {
+            earthAxis.visible = !earthAxis.visible;
+            return earthAxis.visible;
+        }
+
+        function getCurrentDisplayDate() {
+            return isSimulating && simulatedTime ? new Date(simulatedTime) : new Date();
+        }
+
+        // 触摸与手势事件监听
+        function onTouchStart(e) {
+            if (e.touches.length === 1) {
+                isTouching = true;
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+            } else if (e.touches.length === 2) {
+                isTouching = false;
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                initialPinchDist = Math.hypot(dx, dy);
+                initialZoom = ot;
+            }
+        }
+
+        function onTouchMove(e) {
+            if (e.touches.length === 1 && isTouching) {
+                const deltaX = e.touches[0].clientX - lastTouchX;
+                const deltaY = e.touches[0].clientY - lastTouchY;
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+                rotateCamera(deltaX, deltaY);
+            } else if (e.touches.length === 2 && initialPinchDist > 0) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const dist = Math.hypot(dx, dy);
+                const scale = initialPinchDist / dist;
+                ot = Math.max(Math.min(initialZoom * scale, MAX_ZOOM), MIN_ZOOM);
+                updateCameraProjection();
+            }
+        }
+
+        function onTouchEnd(e) {
+            if (e.touches.length === 0) {
+                isTouching = false;
+                initialPinchDist = 0;
+            } else if (e.touches.length === 1) {
+                isTouching = true;
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+                initialPinchDist = 0;
+            }
+        }
+
+        // 鼠标拖动与滚轮
+        let isMouseDown = false;
+        let lastMouseX = 0, lastMouseY = 0;
+        function onMouseDown(e) {
+            isMouseDown = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        }
+        function onMouseMove(e) {
+            if (!isMouseDown) return;
+            const deltaX = e.clientX - lastMouseX;
+            const deltaY = e.clientY - lastMouseY;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            rotateCamera(deltaX, deltaY);
+        }
+        function onMouseUp() {
+            isMouseDown = false;
+        }
+        function onWheel(e) {
+            zoomCamera(e.deltaY > 0 ? 1.08 : 0.92);
+        }
+
+        window.addEventListener('touchstart', onTouchStart, { passive: false });
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onTouchEnd, { passive: false });
+        window.addEventListener('mousedown', onMouseDown);
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+        window.addEventListener('wheel', onWheel, { passive: true });
+
+        window.addEventListener('resize', checkResize);
+
+        // 初始化
+        const initialDate = new Date();
+        updateEarthRotation(initialDate);
+        updateSunPosition(initialDate);
+        alignEcliptic();
+        checkResize();
+        updateCameraPosition();
+
+        // 动画主循环
+        let lastUpdateTime = 0;
+        function animate(timestamp) {
+            requestAnimationFrame(animate);
+            checkResize();
+
+            if (!lastUpdateTime || timestamp - lastUpdateTime >= 1000) {
+                lastUpdateTime = timestamp;
+                const now = getCurrentDisplayDate();
+                updateEarthRotation(now);
+                updateSunPosition(now);
+            }
+
+            renderer.render(scene, camera);
+        }
+        requestAnimationFrame(animate);
+
+        // 对外供 Android 原生层调用的 JS API
+        window.earthSimulator = {
+            toggleTerminator: function() { return toggleTerminatorLine(); },
+            toggleMeridian: function() { return toggleMeridianLine(); },
+            toggleAxis: function() { return toggleEarthAxis(); },
+            alignEquator: function() { alignEquator(); },
+            alignEcliptic: function() { alignEcliptic(); },
+            resetCamera: function() { resetCameraView(); },
+            tilt: function(delta) { setTilt(delta); },
+            zoomIn: function() { zoomCamera(0.85); },
+            zoomOut: function() { zoomCamera(1.15); },
+            setTime: function(timeMillis) {
+                isSimulating = true;
+                simulatedTime = timeMillis;
+                const d = new Date(timeMillis);
+                updateEarthRotation(d);
+                updateSunPosition(d);
+            },
+            resetToLiveTime: function() {
+                isSimulating = false;
+                simulatedTime = null;
+                const d = new Date();
+                updateEarthRotation(d);
+                updateSunPosition(d);
+            }
+        };
+    </script>
+</body>
+</html>

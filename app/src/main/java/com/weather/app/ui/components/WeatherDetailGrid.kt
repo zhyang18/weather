@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
@@ -84,6 +86,7 @@ import com.weather.app.model.CardDisplayConfig
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param cardConfig 卡片自定义显隐配置实体 [CardDisplayConfig]
  * @param lastUpdatedText 上次刷新时间说明文本（如 "上次刷新 15:53"）
+ * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
  * @param modifier 外部修饰符
  */
 @Composable
@@ -91,6 +94,7 @@ fun WeatherDetailGrid(
     weatherData: WeatherData,
     cardConfig: CardDisplayConfig = CardDisplayConfig(),
     lastUpdatedText: String = "",
+    onSunriseSunsetClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val current = weatherData.current
@@ -104,9 +108,15 @@ fun WeatherDetailGrid(
         validCards.add { mod -> AirQualityRealCard(aqi = aqi, modifier = mod) }
     }
 
-    // 2. 日出日落卡片 (当用户开启时结合当前城市经纬度与天文算法展示)
+    // 2. 日出日落卡片 (当用户开启时结合当前城市经纬度与天文算法展示，支持点击进入地球实时日光)
     if (cardConfig.showSunriseSunset) {
-        validCards.add { mod -> SunriseSunsetRealCard(city = weatherData.city, modifier = mod) }
+        validCards.add { mod ->
+            SunriseSunsetRealCard(
+                city = weatherData.city,
+                onClick = onSunriseSunsetClick,
+                modifier = mod
+            )
+        }
     }
 
     // 3. 体感温度卡片 (当用户开启且存在真实体感或温度时展示)
@@ -925,43 +935,43 @@ private fun calculateCardSolarVisualState(
 
     val p = progress.coerceIn(0f, 1f)
     return when {
-        // 1. 清晨日出 (0.00 ~ 0.12)：朱红朝阳，温润红日
-        p < 0.12f -> {
-            val t = p / 0.12f
+        // 1. 清晨日出 (0.00 ~ 0.15)：肉眼实景一轮温润朝霞金橙色太阳（不刺眼、无生硬芒刺、通透静谧）
+        p < 0.15f -> {
+            val t = p / 0.15f
             SolarCardVisualState(
-                photosphereCenterColor = Color(0xFFFFF3E0),
-                photosphereEdgeColor = Color(0xFFFF5722),
-                innerCoronaColor = Color(0xFFFF7043).copy(alpha = 0.70f),
-                outerHaloColor = Color(0xFFFF3D00).copy(alpha = 0.30f),
-                diffractionRayColor = Color(0xFFFFAB91).copy(alpha = 0.75f),
+                photosphereCenterColor = Color(0xFFFFF8E1),
+                photosphereEdgeColor = Color(0xFFFFA000),
+                innerCoronaColor = Color(0xFFFFB300).copy(alpha = 0.70f),
+                outerHaloColor = Color(0xFFFF8F00).copy(alpha = 0.28f),
+                diffractionRayColor = Color(0xFFFFD54F).copy(alpha = 0.40f),
                 skyGlowGradientColors = listOf(
-                    Color(0xFFFF7043).copy(alpha = 0.35f),
-                    Color(0xFFFF8A65).copy(alpha = 0.12f),
-                    Color(0xFFFF7043).copy(alpha = 0.01f)
+                    Color(0xFFFFA000).copy(alpha = 0.35f),
+                    Color(0xFFFFB300).copy(alpha = 0.12f),
+                    Color(0xFFFFA000).copy(alpha = 0.01f)
                 ),
-                rayIntensity = 0.45f + 0.30f * t,
-                diskScale = 1.18f - 0.08f * t
+                rayIntensity = 0.0f, // 实景日出不刺眼，纯粹圆润金橙日盘
+                diskScale = 1.15f - 0.05f * t
             )
         }
-        // 2. 晨光跃升 (0.12 ~ 0.35)：璀璨金橙与亮金
+        // 2. 晨光高照 (0.15 ~ 0.35)：太阳升起，由金橙转为璀璨暖金，星芒浮现
         p < 0.35f -> {
-            val t = (p - 0.12f) / 0.23f
+            val t = (p - 0.15f) / 0.20f
             SolarCardVisualState(
-                photosphereCenterColor = Color.White,
-                photosphereEdgeColor = Color(0xFFFFD54F),
+                photosphereCenterColor = Color(0xFFFFFDE7),
+                photosphereEdgeColor = Color(0xFFFFB300),
                 innerCoronaColor = Color(0xFFFFCA28).copy(alpha = 0.75f),
-                outerHaloColor = Color(0xFFFFB300).copy(alpha = 0.32f),
-                diffractionRayColor = Color(0xFFFFF176).copy(alpha = 0.85f),
+                outerHaloColor = Color(0xFFFFC107).copy(alpha = 0.30f),
+                diffractionRayColor = Color(0xFFFFF176).copy(alpha = 0.80f),
                 skyGlowGradientColors = listOf(
-                    Color(0xFFFFD54F).copy(alpha = 0.32f),
-                    Color(0xFFFFE082).copy(alpha = 0.10f),
-                    Color(0xFFFFD54F).copy(alpha = 0.01f)
+                    Color(0xFFFFCA28).copy(alpha = 0.30f),
+                    Color(0xFFFFD54F).copy(alpha = 0.10f),
+                    Color(0xFFFFCA28).copy(alpha = 0.01f)
                 ),
-                rayIntensity = 0.75f + 0.25f * t,
+                rayIntensity = 0.25f + 0.65f * t,
                 diskScale = 1.10f - 0.10f * t
             )
         }
-        // 3. 烈日正午 (0.35 ~ 0.65)：纯白极炽光核 (6500K)
+        // 3. 烈日正午 (0.35 ~ 0.65)：纯白极炽光核 (6500K) 与耀眼白金光芒
         p <= 0.65f -> {
             SolarCardVisualState(
                 photosphereCenterColor = Color.White,
@@ -978,54 +988,53 @@ private fun calculateCardSolarVisualState(
                 diskScale = 1.00f
             )
         }
-        // 4. 午后斜阳 (0.65 ~ 0.88)：温润香槟金与暖琥珀金
-        p < 0.88f -> {
-            val t = (p - 0.65f) / 0.23f
+        // 4. 午后斜阳 (0.65 ~ 0.85)：温润香槟金与暖琥珀金
+        p < 0.85f -> {
+            val t = (p - 0.65f) / 0.20f
             SolarCardVisualState(
-                photosphereCenterColor = Color.White,
-                photosphereEdgeColor = Color(0xFFFFB74D),
-                innerCoronaColor = Color(0xFFFF9800).copy(alpha = 0.75f),
-                outerHaloColor = Color(0xFFF57C00).copy(alpha = 0.30f),
-                diffractionRayColor = Color(0xFFFFE082).copy(alpha = 0.85f),
+                photosphereCenterColor = Color(0xFFFFF8E1),
+                photosphereEdgeColor = Color(0xFFFFB300),
+                innerCoronaColor = Color(0xFFFFCA28).copy(alpha = 0.70f),
+                outerHaloColor = Color(0xFFFFA000).copy(alpha = 0.28f),
+                diffractionRayColor = Color(0xFFFFE082).copy(alpha = 0.80f),
                 skyGlowGradientColors = listOf(
-                    Color(0xFFFFB74D).copy(alpha = 0.32f),
-                    Color(0xFFFFCC80).copy(alpha = 0.10f),
-                    Color(0xFFFFB74D).copy(alpha = 0.01f)
+                    Color(0xFFFFB300).copy(alpha = 0.30f),
+                    Color(0xFFFFCA28).copy(alpha = 0.09f),
+                    Color(0xFFFFB300).copy(alpha = 0.01f)
                 ),
-                rayIntensity = 1.00f - 0.30f * t,
-                diskScale = 1.00f + 0.10f * t
+                rayIntensity = 0.90f - 0.65f * t,
+                diskScale = 1.00f + 0.08f * t
             )
         }
-        // 5. 晚霞落日 (0.88 ~ 1.00)：浓郁壮丽晚霞落日熔金
+        // 5. 晚霞落日 (0.85 ~ 1.00)：肉眼实景一轮沉静壮丽、落日熔金暖琥珀橙日盘（不刺眼、无生硬芒刺、沉稳温润）
         else -> {
-            val t = (p - 0.88f) / 0.12f
+            val t = (p - 0.85f) / 0.15f
             SolarCardVisualState(
                 photosphereCenterColor = Color(0xFFFFF3E0),
-                photosphereEdgeColor = Color(0xFFFF3D00),
-                innerCoronaColor = Color(0xFFFF5722).copy(alpha = 0.75f),
-                outerHaloColor = Color(0xFFD84315).copy(alpha = 0.35f),
-                diffractionRayColor = Color(0xFFFF8A65).copy(alpha = 0.80f),
+                photosphereEdgeColor = Color(0xFFFF8F00),
+                innerCoronaColor = Color(0xFFFF6F00).copy(alpha = 0.65f),
+                outerHaloColor = Color(0xFFE65100).copy(alpha = 0.25f),
+                diffractionRayColor = Color(0xFFFFB74D).copy(alpha = 0.30f),
                 skyGlowGradientColors = listOf(
-                    Color(0xFFFF5722).copy(alpha = 0.36f),
-                    Color(0xFFE64A19).copy(alpha = 0.12f),
-                    Color(0xFFFF5722).copy(alpha = 0.01f)
+                    Color(0xFFFF8F00).copy(alpha = 0.36f),
+                    Color(0xFFFFA000).copy(alpha = 0.14f),
+                    Color(0xFFFF8F00).copy(alpha = 0.01f)
                 ),
-                rayIntensity = 0.70f - 0.30f * t,
-                diskScale = 1.10f + 0.10f * t
+                rayIntensity = 0.0f, // 实景落日不刺眼，纯粹沉静暖金橙日盘
+                diskScale = 1.08f + 0.08f * t
             )
         }
     }
 }
 
 /**
- * 绘制高保真拟真发光太阳天体图形
+ * 绘制人类肉眼实景拟真发光太阳天体图形
  *
- * 采用 Compose 原生硬件加速 5 重物理光学层次：
- * 1. 广阔大气瑞利散射柔光外晕（超平滑向外消散）；
- * 2. 中层等离子日冕辉光球（充盈饱满发光体）；
- * 3. 8 束纤细通透自转衍射星芒微羽（4 束主光芒 + 4 束次光芒，双向渐变衰减）；
- * 4. 日盘本体高光过渡层（依据色温动态变化）；
- * 5. 日盘中心纯白极炽光核（高能光焦点）。
+ * 遵循自然大气物理与人眼观测生理模型：
+ * 1. 日盘实体（Photosphere Solid Disk）：饱满通透的实景日盘，具有温润的双层球体渐变与亚像素超平滑微羽化边缘；
+ * 2. 紧贴日冕薄层（Corona Rim）：紧随日盘边缘的温润发光薄环；
+ * 3. 广阔天际霞光晕（Ambient Rayleigh Glow）：超平滑融入卡片背景的漫散霞光；
+ * 4. 强光衍射星芒（Diffraction Rays）：仅在白天光照刺眼时适度显现，晨昏日出日落时完全自然收敛，呈现一轮纯粹静谧的红日。
  *
  * @param center 太阳中心屏幕坐标 [Offset]
  * @param state 太阳实时光学视觉状态 [SolarCardVisualState]
@@ -1063,15 +1072,15 @@ private fun DrawScope.drawPhotorealisticSun(
         return
     }
 
-    val baseRadius = 6.4.dp.toPx() * state.diskScale * pulse
+    val baseRadius = 7.0.dp.toPx() * state.diskScale * pulse
 
-    // 1. 最外层广阔大气瑞利散射柔光外晕
-    val outerHaloRadius = baseRadius * 3.8f
+    // 1. 最外层广阔天际霞光柔光晕 (超平滑向外消散)
+    val outerHaloRadius = baseRadius * 3.6f
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
                 state.outerHaloColor,
-                state.outerHaloColor.copy(alpha = state.outerHaloColor.alpha * 0.38f),
+                state.outerHaloColor.copy(alpha = state.outerHaloColor.alpha * 0.40f),
                 Color.Transparent
             ),
             center = center,
@@ -1081,13 +1090,13 @@ private fun DrawScope.drawPhotorealisticSun(
         center = center
     )
 
-    // 2. 中层等离子日冕辉光球
-    val coronaRadius = baseRadius * 2.15f
+    // 2. 紧贴日盘的温润日冕辉光环
+    val coronaRadius = baseRadius * 1.85f
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
                 state.innerCoronaColor,
-                state.innerCoronaColor.copy(alpha = state.innerCoronaColor.alpha * 0.32f),
+                state.innerCoronaColor.copy(alpha = state.innerCoronaColor.alpha * 0.35f),
                 Color.Transparent
             ),
             center = center,
@@ -1097,12 +1106,12 @@ private fun DrawScope.drawPhotorealisticSun(
         center = center
     )
 
-    // 3. 8 束纤细自转衍射星芒微羽 (Diffraction Spikes)
+    // 3. 强光刺眼时的纤细自转衍射星芒微羽 (仅在白昼强光时出现，日出日落为 0 保持纯粹红日)
     if (state.rayIntensity > 0.08f) {
-        val rayAlpha = (state.rayIntensity * 0.88f).coerceIn(0f, 1f)
+        val rayAlpha = (state.rayIntensity * 0.85f).coerceIn(0f, 1f)
         rotate(degrees = rotationDeg, pivot = center) {
             // 4 束长主星芒 (0°, 90°, 180°, 270°)
-            val majorRayLen = baseRadius * 2.8f
+            val majorRayLen = baseRadius * 2.6f
             for (i in 0 until 2) {
                 val angleRad = (i * 90f) * (PI.toFloat() / 180f)
                 val p1 = Offset(center.x + cos(angleRad) * majorRayLen, center.y + sin(angleRad) * majorRayLen)
@@ -1112,7 +1121,7 @@ private fun DrawScope.drawPhotorealisticSun(
                         colors = listOf(
                             Color.Transparent,
                             state.diffractionRayColor.copy(alpha = rayAlpha * 0.90f),
-                            Color.White.copy(alpha = rayAlpha),
+                            state.photosphereCenterColor.copy(alpha = rayAlpha),
                             state.diffractionRayColor.copy(alpha = rayAlpha * 0.90f),
                             Color.Transparent
                         ),
@@ -1121,12 +1130,12 @@ private fun DrawScope.drawPhotorealisticSun(
                     ),
                     start = p1,
                     end = p2,
-                    strokeWidth = 1.4.dp.toPx(),
+                    strokeWidth = 1.3.dp.toPx(),
                     cap = StrokeCap.Round
                 )
             }
             // 4 束次星芒 (45°, 135°, 225°, 315°)
-            val minorRayLen = baseRadius * 1.95f
+            val minorRayLen = baseRadius * 1.85f
             for (i in 0 until 2) {
                 val angleRad = (45f + i * 90f) * (PI.toFloat() / 180f)
                 val p1 = Offset(center.x + cos(angleRad) * minorRayLen, center.y + sin(angleRad) * minorRayLen)
@@ -1145,20 +1154,20 @@ private fun DrawScope.drawPhotorealisticSun(
                     ),
                     start = p1,
                     end = p2,
-                    strokeWidth = 1.0.dp.toPx(),
+                    strokeWidth = 0.9.dp.toPx(),
                     cap = StrokeCap.Round
                 )
             }
         }
     }
 
-    // 4. 日盘本体高光过渡层
+    // 4. 实景日盘本体 (Photosphere Solid Disk)：饱满、纯正、温润的实景日盘
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
                 state.photosphereCenterColor,
                 state.photosphereEdgeColor,
-                state.innerCoronaColor.copy(alpha = 0.50f)
+                state.innerCoronaColor.copy(alpha = 0.70f)
             ),
             center = center,
             radius = baseRadius
@@ -1167,10 +1176,10 @@ private fun DrawScope.drawPhotorealisticSun(
         center = center
     )
 
-    // 5. 日盘中心纯白极炽光核
+    // 5. 日盘中心微光核 (日出日落为温润赤红光核，正午为纯白高光点)
     drawCircle(
-        color = Color.White,
-        radius = baseRadius * 0.46f,
+        color = state.photosphereCenterColor,
+        radius = baseRadius * 0.40f,
         center = center
     )
 }
@@ -1182,11 +1191,13 @@ private fun DrawScope.drawPhotorealisticSun(
  * 太阳图形采用高保真 5 重物理光学模型，支持色温演变、自转衍射星芒与呼吸脉动。
  *
  * @param city 当前城市实体 [CityInfo]
+ * @param onClick 卡片点击跳转地球实时日光模拟器回调
  * @param modifier 外部修饰符
  */
 @Composable
 private fun SunriseSunsetRealCard(
     city: CityInfo,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 实时系统时钟（每秒自动校准，用户在系统设置修改时间或切回 App 时即时刷新生效）
@@ -1275,6 +1286,7 @@ private fun SunriseSunsetRealCard(
     MetricBaseCard(
         icon = Icons.Default.WbSunny,
         title = "日出日落",
+        onClick = onClick,
         modifier = modifier
     ) {
         Column(
@@ -1468,6 +1480,7 @@ private fun SunriseSunsetRealCard(
  * @param icon 卡片左上角气象指标图标 [ImageVector]
  * @param title 卡片标题
  * @param modifier 外部修饰符
+ * @param onClick 可选的卡片点击回调函数
  * @param content 卡片内部内容插槽
  */
 @Composable
@@ -1475,10 +1488,11 @@ private fun MetricBaseCard(
     icon: ImageVector,
     title: String,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
-    Column(
-        modifier = modifier
+    val cardModifier = if (onClick != null) {
+        modifier
             .fillMaxWidth()
             .height(152.dp)
             .graphicsLayer {
@@ -1488,23 +1502,54 @@ private fun MetricBaseCard(
             }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
-            .padding(14.dp),
+            .clickable(onClick = onClick)
+            .padding(14.dp)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .height(152.dp)
+            .graphicsLayer {
+                // 开启独立硬件渲染图层缓存
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0x7514263A))
+            .padding(14.dp)
+    }
+
+    Column(
+        modifier = cardModifier,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = Color.White.copy(alpha = 0.85f),
-                modifier = Modifier.size(15.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = title,
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Normal
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = title,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+            if (onClick != null) {
+                Icon(
+                    imageVector = Icons.Default.ArrowForward,
+                    contentDescription = "查看详情",
+                    tint = Color.White.copy(alpha = 0.45f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
 
         content()

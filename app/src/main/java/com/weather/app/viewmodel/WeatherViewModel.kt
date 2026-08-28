@@ -72,7 +72,8 @@ data class WeatherUiState(
     val isPrivacyAgreed: Boolean = false,
     val showPrivacyDialog: Boolean = false,
     val cardDisplayConfig: com.weather.app.model.CardDisplayConfig = com.weather.app.model.CardDisplayConfig(),
-    val showCardSettingsDialog: Boolean = false
+    val showCardSettingsDialog: Boolean = false,
+    val showEarthDaylightScreen: Boolean = false
 ) {
     /**
      * 获取当前选中的城市实体
@@ -842,6 +843,15 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      */
     fun setShowCardSettingsDialog(show: Boolean) {
         _uiState.update { it.copy(showCardSettingsDialog = show) }
+    }
+
+    /**
+     * 设置是否展示地球实时日光模拟器全屏页面
+     *
+     * @param show 是否展示地球日光页面
+     */
+    fun setShowEarthDaylightScreen(show: Boolean) {
+        _uiState.update { it.copy(showEarthDaylightScreen = show) }
     }
 
     /**

@@ -240,10 +240,17 @@ fun WeatherScreen(
                     scrollState = pageScrollState,
                     isVerticalScrollEnabled = true,
                     onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
-                    onRefresh = { viewModel.refreshCityAtIndex(page) }
+                    onRefresh = { viewModel.refreshCityAtIndex(page) },
+                    onSunriseSunsetClick = { viewModel.setShowEarthDaylightScreen(true) }
                 )
             }
         }
+
+        // 地球实时日光 3D 拟真全屏页面 (点击日出日落卡片触发)
+        EarthDaylightScreen(
+            visible = uiState.showEarthDaylightScreen,
+            onBackClick = { viewModel.setShowEarthDaylightScreen(false) }
+        )
 
         // 全屏城市管理弹窗 (背景色由当前天气主页色动态决定，占满整个屏幕)
         CityManagementFullScreen(
@@ -575,6 +582,7 @@ private fun TopImmersiveWeatherBar(
  * @param isVerticalScrollEnabled 是否允许垂直滚动与下拉刷新（用于手势冲突防抖与方向锁定联动）
  * @param onDailyChartModeChange 切换近日天气模式回调
  * @param onRefresh 下拉刷新触发回调
+ * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
  */
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
@@ -587,7 +595,8 @@ private fun CityWeatherPageContent(
     scrollState: ScrollState,
     isVerticalScrollEnabled: Boolean = true,
     onDailyChartModeChange: (Boolean) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onSunriseSunsetClick: () -> Unit = {}
 ) {
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isRefreshing,
@@ -671,7 +680,8 @@ private fun CityWeatherPageContent(
                 WeatherDetailGrid(
                     weatherData = weatherData,
                     cardConfig = cardConfig,
-                    lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText
+                    lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText,
+                    onSunriseSunsetClick = onSunriseSunsetClick
                 )
 
                 Spacer(modifier = Modifier.height(36.dp))
