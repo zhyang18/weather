@@ -43,6 +43,7 @@ import java.util.Locale
  * 1. 预测文案 100% 依据实况雨量数值、逐时降雨起止时刻与毫米数动态计算生成；
  * 2. 柱状图高度严格基于气象台真实雨量毫米数比例绘制；
  * 3. 若当前无雨且预报无雨，则本卡片自动完全隐藏不渲染。
+ * 内部已对 Canvas 柱状图绘制与数据原语结构进行零分配优化，保障横向滑动满帧流畅。
  *
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param modifier 外部修饰符
@@ -109,7 +110,7 @@ fun MinutelyPrecipitationCard(
         }
     }
 
-    // 映射未来 24 根时间柱的真实降水强度 (0f ~ 1f)
+    // 映射未来 24 根时间柱的真实降水强度 (FloatArray 原语数组，0 对象装箱)
     val rainIntensities = remember(currentRain, upcomingHourly) {
         val barCount = 24
         val values = FloatArray(barCount)
@@ -132,7 +133,7 @@ fun MinutelyPrecipitationCard(
             }
         }
 
-        values.toList()
+        values
     }
 
     val dashedEffect = remember { PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f) }
@@ -157,7 +158,11 @@ fun MinutelyPrecipitationCard(
             fontSize = 12.sp,
             fontWeight = FontWeight.Normal,
             maxLines = 1,
-            modifier = Modifier.basicMarquee()
+            modifier = Modifier.basicMarquee(
+                iterations = Int.MAX_VALUE,
+                delayMillis = 2000,
+                velocity = 30.dp
+            )
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -226,14 +231,15 @@ fun MinutelyPrecipitationCard(
                             pathEffect = dashedEffect
                         )
 
-                        // 绘制垂直降雨强度柱
+                        // 绘制垂直降雨强度柱 (直接以索引遍历 FloatArray，0 对象分配)
                         val barCount = rainIntensities.size
                         val barWidth = 3.2.dp.toPx()
                         val spacing = (w - (barWidth * barCount)) / (barCount - 1).coerceAtLeast(1)
 
-                        rainIntensities.forEachIndexed { index, intensity ->
+                        for (i in 0 until barCount) {
+                            val intensity = rainIntensities[i]
                             if (intensity > 0f) {
-                                val x = index * (barWidth + spacing)
+                                val x = i * (barWidth + spacing)
                                 val barH = (intensity * h * 0.82f).coerceAtLeast(3.dp.toPx())
                                 val y = h - barH
 
@@ -269,3 +275,4 @@ fun MinutelyPrecipitationCard(
         }
     }
 }
+

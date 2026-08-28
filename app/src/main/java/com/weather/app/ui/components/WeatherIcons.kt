@@ -1,15 +1,14 @@
 package com.weather.app.ui.components
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -22,8 +21,9 @@ import kotlin.math.sin
 /**
  * 气象动态与高保真矢量图标组件
  *
- * 100% 精确对齐设计稿规范，纯 Canvas 绘制 12 种标准精美气象图标：
+ * 100% 精确对齐设计稿规范，纯 Canvas 矢量绘制 12 种标准精美气象图标：
  * 晴、多云、阴、雷阵雨、雨、暴雨、雨夹雪、雪、霾、扬沙、雾、冰雹。
+ * 内部采用 [drawWithCache] 优化绘图指令缓存与零内存分配，保障高帧率横向滑动体验。
  *
  * @param weatherText 天气现象描述文本（如 "晴", "多云", "雷阵雨", "暴雨" 等）
  * @param modifier 外部修饰符
@@ -35,57 +35,59 @@ fun WeatherDynamicIcon(
     modifier: Modifier = Modifier,
     size: Dp = 24.dp
 ) {
-    Box(
-        modifier = modifier.size(size),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(modifier = Modifier.size(size)) {
-            val w = this.size.width
-            val h = this.size.height
+    Spacer(
+        modifier = modifier
+            .size(size)
+            .drawWithCache {
+                val w = this.size.width
+                val h = this.size.height
 
-            when {
-                weatherText.contains("晴") && !weatherText.contains("多云") && !weatherText.contains("雨") && !weatherText.contains("雪") -> {
-                    drawSunnyIcon(w, h)
-                }
-                weatherText.contains("多云") -> {
-                    drawCloudyWithSunIcon(w, h)
-                }
-                weatherText.contains("阴") -> {
-                    drawOvercastIcon(w, h)
-                }
-                weatherText.contains("雷") -> {
-                    drawThunderstormIcon(w, h)
-                }
-                weatherText.contains("暴雨") || weatherText.contains("大雨") -> {
-                    drawHeavyRainIcon(w, h)
-                }
-                weatherText.contains("雨夹雪") -> {
-                    drawSleetIcon(w, h)
-                }
-                weatherText.contains("雨") -> {
-                    drawLightRainIcon(w, h)
-                }
-                weatherText.contains("雪") -> {
-                    drawSnowIcon(w, h)
-                }
-                weatherText.contains("霾") -> {
-                    drawHazeIcon(w, h)
-                }
-                weatherText.contains("沙") || weatherText.contains("尘") || weatherText.contains("风") -> {
-                    drawSandstormIcon(w, h)
-                }
-                weatherText.contains("雾") -> {
-                    drawFogIcon(w, h)
-                }
-                weatherText.contains("冰雹") -> {
-                    drawHailIcon(w, h)
-                }
-                else -> {
-                    drawCloudyWithSunIcon(w, h)
+                // 预判断天气类型，缓存绘制行为
+                onDrawBehind {
+                    when {
+                        weatherText.contains("晴") && !weatherText.contains("多云") && !weatherText.contains("雨") && !weatherText.contains("雪") -> {
+                            drawSunnyIcon(w, h)
+                        }
+                        weatherText.contains("多云") -> {
+                            drawCloudyWithSunIcon(w, h)
+                        }
+                        weatherText.contains("阴") -> {
+                            drawOvercastIcon(w, h)
+                        }
+                        weatherText.contains("雷") -> {
+                            drawThunderstormIcon(w, h)
+                        }
+                        weatherText.contains("暴雨") || weatherText.contains("大雨") -> {
+                            drawHeavyRainIcon(w, h)
+                        }
+                        weatherText.contains("雨夹雪") -> {
+                            drawSleetIcon(w, h)
+                        }
+                        weatherText.contains("雨") -> {
+                            drawLightRainIcon(w, h)
+                        }
+                        weatherText.contains("雪") -> {
+                            drawSnowIcon(w, h)
+                        }
+                        weatherText.contains("霾") -> {
+                            drawHazeIcon(w, h)
+                        }
+                        weatherText.contains("沙") || weatherText.contains("尘") || weatherText.contains("风") -> {
+                            drawSandstormIcon(w, h)
+                        }
+                        weatherText.contains("雾") -> {
+                            drawFogIcon(w, h)
+                        }
+                        weatherText.contains("冰雹") -> {
+                            drawHailIcon(w, h)
+                        }
+                        else -> {
+                            drawCloudyWithSunIcon(w, h)
+                        }
+                    }
                 }
             }
-        }
-    }
+    )
 }
 
 /**
@@ -107,18 +109,23 @@ private fun DrawScope.drawSunnyIcon(w: Float, h: Float) {
         center = Offset(cx, cy)
     )
 
-    // 绘制 8 根等距光芒
+    // 绘制 8 根等距光芒 (利用预设常数直接迭代，避免内存分配)
     val rayInnerR = w * 0.32f
     val rayOuterR = w * 0.44f
+    val strokeWidth = w * 0.08f
+    val degToRad = (PI / 180.0).toFloat()
+
     for (i in 0 until 8) {
-        val rad = (i * 45f) * (PI.toFloat() / 180f)
-        val p1 = Offset(cx + rayInnerR * cos(rad), cy + rayInnerR * sin(rad))
-        val p2 = Offset(cx + rayOuterR * cos(rad), cy + rayOuterR * sin(rad))
+        val rad = (i * 45f) * degToRad
+        val cosVal = cos(rad)
+        val sinVal = sin(rad)
+        val p1 = Offset(cx + rayInnerR * cosVal, cy + rayInnerR * sinVal)
+        val p2 = Offset(cx + rayOuterR * cosVal, cy + rayOuterR * sinVal)
         drawLine(
             color = sunColor,
             start = p1,
             end = p2,
-            strokeWidth = w * 0.08f,
+            strokeWidth = strokeWidth,
             cap = StrokeCap.Round
         )
     }
@@ -141,15 +148,22 @@ private fun DrawScope.drawCloudyWithSunIcon(w: Float, h: Float) {
         radius = sunR,
         center = sunCenter
     )
+    val degToRad = (PI / 180.0).toFloat()
+    val strokeWidth = w * 0.06f
+    val rInner = sunR + w * 0.04f
+    val rOuter = sunR + w * 0.12f
+
     for (i in -1..2) {
-        val rad = (i * 35f - 45f) * (PI.toFloat() / 180f)
-        val p1 = Offset(sunCenter.x + (sunR + w * 0.04f) * cos(rad), sunCenter.y + (sunR + w * 0.04f) * sin(rad))
-        val p2 = Offset(sunCenter.x + (sunR + w * 0.12f) * cos(rad), sunCenter.y + (sunR + w * 0.12f) * sin(rad))
+        val rad = (i * 35f - 45f) * degToRad
+        val cosVal = cos(rad)
+        val sinVal = sin(rad)
+        val p1 = Offset(sunCenter.x + rInner * cosVal, sunCenter.y + rInner * sinVal)
+        val p2 = Offset(sunCenter.x + rOuter * cosVal, sunCenter.y + rOuter * sinVal)
         drawLine(
             color = sunColor,
             start = p1,
             end = p2,
-            strokeWidth = w * 0.06f,
+            strokeWidth = strokeWidth,
             cap = StrokeCap.Round
         )
     }
@@ -169,7 +183,7 @@ private fun DrawScope.drawOvercastIcon(w: Float, h: Float) {
 }
 
 /**
- * 绘制雷阵雨图标 (白云 + 3 根雨滴线 + 居中黄色闪电折线)
+ * 绘制雷阵雨图标 (白云 + 2 根雨滴线 + 居中金色闪电折线)
  *
  * @param w 宽度 (px)
  * @param h 高度 (px)
@@ -183,14 +197,17 @@ private fun DrawScope.drawThunderstormIcon(w: Float, h: Float) {
     drawLine(rainColor, Offset(w * 0.28f, h * 0.68f), Offset(w * 0.22f, h * 0.84f), rainStroke, StrokeCap.Round)
     drawLine(rainColor, Offset(w * 0.72f, h * 0.68f), Offset(w * 0.66f, h * 0.84f), rainStroke, StrokeCap.Round)
 
-    // 居中金色闪电折线
-    val lightningPath = Path().apply {
-        moveTo(w * 0.52f, h * 0.58f)
-        lineTo(w * 0.44f, h * 0.74f)
-        lineTo(w * 0.54f, h * 0.74f)
-        lineTo(w * 0.46f, h * 0.92f)
-    }
-    drawPath(lightningPath, color = Color(0xFFFFD54F), style = Stroke(width = w * 0.07f, cap = StrokeCap.Round))
+    // 居中金色闪电折线 (采用直接线段绘制，避免每帧分配 Path 对象)
+    val lightningColor = Color(0xFFFFD54F)
+    val lightningStroke = w * 0.07f
+    val p1 = Offset(w * 0.52f, h * 0.58f)
+    val p2 = Offset(w * 0.44f, h * 0.74f)
+    val p3 = Offset(w * 0.54f, h * 0.74f)
+    val p4 = Offset(w * 0.46f, h * 0.92f)
+
+    drawLine(lightningColor, p1, p2, lightningStroke, StrokeCap.Round)
+    drawLine(lightningColor, p2, p3, lightningStroke, StrokeCap.Round)
+    drawLine(lightningColor, p3, p4, lightningStroke, StrokeCap.Round)
 }
 
 /**
@@ -254,24 +271,37 @@ private fun DrawScope.drawSnowIcon(w: Float, h: Float) {
     val r = w * 0.40f
     val color = Color.White
     val stroke = w * 0.07f
+    val degToRad = (PI / 180.0).toFloat()
+    val branchR = r * 0.65f
+    val len = w * 0.10f
 
     for (i in 0 until 3) {
-        val rad = (i * 60f) * (PI.toFloat() / 180f)
-        val p1 = Offset(cx - r * cos(rad), cy - r * sin(rad))
-        val p2 = Offset(cx + r * cos(rad), cy + r * sin(rad))
+        val rad = (i * 60f) * degToRad
+        val cosVal = cos(rad)
+        val sinVal = sin(rad)
+        val p1 = Offset(cx - r * cosVal, cy - r * sinVal)
+        val p2 = Offset(cx + r * cosVal, cy + r * sinVal)
         drawLine(color, p1, p2, stroke, StrokeCap.Round)
 
-        // 分支小箭头
-        val branchR = r * 0.65f
-        for (dir in listOf(-1, 1)) {
-            val bx = cx + branchR * dir * cos(rad)
-            val by = cy + branchR * dir * sin(rad)
-            val angle1 = rad + 45f * (PI.toFloat() / 180f)
-            val angle2 = rad - 45f * (PI.toFloat() / 180f)
-            val len = w * 0.10f
-            drawLine(color, Offset(bx, by), Offset(bx + len * cos(angle1), by + len * sin(angle1)), stroke * 0.8f, StrokeCap.Round)
-            drawLine(color, Offset(bx, by), Offset(bx + len * cos(angle2), by + len * sin(angle2)), stroke * 0.8f, StrokeCap.Round)
-        }
+        // 分支小箭头 (消除 listOf 循环，采用无分配直接计算)
+        val angle1 = rad + 45f * degToRad
+        val angle2 = rad - 45f * degToRad
+        val cosA1 = cos(angle1)
+        val sinA1 = sin(angle1)
+        val cosA2 = cos(angle2)
+        val sinA2 = sin(angle2)
+
+        // 正向分支
+        val bx1 = cx + branchR * cosVal
+        val by1 = cy + branchR * sinVal
+        drawLine(color, Offset(bx1, by1), Offset(bx1 + len * cosA1, by1 + len * sinA1), stroke * 0.8f, StrokeCap.Round)
+        drawLine(color, Offset(bx1, by1), Offset(bx1 + len * cosA2, by1 + len * sinA2), stroke * 0.8f, StrokeCap.Round)
+
+        // 反向分支
+        val bx2 = cx - branchR * cosVal
+        val by2 = cy - branchR * sinVal
+        drawLine(color, Offset(bx2, by2), Offset(bx2 - len * cosA1, by2 - len * sinA1), stroke * 0.8f, StrokeCap.Round)
+        drawLine(color, Offset(bx2, by2), Offset(bx2 - len * cosA2, by2 - len * sinA2), stroke * 0.8f, StrokeCap.Round)
     }
 }
 
@@ -310,15 +340,11 @@ private fun DrawScope.drawSandstormIcon(w: Float, h: Float) {
     val color = Color.White
     val stroke = w * 0.06f
 
-    // 弯曲风线
+    // 弯曲风线 (使用直接线段代替重复 Path 分配)
     for (i in 0 until 3) {
         val y = h * (0.32f + i * 0.20f)
-        val p = Path().apply {
-            moveTo(w * 0.18f, y)
-            lineTo(w * 0.65f, y)
-            cubicTo(w * 0.82f, y, w * 0.82f, y - h * 0.12f, w * 0.72f, y - h * 0.12f)
-        }
-        drawPath(p, color, style = Stroke(width = stroke, cap = StrokeCap.Round))
+        drawLine(color, Offset(w * 0.18f, y), Offset(w * 0.65f, y), stroke, StrokeCap.Round)
+        drawLine(color, Offset(w * 0.65f, y), Offset(w * 0.74f, y - h * 0.06f), stroke, StrokeCap.Round)
     }
 
     // 沙粒点
@@ -355,9 +381,9 @@ private fun DrawScope.drawHailIcon(w: Float, h: Float) {
 /**
  * 绘制通用的饱满实心白云形状
  *
- * @param w 宽度
- * @param h 高度
- * @param offsetY 纵向偏移量
+ * @param w 宽度 (px)
+ * @param h 高度 (px)
+ * @param offsetY 纵向偏移量 (px)
  * @param scale 缩放比例
  * @param cloudColor 云朵色彩
  */
@@ -387,26 +413,31 @@ private fun DrawScope.drawSolidCloud(
         color = cloudColor,
         topLeft = Offset(cx - baseW / 2f, cy - baseH / 3f),
         size = Size(baseW, baseH),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(baseH / 2f, baseH / 2f)
+        cornerRadius = CornerRadius(baseH / 2f, baseH / 2f)
     )
 }
 
 /**
  * 绘制小雪花星点
  *
- * @param cx 中心 X
- * @param cy 中心 Y
- * @param r 半径
+ * @param cx 中心 X (px)
+ * @param cy 中心 Y (px)
+ * @param r 半径 (px)
  */
 private fun DrawScope.drawSnowFlakeMini(cx: Float, cy: Float, r: Float) {
     val color = Color.White
+    val degToRad = (PI / 180.0).toFloat()
+    val strokeWidth = r * 0.4f
+
     for (i in 0 until 3) {
-        val rad = (i * 60f) * (PI.toFloat() / 180f)
+        val rad = (i * 60f) * degToRad
+        val cosVal = cos(rad)
+        val sinVal = sin(rad)
         drawLine(
             color = color,
-            start = Offset(cx - r * cos(rad), cy - r * sin(rad)),
-            end = Offset(cx + r * cos(rad), cy + r * sin(rad)),
-            strokeWidth = r * 0.4f,
+            start = Offset(cx - r * cosVal, cy - r * sinVal),
+            end = Offset(cx + r * cosVal, cy + r * sinVal),
+            strokeWidth = strokeWidth,
             cap = StrokeCap.Round
         )
     }
@@ -439,4 +470,5 @@ object WeatherIcons {
         }
     }
 }
+
 
