@@ -191,6 +191,7 @@ fun WeatherScreen(
                 savedCities = stableSavedCities,
                 currentPage = currentPageIndex,
                 weatherSubtitle = weatherSubtitle,
+                weatherText = weatherText,
                 scrollOffsetProvider = { pageScrollStates[currentPageIndex]?.value ?: 0 },
                 onMenuClick = {
                     viewModel.setCityManagementOpen(true)
@@ -399,6 +400,7 @@ fun WeatherScreen(
  * @param savedCities 用户已保存的城市列表
  * @param currentPage 当前选中的城市页码索引
  * @param weatherSubtitle 当前城市的天气副标题（如 "33° | 晴"）
+ * @param weatherText 当前天气现象描述（用于驱动弹出设置菜单的沉浸式背景色）
  * @param scrollOffsetProvider 垂直滚动偏移量提供者（单位：像素）
  * @param onMenuClick 点击左侧城市管理按钮回调
  * @param onCardSettingsClick 点击打开卡片显示设置回调
@@ -413,6 +415,7 @@ private fun TopImmersiveWeatherBar(
     savedCities: List<CityInfo>,
     currentPage: Int,
     weatherSubtitle: String,
+    weatherText: String = "",
     scrollOffsetProvider: () -> Int,
     onMenuClick: () -> Unit,
     onCardSettingsClick: () -> Unit = {},
@@ -556,9 +559,10 @@ private fun TopImmersiveWeatherBar(
                 }
             }
 
-            // 80% 半透明大圆角设置弹窗菜单（包含卡片显示、更新间隔、天气数据源、定位设置、隐私与免责）
+            // 动态天气半透明大圆角设置弹窗菜单（包含卡片显示、更新间隔、天气数据源、定位设置、隐私与免责）
             WeatherSettingsMenu(
                 expanded = showMenu,
+                weatherText = weatherText,
                 onDismissRequest = { showMenu = false },
                 onCardSettingsClick = onCardSettingsClick,
                 onSelectSourceClick = onSourceClick,

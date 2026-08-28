@@ -713,7 +713,7 @@ private data class DustParticle(
  *
  * @return 若为夜间则返回 true，否则返回 false
  */
-private fun isCurrentlyNight(): Boolean {
+internal fun isCurrentlyNight(): Boolean {
     val cal = Calendar.getInstance()
     val hour = cal.get(Calendar.HOUR_OF_DAY)
     val minute = cal.get(Calendar.MINUTE)
@@ -728,7 +728,7 @@ private fun isCurrentlyNight(): Boolean {
  * @param isNight 是否为夜间
  * @return 对应的天气分类 [WeatherCategory]
  */
-private fun resolveWeatherCategory(text: String, isNight: Boolean): WeatherCategory {
+internal fun resolveWeatherCategory(text: String, isNight: Boolean): WeatherCategory {
     return when {
         text.contains("雷") -> WeatherCategory.THUNDERSTORM
         text.contains("暴雨") || text.contains("大雨") -> WeatherCategory.RAIN_HEAVY
@@ -751,7 +751,7 @@ private fun resolveWeatherCategory(text: String, isNight: Boolean): WeatherCateg
  * @param category 天气场景分类 [WeatherCategory]
  * @return 包含顶部、中部、底部颜色的 [Triple]
  */
-private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, Color, Color> {
+internal fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, Color, Color> {
     return when (category) {
         WeatherCategory.SUNNY -> Triple(Color(0xFF1E75C4), Color(0xFF4B9DE8), Color(0xFF9AD3FC))
         WeatherCategory.SUNNY_NIGHT -> Triple(Color(0xFF2C3254), Color(0xFF4D5685), Color(0xFF6E78A8))
@@ -768,6 +768,30 @@ private fun getWeatherGradientColors(category: WeatherCategory): Triple<Color, C
         WeatherCategory.SANDSTORM -> Triple(Color(0xFF6E5638), Color(0xFF957850), Color(0xFFC0A47B))
         WeatherCategory.WINDY -> Triple(Color(0xFF275882), Color(0xFF487AA6), Color(0xFF7BAACF))
     }
+}
+
+/**
+ * 根据天气现象与昼夜状态计算弹出菜单的高级半透明磨砂背景色
+ *
+ * 将天气顶部主渐变色与深色基底进行柔和混合加深（保留其纯正的天气色彩倾向），
+ * 并赋予 94% 半透明磨砂质感，确保白色菜单文字对比度清晰锐利。
+ *
+ * @param weatherText 当前天气现象描述
+ * @param isNight 是否为夜间（为 null 时依据当前系统时钟判断）
+ * @return 沉浸式半透明磨砂背景色 [Color]
+ */
+fun getWeatherMenuBackgroundColor(
+    weatherText: String,
+    isNight: Boolean = isCurrentlyNight()
+): Color {
+    val category = resolveWeatherCategory(weatherText, isNight)
+    val (topColor, _, _) = getWeatherGradientColors(category)
+    return Color(
+        red = (topColor.red * 0.52f + 0.05f * 0.48f).coerceIn(0f, 1f),
+        green = (topColor.green * 0.52f + 0.07f * 0.48f).coerceIn(0f, 1f),
+        blue = (topColor.blue * 0.52f + 0.10f * 0.48f).coerceIn(0f, 1f),
+        alpha = 0.94f
+    )
 }
 
 // ==================== 绘制各天气元素扩展方法 ====================

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.weather.app.ui.components.getWeatherMenuBackgroundColor
 
 /**
  * 严格对齐设计要求的右上角设置弹出菜单组件
@@ -43,9 +44,10 @@ import androidx.compose.ui.window.PopupProperties
  * 1. 紧凑自适应超小宽度（110dp ~ 132dp，紧密贴合文字，无多余横向冗余）；
  * 2. 优化进出场缩放与淡入动效，彻底消除高度伸缩抖动与闪烁问题；
  * 3. 外层预留安全内边距，避免 Popup 窗口边界截断阴影产生黑色生硬边缘；
- * 4. 95% 半透明磨砂深灰蓝背景结合精致微光边框与柔和阴影。
+ * 4. 背景色动态取当前天气主色调融合深色半透明磨砂质感，结合精致微光边框与柔和阴影。
  *
  * @param expanded 菜单是否展开可见
+ * @param weatherText 当前天气现象描述（用于动态驱动沉浸式磨砂背景色）
  * @param onDismissRequest 关闭菜单回调
  * @param onSelectSourceClick 点击“天气数据源”回调
  * @param onCardSettingsClick 点击“卡片显示设置”回调
@@ -56,6 +58,7 @@ import androidx.compose.ui.window.PopupProperties
 @Composable
 fun WeatherSettingsMenu(
     expanded: Boolean,
+    weatherText: String = "",
     onDismissRequest: () -> Unit,
     onSelectSourceClick: () -> Unit,
     onCardSettingsClick: () -> Unit = {},
@@ -64,6 +67,14 @@ fun WeatherSettingsMenu(
     onPrivacyClick: () -> Unit = {}
 ) {
     if (!expanded) return
+
+    val menuBackgroundColor = remember(weatherText) {
+        if (weatherText.isNotBlank()) {
+            getWeatherMenuBackgroundColor(weatherText)
+        } else {
+            Color(0xF2182230)
+        }
+    }
 
     Popup(
         alignment = Alignment.TopEnd,
@@ -104,7 +115,7 @@ fun WeatherSettingsMenu(
             ) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = Color(0xF2182230), // 95% 磨砂深灰蓝背景
+                    color = menuBackgroundColor, // 动态天气沉浸式磨砂深色背景
                     shadowElevation = 8.dp,
                     border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.16f)),
                     modifier = Modifier
