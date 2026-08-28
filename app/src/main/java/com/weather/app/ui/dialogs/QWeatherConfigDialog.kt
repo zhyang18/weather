@@ -348,7 +348,7 @@ fun QWeatherConfigDialog(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("验证中...")
                             } else {
-                                Text("保存并生效")
+                                Text("保存")
                             }
                         }
                     }

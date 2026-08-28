@@ -345,18 +345,16 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 切换当前分页显示的城市索引
+     * 切换当前分页显示的城市索引并刷新该城市的天气数据
+     *
+     * 当切换到新的城市分页时，更新当前展示的城市索引并立即拉取该城市的最新天气数据。
      *
      * @param newIndex 目标城市索引
      */
     fun setCurrentCityIndex(newIndex: Int) {
         if (newIndex in _uiState.value.savedCities.indices && newIndex != _uiState.value.currentCityIndex) {
             _uiState.update { it.copy(currentCityIndex = newIndex) }
-            val targetCity = _uiState.value.savedCities[newIndex]
-            val key = targetCity.getCacheKey()
-            if (!_uiState.value.weatherCache.containsKey(key)) {
-                refreshCityAtIndex(newIndex)
-            }
+            refreshCityAtIndex(newIndex)
         }
     }
 

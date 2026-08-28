@@ -71,9 +71,14 @@ class CaiyunWeatherDataSource(
             .readTimeout(15, TimeUnit.SECONDS)
             .addInterceptor(loggingInterceptor)
             .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
-                    .header("User-Agent", "WeatherApp/1.0 (Android; Caiyun-Client)")
-                    .build()
+                val config = getActiveConfig()
+                val request = if (config.isSignatureAuthEnabled()) {
+                    CaiyunSigner.signRequest(chain.request(), config)
+                } else {
+                    chain.request().newBuilder()
+                        .header("User-Agent", "WeatherApp/1.0 (Android; Caiyun-Client)")
+                        .build()
+                }
                 chain.proceed(request)
             }
             .build()
@@ -111,7 +116,7 @@ class CaiyunWeatherDataSource(
         return WeatherSourceInfo(
             id = "caiyun",
             name = "彩云天气",
-            description = "国内高精度分钟级气象（降水走势、AQI）",
+            description = "国内高精度分钟级气象（API 凭据身份验证）",
             isDefault = false,
             isAvailable = true
         )
@@ -126,7 +131,7 @@ class CaiyunWeatherDataSource(
     override suspend fun getWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
         try {
             val config = getActiveConfig()
-            val token = config.token.trim().ifEmpty { CaiyunConfig.DEFAULT_TOKEN }
+            val authKey = config.getEffectiveAuthKey()
 
             var targetCity = city.sanitize()
 
@@ -140,7 +145,7 @@ class CaiyunWeatherDataSource(
                     province = targetCity.province,
                     district = targetCity.district,
                     parentCity = targetCity.parentCity,
-                    token = token
+                    token = authKey
                 )
                 lat = coords.first
                 lon = coords.second
@@ -157,7 +162,7 @@ class CaiyunWeatherDataSource(
 
             val rawBody = try {
                 apiService.getWeather(
-                    token = token,
+                    token = authKey,
                     location = locationParam,
                     alert = "true",
                     dailySteps = 15,
@@ -362,9 +367,9 @@ class CaiyunWeatherDataSource(
             val localResults = ChinaCityCoordinates.searchLocalCities(clean)
 
             // 2. 彩云 Place API 检索
-            val token = getActiveConfig().token.trim().ifEmpty { CaiyunConfig.DEFAULT_TOKEN }
+            val authKey = getActiveConfig().getEffectiveAuthKey()
             val onlineResults = try {
-                val results = searchPlaceInternal(clean, token)
+                val results = searchPlaceInternal(clean, authKey)
                 results.mapNotNull { place ->
                     val loc = place.location ?: return@mapNotNull null
                     val lat = loc.lat ?: return@mapNotNull null

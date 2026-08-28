@@ -82,7 +82,7 @@ fun WeatherErrorDialog(
                     Text(
                         text = when {
                             isQWeatherAuthError -> "和风天气身份认证失败"
-                            isCaiyunAuthError -> "彩云天气令牌认证失败"
+                            isCaiyunAuthError -> "彩云天气 API 凭据认证失败"
                             else -> "请求失败或数据异常"
                         },
                         fontSize = 18.sp,
@@ -127,7 +127,7 @@ fun WeatherErrorDialog(
                 } else if (isCaiyunAuthError) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "提示：请检查彩云天气 Token 是否填写正确，或前往彩云开放平台重新获取免费开发者令牌。",
+                        text = "提示：请检查彩云天气 API 凭据（Token）是否填写正确，或前往彩云开放平台重新获取免费凭据。",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.6f),
                         lineHeight = 15.sp
@@ -186,7 +186,7 @@ fun WeatherErrorDialog(
                                 contentColor = Color.White
                             )
                         ) {
-                            Text("设置 Token")
+                            Text("设置凭据")
                         }
                     } else {
                         if (onRetry != null) {

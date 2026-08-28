@@ -42,6 +42,8 @@ class WeatherDataSourceTest {
         assertTrue(sources.any { it.id == "cma" })
         assertTrue(sources.any { it.id == "qweather" })
         assertTrue(sources.any { it.id == "open_meteo" })
+        assertTrue(sources.any { it.id == "sojson" })
+        assertTrue(sources.any { it.id == "wttr_in" })
     }
 
     /**

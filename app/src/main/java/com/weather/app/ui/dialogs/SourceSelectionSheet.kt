@@ -196,7 +196,7 @@ fun SourceSelectionSheet(
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
-                                        text = "设置 Token",
+                                        text = "设置凭据",
                                         color = Color.White,
                                         fontSize = 11.sp
                                     )
