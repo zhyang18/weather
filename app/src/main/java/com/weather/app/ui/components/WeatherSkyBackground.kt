@@ -97,13 +97,26 @@ fun WeatherSkyBackground(
     parallaxOffsetProvider: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
-    // 实时系统时钟（每秒自动校准，用户在系统设置修改日期切回 App 后即时刷新生效）
+    // 实时系统时钟（进入前台或每分钟自动校准，消除每秒无意义重组）
     var currentSystemTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                currentSystemTimeMillis = System.currentTimeMillis()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
+            delay(60 * 1000L)
             currentSystemTimeMillis = System.currentTimeMillis()
-            delay(1000L)
         }
     }
 
@@ -408,6 +421,12 @@ fun WeatherSkyBackground(
             }
         }
 
+        // 预分配复用的 Path 对象，杜绝 Canvas 每一帧动画产生堆内存分配与 GC 压力
+        val moonClipPath = remember { Path() }
+        val lunarShadowReusablePath = remember { Path() }
+        val lightningMainPath = remember { Path() }
+        val lightningBranchPath = remember { Path() }
+
         // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，伴随由近到远镜头加载展开)
         Canvas(
             modifier = Modifier
@@ -439,7 +458,16 @@ fun WeatherSkyBackground(
                 val moonCenter = calculateMoonCenter(width, height, moonProgress)
                 drawNightStars(starParticles, mediumProgress)
                 drawShootingStars(width, height, mediumProgress)
-                drawGlowingMoon(width, height, moonCenter, slowProgress, moonPhase, lunarRenderer)
+                drawGlowingMoon(
+                    width = width,
+                    height = height,
+                    moonCenter = moonCenter,
+                    pulseProgress = slowProgress,
+                    moonPhase = moonPhase,
+                    lunarRenderer = lunarRenderer,
+                    clipPath = moonClipPath,
+                    shadowReusablePath = lunarShadowReusablePath
+                )
             }
 
             // 白昼渲染原生 Compose 硬件加速 3D 物理真实太阳、丁达尔圣光与浮游光尘（0 CPU 阻塞，0 掉帧）
@@ -525,7 +553,13 @@ fun WeatherSkyBackground(
             }
 
             if (weatherCategory == WeatherCategory.THUNDERSTORM) {
-                drawThunderstormLightning(width = width, height = height, phase = lightningPhase)
+                drawThunderstormLightning(
+                    width = width,
+                    height = height,
+                    phase = lightningPhase,
+                    mainPath = lightningMainPath,
+                    branchPath = lightningBranchPath
+                )
             }
         }
     }
@@ -1813,13 +1847,34 @@ private data class LunarMountainRidge(
  * @param moonPhase 基于真实日期的归一化月相周期 (0.0f ~ 1.0f)
  * @param lunarRenderer OpenGL ES 2.0 纯代码 3D 月球渲染器
  */
+/**
+ * 绘制沉浸式发光真实 3D 明月天体
+ *
+ * 包含：
+ * 1. 最外层广阔深空柔和月华漫射 (Deep Sky Atmospheric Lunar Glow)
+ * 2. 近月轮清辉光晕 (Inner Corona Halo)
+ * 3. 紧贴月盘外边缘的光学接触漫射 (Subtle Contact Rim Glow)
+ * 4. 纯代码 OpenGL ES 2.0 程序化渲染的 3D 真实月球表面（完全无图片依赖，GPU 实时计算）
+ * 5. 伴月璀璨行星与微型十字星芒
+ *
+ * @param width 画面宽度 (px)
+ * @param height 画面高度 (px)
+ * @param moonCenter 明月实时屏幕坐标 [Offset]
+ * @param pulseProgress 月华呼吸动画相位 (0f ~ 1f)
+ * @param moonPhase 基于真实日期的归一化月相周期 (0.0f ~ 1.0f)
+ * @param lunarRenderer OpenGL ES 2.0 纯代码 3D 月球渲染器
+ * @param clipPath 预分配复用的月盘剪裁路径 [Path]
+ * @param shadowReusablePath 预分配复用的月相曲面阴影计算路径 [Path]
+ */
 private fun DrawScope.drawGlowingMoon(
     width: Float,
     height: Float,
     moonCenter: Offset,
     pulseProgress: Float,
     moonPhase: Float,
-    lunarRenderer: LunarOpenGlRenderer? = null
+    lunarRenderer: LunarOpenGlRenderer? = null,
+    clipPath: Path,
+    shadowReusablePath: Path
 ) {
     val moonRadius = width * 0.076f // 清晰精致的真实月球盘面半径（约 30dp ~ 32dp）
     val phase = (moonPhase % 1f + 1f) % 1f
@@ -1874,17 +1929,16 @@ private fun DrawScope.drawGlowingMoon(
         radius = moonRadius * 1.10f
     )
 
-    // 4. 绘制月球完整三维球体 (在全圆盘内渲染由 OpenGL ES 2.0 着色器纯代码计算的超逼真 3D 月球表面)
-    val moonClipPath = Path().apply {
-        addOval(
-            Rect(
-                center = moonCenter,
-                radius = moonRadius
-            )
+    // 4. 绘制月球完整三维球体 (复用 clipPath 避免每帧内存分配)
+    clipPath.reset()
+    clipPath.addOval(
+        Rect(
+            center = moonCenter,
+            radius = moonRadius
         )
-    }
+    )
 
-    clipPath(moonClipPath) {
+    clipPath(clipPath) {
         // 4.1 绘制由 OpenGL ES 2.0 纯代码程序化渲染的高精度 3D 真实月球面（完全无图片依赖，GPU 实时着色）
         val moonImage = lunarRenderer?.renderMoon(sizePx = 512)
         if (moonImage != null) {
@@ -1903,7 +1957,12 @@ private fun DrawScope.drawGlowingMoon(
         }
 
         // 4.2 基于手机系统日期的真实天文学每日高精度连续渐变月相曲面光照引擎
-        drawLunarPhaseShadow(moonCenter = moonCenter, moonRadius = moonRadius, phase = phase)
+        drawLunarPhaseShadow(
+            moonCenter = moonCenter,
+            moonRadius = moonRadius,
+            phase = phase,
+            reusablePath = shadowReusablePath
+        )
     }
 
     // 5. 伴月璀璨行星/伴星 (Companion Celestial Star / Planetary Satellite - 宁静闪烁)
@@ -1941,8 +2000,6 @@ private fun DrawScope.drawGlowingMoon(
     )
 }
 
-
-
 /**
  * 绘制月相晨昏线曲面阴影与高细腻度渐进微偏移暮光漫射层
  *
@@ -1955,11 +2012,13 @@ private fun DrawScope.drawGlowingMoon(
  * @param moonCenter 月球在屏幕上的中心坐标 [Offset]
  * @param moonRadius 月球圆盘半径 (px)
  * @param phase 归一化月相周期 (0.0f ~ 1.0f)
+ * @param reusablePath 预分配复用的曲面阴影计算路径 [Path]
  */
 private fun DrawScope.drawLunarPhaseShadow(
     moonCenter: Offset,
     moonRadius: Float,
-    phase: Float
+    phase: Float,
+    reusablePath: Path
 ) {
     val p = (phase % 1f + 1f) % 1f
     val k = cos(2.0 * PI * p).toFloat()
@@ -1972,43 +2031,46 @@ private fun DrawScope.drawLunarPhaseShadow(
     }
 
     // 2. 计算赤道处亮区（月牙/亮半球）的物理几何宽度 (px)
-    // 当 k >= 0 (月牙阶段)，亮区宽度为 moonRadius * (1 - k)
-    // 当 k < 0 (凸月阶段)，亮区宽度为 moonRadius * (1 - k) > moonRadius
     val brightWidthPx = moonRadius * (1f - k).coerceIn(0.01f, 2f)
 
-    // 3. 几何自适应羽化带宽：羽化向亮区渗透的宽度绝不能超过亮月牙自身宽度的 38%，
-    // 彻底防止细月牙（如初二/初三/廿七/廿八）被过宽的羽化层吞噬涂黑，保证月牙亮弧始终清晰可见
+    // 3. 几何自适应羽化带宽：羽化向亮区渗透的宽度绝不能超过亮月牙自身宽度的 38%
     val maxFeatherAllowed = (brightWidthPx * 0.38f).coerceAtMost(moonRadius * 0.28f)
     val adaptScale = ((darkFraction - 0.025f) / 0.225f).coerceIn(0f, 1f)
     val featherPx = maxFeatherAllowed * adaptScale
 
-    // 16 级超高细腻度渐进半透明微偏移曲面阴影层（全层复合叠加后，暗面核心区域不透明度精准稳定在 80%，保留 20% 细腻透光度呈现月球球体表面与月海地貌）
+    // 16 级超高细腻度渐进半透明微偏移曲面阴影层
     val shadowLayers = listOf(
-        Pair(featherPx * 1.00f, Color(0x09060A14)), // 1. 极外缘若隐若现漫射微晕 (~3.5%)
-        Pair(featherPx * 0.92f, Color(0x0D060A14)), // 2. 外缘极弱暮光 (~5.1%)
-        Pair(featherPx * 0.84f, Color(0x11060A14)), // 3. 外层暮光漫射 (~6.7%)
-        Pair(featherPx * 0.76f, Color(0x15060A14)), // 4. 次外层柔焦过渡 (~8.2%)
-        Pair(featherPx * 0.68f, Color(0x19060A14)), // 5. 暮光渐浓层 (~9.8%)
-        Pair(featherPx * 0.60f, Color(0x1A060A14)), // 6. 中外层自然过渡 (~10.2%)
-        Pair(featherPx * 0.52f, Color(0x1C060A14)), // 7. 中层阴影渗透 (~11.0%)
-        Pair(featherPx * 0.44f, Color(0x1C060A14)), // 8. 中层温润递进 (~11.0%)
-        Pair(featherPx * 0.36f, Color(0x1C060A14)), // 9. 中内层阴影加深 (~11.0%)
-        Pair(featherPx * 0.28f, Color(0x1D060A14)), // 10. 次内层半影沉降 (~11.4%)
-        Pair(featherPx * 0.21f, Color(0x1D060A14)), // 11. 近核心深色沉降 (~11.4%)
-        Pair(featherPx * 0.15f, Color(0x1D060A14)), // 12. 核心深色聚拢 (~11.4%)
-        Pair(featherPx * 0.10f, Color(0x1C060A14)), // 13. 深邃半影过渡 (~11.0%)
-        Pair(featherPx * 0.06f, Color(0x1A060A14)), // 14. 核心深影层 (~10.2%)
-        Pair(featherPx * 0.03f, Color(0x17060A14)), // 15. 核心致密半透层 (~9.0%)
-        Pair(0f,                Color(0x14060A14))  // 16. 核心暗面通透基准区 (16 层全部叠加后总遮罩率精准约为 80%，保留 20% 细腻透光度)
+        Pair(featherPx * 1.00f, Color(0x09060A14)),
+        Pair(featherPx * 0.92f, Color(0x0D060A14)),
+        Pair(featherPx * 0.84f, Color(0x11060A14)),
+        Pair(featherPx * 0.76f, Color(0x15060A14)),
+        Pair(featherPx * 0.68f, Color(0x19060A14)),
+        Pair(featherPx * 0.60f, Color(0x1A060A14)),
+        Pair(featherPx * 0.52f, Color(0x1C060A14)),
+        Pair(featherPx * 0.44f, Color(0x1C060A14)),
+        Pair(featherPx * 0.36f, Color(0x1C060A14)),
+        Pair(featherPx * 0.28f, Color(0x1D060A14)),
+        Pair(featherPx * 0.21f, Color(0x1D060A14)),
+        Pair(featherPx * 0.15f, Color(0x1D060A14)),
+        Pair(featherPx * 0.10f, Color(0x1C060A14)),
+        Pair(featherPx * 0.06f, Color(0x1A060A14)),
+        Pair(featherPx * 0.03f, Color(0x17060A14)),
+        Pair(0f,                Color(0x14060A14))
     )
 
     shadowLayers.forEach { (offset, color) ->
         val scaledColor = if (adaptScale < 1f) color.copy(alpha = color.alpha * adaptScale) else color
-        val path = createLunarShadowPath(moonCenter, moonRadius, phase, featherOffset = offset)
-        drawPath(path = path, color = scaledColor)
+        buildLunarShadowPath(
+            path = reusablePath,
+            moonCenter = moonCenter,
+            moonRadius = moonRadius,
+            phase = phase,
+            featherOffset = offset
+        )
+        drawPath(path = reusablePath, color = scaledColor)
     }
 
-    // 沿晨昏线半椭圆曲率绘制 5 层不同宽度的柔焦漫射描边，线宽受亮区宽度严格约束，绝不侵蚀细月牙
+    // 沿晨昏线半椭圆曲率绘制 5 层不同宽度的柔焦漫射描边
     if (adaptScale > 0.05f) {
         val maxStroke = (brightWidthPx * 0.30f).coerceAtMost(moonRadius * 0.20f)
         val strokeLayers = listOf(
@@ -2023,9 +2085,15 @@ private fun DrawScope.drawLunarPhaseShadow(
             val (strokeWidth, color) = strokeInfo
             if (strokeWidth > 0.5f) {
                 val scaledColor = if (adaptScale < 1f) color.copy(alpha = color.alpha * adaptScale) else color
-                val arcPath = createTerminatorArcPath(moonCenter, moonRadius, phase, featherOffset = offset)
+                buildTerminatorArcPath(
+                    path = reusablePath,
+                    moonCenter = moonCenter,
+                    moonRadius = moonRadius,
+                    phase = phase,
+                    featherOffset = offset
+                )
                 drawPath(
-                    path = arcPath,
+                    path = reusablePath,
                     color = scaledColor,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
@@ -2035,23 +2103,21 @@ private fun DrawScope.drawLunarPhaseShadow(
 }
 
 /**
- * 构建月球暗面（阴影部分）几何路径
+ * 构建月球暗面（阴影部分）几何路径到复用 Path 实例
  *
- * 根据真实天体正交投影规律，晨昏线（Terminator）在观测平面上呈现为半椭圆弧线，
- * 与月球外圆周亮缘共同构成具备自然优美弧度与两极尖锐月角的月牙（Crescent）与凸月（Gibbous）轮廓。
- *
+ * @param path 接收结果的复用路径对象 [Path]
  * @param moonCenter 月球中心坐标 [Offset]
  * @param moonRadius 月球外圆周半径 (px)
  * @param phase 归一化月相 (0.0f ~ 1.0f)
  * @param featherOffset 晨昏线向亮区方向延伸的羽化偏移像素 (px)
- * @return 暗面几何路径 [Path]
  */
-private fun createLunarShadowPath(
+private fun buildLunarShadowPath(
+    path: Path,
     moonCenter: Offset,
     moonRadius: Float,
     phase: Float,
     featherOffset: Float = 0f
-): Path {
+) {
     val cx = moonCenter.x
     val cy = moonCenter.y
     val r = moonRadius
@@ -2060,11 +2126,10 @@ private fun createLunarShadowPath(
     val k = cos(2.0 * PI * p).toFloat()
 
     val outerRect = Rect(cx - r, cy - r, cx + r, cy + r)
-    val path = Path()
+    path.reset()
 
     if (isWaxing) {
         // 盈月：暗面在左，亮面在右
-        // 晨昏线赤道相对偏移量（正数表示在中心右侧，负数表示在中心左侧）
         val rawTermX = k * r + featherOffset
         val termX = rawTermX.coerceIn(-r, r)
         val rx = kotlin.math.abs(termX).coerceAtLeast(0.001f)
@@ -2075,10 +2140,8 @@ private fun createLunarShadowPath(
 
         // 2. 从南极点沿晨昏线半椭圆画回北极点
         if (termX >= 0f) {
-            // 晨昏线在右侧（月牙状态），沿右半椭圆逆时针画回北极 (90° -> -90°)
             path.arcTo(termRect, 90f, -180f, false)
         } else {
-            // 晨昏线在左侧（凸月状态），沿左半椭圆顺时针画回北极 (90° -> 270°)
             path.arcTo(termRect, 90f, 180f, false)
         }
         path.close()
@@ -2094,35 +2157,30 @@ private fun createLunarShadowPath(
 
         // 2. 从南极点沿晨昏线半椭圆画回北极点
         if (termX <= 0f) {
-            // 晨昏线在左侧（残月月牙状态），沿左半椭圆顺时针画回北极 (90° -> 270°)
             path.arcTo(termRect, 90f, 180f, false)
         } else {
-            // 晨昏线在右侧（亏凸月状态），沿右半椭圆逆时针画回北极 (90° -> -90°)
             path.arcTo(termRect, 90f, -180f, false)
         }
         path.close()
     }
-
-    return path
 }
 
 /**
- * 构建月球晨昏线（Terminator）单条半椭圆曲线路径
+ * 构建月球晨昏线（Terminator）单条半椭圆曲线路径到复用 Path 实例
  *
- * 用于在明暗交界线上绘制细腻的暮光柔焦微描边，彻底消除阶梯切割感。
- *
+ * @param path 接收结果的复用路径对象 [Path]
  * @param moonCenter 月球中心坐标 [Offset]
  * @param moonRadius 月球外圆周半径 (px)
  * @param phase 归一化月相 (0.0f ~ 1.0f)
  * @param featherOffset 晨昏线向亮区方向延伸的羽化偏移像素 (px)
- * @return 晨昏线单条半椭圆曲线路径 [Path]
  */
-private fun createTerminatorArcPath(
+private fun buildTerminatorArcPath(
+    path: Path,
     moonCenter: Offset,
     moonRadius: Float,
     phase: Float,
     featherOffset: Float = 0f
-): Path {
+) {
     val cx = moonCenter.x
     val cy = moonCenter.y
     val r = moonRadius
@@ -2130,7 +2188,7 @@ private fun createTerminatorArcPath(
     val isWaxing = p < 0.50f
     val k = cos(2.0 * PI * p).toFloat()
 
-    val path = Path()
+    path.reset()
 
     if (isWaxing) {
         val rawTermX = k * r + featherOffset
@@ -2155,8 +2213,6 @@ private fun createTerminatorArcPath(
             path.arcTo(termRect, 90f, -180f, false)
         }
     }
-
-    return path
 }
 
 /**
@@ -2235,11 +2291,15 @@ private fun DrawScope.drawFallingSnow(
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
  * @param phase 雷电周期相位 (0f ~ 1f)
+ * @param mainPath 预分配复用的闪电主干路径 [Path]
+ * @param branchPath 预分配复用的闪电分叉路径 [Path]
  */
 private fun DrawScope.drawThunderstormLightning(
     width: Float,
     height: Float,
-    phase: Float
+    phase: Float,
+    mainPath: Path,
+    branchPath: Path
 ) {
     val isPrimaryFlash = phase in 0.40f..0.44f
     val isSecondaryFlash = phase in 0.46f..0.48f
@@ -2255,20 +2315,18 @@ private fun DrawScope.drawThunderstormLightning(
 
         val startX = width * 0.55f
         val startY = height * 0.08f
-        val mainPath = Path().apply {
-            moveTo(startX, startY)
-            lineTo(startX - 25f, height * 0.16f)
-            lineTo(startX + 15f, height * 0.24f)
-            lineTo(startX - 35f, height * 0.34f)
-            lineTo(startX - 10f, height * 0.42f)
-            lineTo(startX - 45f, height * 0.52f)
-        }
+        mainPath.reset()
+        mainPath.moveTo(startX, startY)
+        mainPath.lineTo(startX - 25f, height * 0.16f)
+        mainPath.lineTo(startX + 15f, height * 0.24f)
+        mainPath.lineTo(startX - 35f, height * 0.34f)
+        mainPath.lineTo(startX - 10f, height * 0.42f)
+        mainPath.lineTo(startX - 45f, height * 0.52f)
 
-        val branchPath = Path().apply {
-            moveTo(startX + 15f, height * 0.24f)
-            lineTo(startX + 50f, height * 0.30f)
-            lineTo(startX + 75f, height * 0.38f)
-        }
+        branchPath.reset()
+        branchPath.moveTo(startX + 15f, height * 0.24f)
+        branchPath.lineTo(startX + 50f, height * 0.30f)
+        branchPath.lineTo(startX + 75f, height * 0.38f)
 
         drawPath(
             path = mainPath,

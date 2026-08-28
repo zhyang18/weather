@@ -75,6 +75,28 @@ import kotlin.math.sin
 import com.weather.app.model.CardDisplayConfig
 
 /**
+ * 气象观测指标卡片类型枚举
+ *
+ * 用于静态布局插槽路由，避免动态创建 Composable Lambda 列表。
+ */
+enum class MetricCardType {
+    /** 真实空气质量卡片 */
+    AIR_QUALITY,
+    /** 真实日出日落天体轨迹卡片 */
+    SUNRISE_SUNSET,
+    /** 真实体感温度卡片 */
+    FEELS_LIKE,
+    /** 真实风向风速罗盘卡片 */
+    WIND,
+    /** 真实相对湿度卡片 */
+    HUMIDITY,
+    /** 真实大气压强仪表盘卡片 */
+    PRESSURE,
+    /** 真实实时降水量卡片 */
+    PRECIPITATION
+}
+
+/**
  * 气象真实观测指标详情宫格组件
  *
  * 严格遵循真实数据原则与用户自定义卡片显示配置：
@@ -100,48 +122,31 @@ fun WeatherDetailGrid(
     val current = weatherData.current
     val aqi = weatherData.airQuality
 
-    // 收集所有有效真实存在且用户已开启的指标卡片内容
-    val validCards = mutableListOf<@Composable (Modifier) -> Unit>()
-
-    // 1. 空气质量卡片 (当用户开启且存在真实 AQI 数据时展示)
-    if (cardConfig.showAirQuality && aqi != null && aqi.aqi > 0 && aqi.aqi != 9999) {
-        validCards.add { mod -> AirQualityRealCard(aqi = aqi, modifier = mod) }
-    }
-
-    // 2. 日出日落卡片 (当用户开启时结合当前城市经纬度与天文算法展示，支持点击进入地球实时日光)
-    if (cardConfig.showSunriseSunset) {
-        validCards.add { mod ->
-            SunriseSunsetRealCard(
-                city = weatherData.city,
-                onClick = onSunriseSunsetClick,
-                modifier = mod
-            )
+    // 预计算所有有效真实存在且用户已开启的指标卡片类型，避免每帧分配 Composable Lambda 列表
+    val validCardTypes = remember(cardConfig, aqi, current) {
+        val types = mutableListOf<MetricCardType>()
+        if (cardConfig.showAirQuality && aqi != null && aqi.aqi > 0 && aqi.aqi != 9999) {
+            types.add(MetricCardType.AIR_QUALITY)
         }
-    }
-
-    // 3. 体感温度卡片 (当用户开启且存在真实体感或温度时展示)
-    if (cardConfig.showFeelsLike && current.feelsLike != null && current.feelsLike != 9999.0) {
-        validCards.add { mod -> FeelsLikeRealCard(current = current, modifier = mod) }
-    }
-
-    // 4. 风向风速卡片 (当用户开启且存在真实风力数据时展示)
-    if (cardConfig.showWind && (current.windDirection.isNotEmpty() || current.windPower.isNotEmpty() || current.windSpeed > 0.0)) {
-        validCards.add { mod -> WindRealCard(current = current, modifier = mod) }
-    }
-
-    // 5. 相对湿度卡片 (当用户开启且存在真实湿度数据时展示)
-    if (cardConfig.showHumidity && current.humidity > 0.0 && current.humidity != 9999.0) {
-        validCards.add { mod -> HumidityRealCard(humidity = current.humidity.toInt(), modifier = mod) }
-    }
-
-    // 6. 大气压强卡片 (当用户开启且存在真实气压数据时展示)
-    if (cardConfig.showPressure && current.pressure > 0.0 && current.pressure != 9999.0) {
-        validCards.add { mod -> PressureRealCard(pressureHpa = current.pressure.toInt(), modifier = mod) }
-    }
-
-    // 7. 实时降水量卡片 (当用户开启且发生真实降水时展示)
-    if (cardConfig.showPrecipitation && current.precipitation > 0.0 && current.precipitation != 9999.0) {
-        validCards.add { mod -> PrecipitationRealCard(precipitation = current.precipitation, modifier = mod) }
+        if (cardConfig.showSunriseSunset) {
+            types.add(MetricCardType.SUNRISE_SUNSET)
+        }
+        if (cardConfig.showFeelsLike && current.feelsLike != null && current.feelsLike != 9999.0) {
+            types.add(MetricCardType.FEELS_LIKE)
+        }
+        if (cardConfig.showWind && (current.windDirection.isNotEmpty() || current.windPower.isNotEmpty() || current.windSpeed > 0.0)) {
+            types.add(MetricCardType.WIND)
+        }
+        if (cardConfig.showHumidity && current.humidity > 0.0 && current.humidity != 9999.0) {
+            types.add(MetricCardType.HUMIDITY)
+        }
+        if (cardConfig.showPressure && current.pressure > 0.0 && current.pressure != 9999.0) {
+            types.add(MetricCardType.PRESSURE)
+        }
+        if (cardConfig.showPrecipitation && current.precipitation > 0.0 && current.precipitation != 9999.0) {
+            types.add(MetricCardType.PRECIPITATION)
+        }
+        types
     }
 
     Column(
@@ -152,16 +157,26 @@ fun WeatherDetailGrid(
     ) {
         if (cardConfig.showMoonPhase) {
             // 当月相开启时：前 2 张卡片排首行，月相全宽单列居中，剩余卡片两两排布
-            val firstBatch = validCards.take(2)
+            val firstBatch = validCardTypes.take(2)
             if (firstBatch.isNotEmpty()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    firstBatch[0](Modifier.weight(1f))
+                    MetricCardSlot(
+                        type = firstBatch[0],
+                        weatherData = weatherData,
+                        onSunriseSunsetClick = onSunriseSunsetClick,
+                        modifier = Modifier.weight(1f)
+                    )
 
                     if (firstBatch.size > 1) {
-                        firstBatch[1](Modifier.weight(1f))
+                        MetricCardSlot(
+                            type = firstBatch[1],
+                            weatherData = weatherData,
+                            onSunriseSunsetClick = onSunriseSunsetClick,
+                            modifier = Modifier.weight(1f)
+                        )
                     } else {
                         Spacer(modifier = Modifier.weight(1f))
                     }
@@ -175,7 +190,7 @@ fun WeatherDetailGrid(
             )
 
             // 其余双列指标卡片
-            val remainingCards = validCards.drop(2)
+            val remainingCards = validCardTypes.drop(2)
             val remainingRowCount = (remainingCards.size + 1) / 2
             for (rowIndex in 0 until remainingRowCount) {
                 val firstIdx = rowIndex * 2
@@ -185,10 +200,20 @@ fun WeatherDetailGrid(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    remainingCards[firstIdx](Modifier.weight(1f))
+                    MetricCardSlot(
+                        type = remainingCards[firstIdx],
+                        weatherData = weatherData,
+                        onSunriseSunsetClick = onSunriseSunsetClick,
+                        modifier = Modifier.weight(1f)
+                    )
 
                     if (secondIdx < remainingCards.size) {
-                        remainingCards[secondIdx](Modifier.weight(1f))
+                        MetricCardSlot(
+                            type = remainingCards[secondIdx],
+                            weatherData = weatherData,
+                            onSunriseSunsetClick = onSunriseSunsetClick,
+                            modifier = Modifier.weight(1f)
+                        )
                     } else {
                         Spacer(modifier = Modifier.weight(1f))
                     }
@@ -196,7 +221,7 @@ fun WeatherDetailGrid(
             }
         } else {
             // 当月相关闭时：所有指标卡片直接自适应双列连续排列
-            val rowCount = (validCards.size + 1) / 2
+            val rowCount = (validCardTypes.size + 1) / 2
             for (rowIndex in 0 until rowCount) {
                 val firstIdx = rowIndex * 2
                 val secondIdx = firstIdx + 1
@@ -205,10 +230,20 @@ fun WeatherDetailGrid(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    validCards[firstIdx](Modifier.weight(1f))
+                    MetricCardSlot(
+                        type = validCardTypes[firstIdx],
+                        weatherData = weatherData,
+                        onSunriseSunsetClick = onSunriseSunsetClick,
+                        modifier = Modifier.weight(1f)
+                    )
 
-                    if (secondIdx < validCards.size) {
-                        validCards[secondIdx](Modifier.weight(1f))
+                    if (secondIdx < validCardTypes.size) {
+                        MetricCardSlot(
+                            type = validCardTypes[secondIdx],
+                            weatherData = weatherData,
+                            onSunriseSunsetClick = onSunriseSunsetClick,
+                            modifier = Modifier.weight(1f)
+                        )
                     } else {
                         Spacer(modifier = Modifier.weight(1f))
                     }
@@ -266,6 +301,60 @@ fun WeatherDetailGrid(
                     fontWeight = FontWeight.Normal
                 )
             }
+        }
+    }
+}
+
+/**
+ * 气象指标卡片静态分发插槽
+ *
+ * 依据卡片类型静态路由到对应的独立 Composable 组件，
+ * 避免动态生成 Lambda 列表，确保 Compose 编译器能够对各个卡片执行智能重组跳过。
+ *
+ * @param type 指标卡片类型枚举 [MetricCardType]
+ * @param weatherData 聚合天气数据模型 [WeatherData]
+ * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
+ * @param modifier 外部修饰符
+ */
+@Composable
+private fun MetricCardSlot(
+    type: MetricCardType,
+    weatherData: WeatherData,
+    onSunriseSunsetClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val current = weatherData.current
+    val aqi = weatherData.airQuality
+
+    when (type) {
+        MetricCardType.AIR_QUALITY -> {
+            if (aqi != null && aqi.aqi > 0 && aqi.aqi != 9999) {
+                AirQualityRealCard(aqi = aqi, modifier = modifier)
+            } else {
+                Spacer(modifier = modifier)
+            }
+        }
+        MetricCardType.SUNRISE_SUNSET -> {
+            SunriseSunsetRealCard(
+                city = weatherData.city,
+                onClick = onSunriseSunsetClick,
+                modifier = modifier
+            )
+        }
+        MetricCardType.FEELS_LIKE -> {
+            FeelsLikeRealCard(current = current, modifier = modifier)
+        }
+        MetricCardType.WIND -> {
+            WindRealCard(current = current, modifier = modifier)
+        }
+        MetricCardType.HUMIDITY -> {
+            HumidityRealCard(humidity = current.humidity.toInt(), modifier = modifier)
+        }
+        MetricCardType.PRESSURE -> {
+            PressureRealCard(pressureHpa = current.pressure.toInt(), modifier = modifier)
+        }
+        MetricCardType.PRECIPITATION -> {
+            PrecipitationRealCard(precipitation = current.precipitation, modifier = modifier)
         }
     }
 }
@@ -1200,7 +1289,7 @@ private fun SunriseSunsetRealCard(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // 实时系统时钟（每秒自动校准，用户在系统设置修改时间或切回 App 时即时刷新生效）
+    // 系统时钟状态：进入前台 (ON_RESUME) 即时校准，前台运行期间每分钟温和更新一次，杜绝秒级重组
     var currentSystemTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1218,14 +1307,14 @@ private fun SunriseSunsetRealCard(
 
     LaunchedEffect(Unit) {
         while (true) {
+            delay(60 * 1000L)
             currentSystemTimeMillis = System.currentTimeMillis()
-            delay(1000L)
         }
     }
 
-    // 太阳图形呼吸与星芒自转动画
+    // 太阳图形呼吸与星芒自转动画 (返回 State<Float> 并在 DrawScope 中读取，彻底避免 Composable 函数体重组)
     val animTransition = rememberInfiniteTransition(label = "CardSunAnim")
-    val sunPulse by animTransition.animateFloat(
+    val sunPulseState = animTransition.animateFloat(
         initialValue = 0.94f,
         targetValue = 1.06f,
         animationSpec = infiniteRepeatable(
@@ -1234,7 +1323,7 @@ private fun SunriseSunsetRealCard(
         ),
         label = "sunPulse"
     )
-    val rayRotation by animTransition.animateFloat(
+    val rayRotationState = animTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
@@ -1244,11 +1333,11 @@ private fun SunriseSunsetRealCard(
         label = "rayRotation"
     )
 
-    val calendar = remember(currentSystemTimeMillis / 10000L) {
+    val calendar = remember(currentSystemTimeMillis / 60000L) {
         Calendar.getInstance().apply { timeInMillis = currentSystemTimeMillis }
     }
 
-    val celestial = remember(city.getCacheKey(), currentSystemTimeMillis / 10000L) {
+    val celestial = remember(city.getCacheKey(), currentSystemTimeMillis / 60000L) {
         SunMoonCalculator.calculateCelestialTimes(city, calendar)
     }
 
@@ -1423,7 +1512,7 @@ private fun SunriseSunsetRealCard(
                     center = Offset(endX, horizonY)
                 )
 
-                // 5. 绘制高保真拟真 5 重物理光学太阳天体图形
+                // 5. 绘制高保真拟真 5 重物理光学太阳天体图形 (在 DrawScope 内部读取动画当前值，0 重组)
                 val renderSunCenter = if (!isNight) {
                     Offset(sunX, sunY)
                 } else {
@@ -1436,8 +1525,8 @@ private fun SunriseSunsetRealCard(
                 drawPhotorealisticSun(
                     center = renderSunCenter,
                     state = solarVisualState,
-                    pulse = sunPulse,
-                    rotationDeg = rayRotation,
+                    pulse = sunPulseState.value,
+                    rotationDeg = rayRotationState.value,
                     isNight = isNight
                 )
             }

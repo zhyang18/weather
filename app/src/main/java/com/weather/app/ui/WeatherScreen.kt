@@ -750,21 +750,8 @@ private fun CityWeatherPageContent(
         onRefresh = onRefresh
     )
 
-    // 维护当前页面全量展示天气数据快照
-    // 主页面上下滑动过程中 (scrollState.isScrollInProgress == true) 锁定现有数据快照，禁止任何列表与卡片更新数据；
-    // 等滑动彻底停止后 (scrollState.isScrollInProgress == false)，再同步更新为最新天气数据。
-    var displayedWeatherData by remember(city) { mutableStateOf(weatherData) }
-
-    LaunchedEffect(weatherData, scrollState.isScrollInProgress) {
-        if (!scrollState.isScrollInProgress || displayedWeatherData == null) {
-            displayedWeatherData = weatherData
-        }
-    }
-
-    val activeWeatherData = displayedWeatherData ?: weatherData
-
-    val lastUpdatedTimeText = remember(activeWeatherData?.updateTimestamp) {
-        val ts = activeWeatherData?.updateTimestamp ?: System.currentTimeMillis()
+    val lastUpdatedTimeText = remember(weatherData?.updateTimestamp) {
+        val ts = weatherData?.updateTimestamp ?: System.currentTimeMillis()
         val format = SimpleDateFormat("HH:mm", Locale.CHINA)
         "上次刷新 ${format.format(Date(ts))}"
     }
@@ -774,7 +761,7 @@ private fun CityWeatherPageContent(
             .fillMaxSize()
             .pullRefresh(pullRefreshState, enabled = isVerticalScrollEnabled)
     ) {
-        if (activeWeatherData == null) {
+        if (weatherData == null) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -798,38 +785,38 @@ private fun CityWeatherPageContent(
             ) {
                 // 1. 顶部居中核心温度展示 (分层级联渐隐与平滑缩小：空气优 -> 最高最低温 -> 当前温度)
                 HeroWeatherView(
-                    weatherData = activeWeatherData,
+                    weatherData = weatherData,
                     scrollOffsetProvider = { scrollState.value }
                 )
 
                 // 2. 官方气象灾害预警卡片 (用户开启且有预警数据时展示)
                 if (cardConfig.showWeatherAlert) {
-                    activeWeatherData.alert?.let { alert ->
+                    weatherData.alert?.let { alert ->
                         WeatherAlertCard(alert = alert)
                         Spacer(modifier = Modifier.height(4.dp))
                     }
                 }
 
-                // 3. 2小时分钟级短时降水预测走势卡片 (用户开启且当下雨、有降水预测或雨情预警时展示；滑动中锁定不更新)
-                val hasRainCondition = activeWeatherData.current.precipitation > 0.0 ||
-                        activeWeatherData.current.weatherText.contains("雨") ||
-                        activeWeatherData.hourlyForecasts.take(3).any { it.rain > 0.0 }
+                // 3. 2小时分钟级短时降水预测走势卡片 (用户开启且当下雨、有降水预测或雨情预警时展示)
+                val hasRainCondition = weatherData.current.precipitation > 0.0 ||
+                        weatherData.current.weatherText.contains("雨") ||
+                        weatherData.hourlyForecasts.take(3).any { it.rain > 0.0 }
 
                 if (cardConfig.showMinutelyPrecipitation && hasRainCondition) {
-                    MinutelyPrecipitationCard(weatherData = activeWeatherData)
+                    MinutelyPrecipitationCard(weatherData = weatherData)
                     Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                // 4. 24小时逐时预报卡片 (用户开启时展示；滑动中锁定不更新)
+                // 4. 24小时逐时预报卡片 (用户开启时展示)
                 if (cardConfig.showHourlyForecast) {
-                    HourlyForecastCard(weatherData = activeWeatherData)
+                    HourlyForecastCard(weatherData = weatherData)
                     Spacer(modifier = Modifier.height(2.dp))
                 }
 
-                // 5. 近日天气预报卡片 (用户开启时展示；滑动中锁定不更新)
+                // 5. 近日天气预报卡片 (用户开启时展示)
                 if (cardConfig.showDailyForecast) {
                     DailyForecastCard(
-                        dailyList = activeWeatherData.dailyForecasts,
+                        dailyList = weatherData.dailyForecasts,
                         isChartMode = isDailyChartMode,
                         onChartModeChange = onDailyChartModeChange
                     )
@@ -838,7 +825,7 @@ private fun CityWeatherPageContent(
 
                 // 6. 详细气象指标指标宫格 (由内部 cardConfig 进一步过滤各项详细指标卡片与月相卡片)
                 WeatherDetailGrid(
-                    weatherData = activeWeatherData,
+                    weatherData = weatherData,
                     cardConfig = cardConfig,
                     lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText,
                     onSunriseSunsetClick = onSunriseSunsetClick
