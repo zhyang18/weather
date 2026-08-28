@@ -20,8 +20,8 @@ android {
         applicationId = "com.weather.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.3.0"
+        versionCode = 21
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -100,6 +100,10 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // JWT 签名与认证 (Ed25519 / EdDSA)
+    implementation("com.nimbusds:nimbus-jose-jwt:9.37.3")
+    implementation("com.google.crypto.tink:tink:1.13.0")
 
     // 协程支持
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")

@@ -107,14 +107,6 @@ fun WeatherScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 错误提示响应
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearErrorMessage()
-        }
-    }
-
     val cityCount = uiState.savedCities.size.coerceAtLeast(1)
     val pagerState = rememberPagerState(
         initialPage = uiState.currentCityIndex.coerceIn(0, cityCount - 1),
@@ -305,7 +297,40 @@ fun WeatherScreen(
             onSelectSource = { sourceId ->
                 viewModel.switchWeatherSource(sourceId)
             },
+            onConfigureQWeatherClick = {
+                viewModel.setShowQWeatherConfigDialog(true)
+            },
             onDismiss = { viewModel.setShowSourceDialog(false) }
+        )
+    }
+
+    // 和风天气 JWT 凭据配置对话框
+    if (uiState.showQWeatherConfigDialog) {
+        com.weather.app.ui.dialogs.QWeatherConfigDialog(
+            config = uiState.qWeatherConfig,
+            onSave = { config ->
+                viewModel.saveQWeatherConfig(config)
+            },
+            onDismiss = {
+                viewModel.setShowQWeatherConfigDialog(false)
+            }
+        )
+    }
+
+    // 请求失败或数据不符合弹框提示
+    uiState.errorMessage?.let { errorMsg ->
+        com.weather.app.ui.dialogs.WeatherErrorDialog(
+            errorMessage = errorMsg,
+            currentSourceId = uiState.currentSource.id,
+            onRetry = {
+                viewModel.refreshCurrentCity()
+            },
+            onConfigureQWeatherClick = {
+                viewModel.setShowQWeatherConfigDialog(true)
+            },
+            onDismiss = {
+                viewModel.clearErrorMessage()
+            }
         )
     }
 

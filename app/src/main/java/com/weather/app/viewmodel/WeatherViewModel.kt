@@ -73,7 +73,9 @@ data class WeatherUiState(
     val showPrivacyDialog: Boolean = false,
     val cardDisplayConfig: com.weather.app.model.CardDisplayConfig = com.weather.app.model.CardDisplayConfig(),
     val showCardSettingsDialog: Boolean = false,
-    val showEarthDaylightScreen: Boolean = false
+    val showEarthDaylightScreen: Boolean = false,
+    val showQWeatherConfigDialog: Boolean = false,
+    val qWeatherConfig: com.weather.app.datasource.qweather.QWeatherConfig = com.weather.app.datasource.qweather.QWeatherConfig()
 ) {
     /**
      * 获取当前选中的城市实体
@@ -136,6 +138,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val locationMode = repository.getLocationDisplayMode()
         val intervalMinutes = repository.getAutoUpdateIntervalMinutes()
         val cardConfig = repository.getCardDisplayConfig()
+        val qWeatherConfig = repository.getQWeatherConfig()
 
         // 预加载各城市持久化天气快照缓存，保障冷启动秒开
         val initialCache = mutableMapOf<String, WeatherData>()
@@ -161,6 +164,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 autoUpdateIntervalMinutes = intervalMinutes,
                 autoUpdateIntervalHours = (intervalMinutes / 60).coerceAtLeast(0),
                 cardDisplayConfig = cardConfig,
+                qWeatherConfig = qWeatherConfig,
                 weatherCache = initialCache,
                 isLoading = initialCache.isEmpty() && isPrivacyAgreed
             )
@@ -424,13 +428,20 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val cities = _uiState.value.savedCities
         val safeIndex = currentIndex.coerceIn(0, (cities.size - 1).coerceAtLeast(0))
 
+        val isQWeatherUnconfigured = sourceId == "qweather" && !_uiState.value.qWeatherConfig.isConfigured()
+
         _uiState.update {
             it.copy(
                 currentSource = newSourceInfo,
                 showSourceDialog = false,
-                isRefreshing = true,
+                showQWeatherConfigDialog = isQWeatherUnconfigured,
+                isRefreshing = !isQWeatherUnconfigured,
                 currentCityIndex = safeIndex
             )
+        }
+
+        if (isQWeatherUnconfigured) {
+            return
         }
 
         viewModelScope.launch {
@@ -874,6 +885,33 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val currentConfig = _uiState.value.cardDisplayConfig
         val newConfig = currentConfig.withCardToggled(cardKey, enabled)
         updateCardDisplayConfig(newConfig)
+    }
+
+    /**
+     * 控制和风天气 JWT 凭据配置对话框的显示状态
+     *
+     * @param show 是否显示对话框
+     */
+    fun setShowQWeatherConfigDialog(show: Boolean) {
+        _uiState.update { it.copy(showQWeatherConfigDialog = show) }
+    }
+
+    /**
+     * 保存和风天气 JWT 凭据配置并在需要时立即重新拉取天气
+     *
+     * @param config 待保存的和风天气配置实体 [com.weather.app.datasource.qweather.QWeatherConfig]
+     */
+    fun saveQWeatherConfig(config: com.weather.app.datasource.qweather.QWeatherConfig) {
+        repository.saveQWeatherConfig(config)
+        _uiState.update {
+            it.copy(
+                qWeatherConfig = config,
+                showQWeatherConfigDialog = false
+            )
+        }
+        if (_uiState.value.currentSource.id == "qweather") {
+            refreshCurrentCity()
+        }
     }
 
     /**

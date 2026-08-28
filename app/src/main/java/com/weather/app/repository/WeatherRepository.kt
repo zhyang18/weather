@@ -12,6 +12,9 @@ import com.weather.app.location.AppLocationManager
 import com.weather.app.model.CityInfo
 import com.weather.app.model.CityInfoJsonAdapter
 import com.weather.app.model.WeatherData
+import com.weather.app.datasource.qweather.QWeatherConfig
+import com.weather.app.datasource.qweather.QWeatherConfigManager
+import com.weather.app.datasource.qweather.QWeatherJwtGenerator
 import com.weather.app.model.WeatherSourceInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,12 +25,14 @@ import kotlinx.coroutines.withContext
  * 聚合定位服务、多天气数据源调度、多城市持久化存储与离线天气快照缓存逻辑。
  *
  * @property context Android 应用上下文
+ * @property qWeatherConfigManager 和风天气配置管理器 [QWeatherConfigManager]
  * @property dataSourceManager 天气数据源统一管理器 [WeatherDataSourceManager]
  * @property locationManager 定位管理器 [AppLocationManager]
  */
 class WeatherRepository(
     private val context: Context,
-    private val dataSourceManager: WeatherDataSourceManager = WeatherDataSourceManager(),
+    private val qWeatherConfigManager: QWeatherConfigManager = QWeatherConfigManager(context),
+    private val dataSourceManager: WeatherDataSourceManager = WeatherDataSourceManager(qWeatherConfigManager),
     private val locationManager: AppLocationManager = AppLocationManager(context)
 ) {
 
@@ -36,6 +41,25 @@ class WeatherRepository(
         .registerTypeAdapter(CityInfo::class.java, CityInfoJsonAdapter())
         .setLenient()
         .create()
+
+    /**
+     * 获取和风天气 JWT 凭据与网络配置
+     *
+     * @return 当前持久化的和风天气配置实体 [QWeatherConfig]
+     */
+    fun getQWeatherConfig(): QWeatherConfig {
+        return qWeatherConfigManager.getConfig()
+    }
+
+    /**
+     * 保存和风天气 JWT 凭据与网络配置并清除旧 Token 缓存
+     *
+     * @param config 待保存的和风天气配置实体 [QWeatherConfig]
+     */
+    fun saveQWeatherConfig(config: QWeatherConfig) {
+        qWeatherConfigManager.saveConfig(config)
+        QWeatherJwtGenerator.clearCache()
+    }
 
     companion object {
         private const val KEY_SOURCE_ID = "active_source_id"

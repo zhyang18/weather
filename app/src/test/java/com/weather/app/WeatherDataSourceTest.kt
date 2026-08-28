@@ -32,7 +32,7 @@ class WeatherDataSourceTest {
     }
 
     /**
-     * 测试天气源列表与扩展源完整性（验证包含中央气象台与 Open-Meteo，且不包含已移除的和风天气）
+     * 测试天气源列表与扩展源完整性（验证包含中央气象台、和风天气与 Open-Meteo 等）
      */
     @Test
     fun testAvailableWeatherSources() {
@@ -40,7 +40,7 @@ class WeatherDataSourceTest {
         val sources = manager.getAvailableSources()
 
         assertTrue(sources.any { it.id == "cma" })
-        assertTrue(sources.none { it.id == "qweather" })
+        assertTrue(sources.any { it.id == "qweather" })
         assertTrue(sources.any { it.id == "open_meteo" })
     }
 

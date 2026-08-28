@@ -2,16 +2,22 @@ package com.weather.app.datasource
 
 import com.weather.app.datasource.cma.CmaWeatherDataSource
 import com.weather.app.datasource.openmeteo.OpenMeteoWeatherDataSource
+import com.weather.app.datasource.qweather.QWeatherConfigManager
+import com.weather.app.datasource.qweather.QWeatherWeatherDataSource
 import com.weather.app.datasource.sojson.SojsonWeatherDataSource
 import com.weather.app.model.WeatherSourceInfo
 
 /**
  * 天气数据源统一管理器
  *
- * 负责管理应用内注册的所有天气数据源提供商（如中央气象台、Open-Meteo、SOJSON 等），
+ * 负责管理应用内注册的所有天气数据源提供商（如中央气象台、和风天气、Open-Meteo、SOJSON 等），
  * 并提供动态注册、按需查询与数据源实例调度功能。
+ *
+ * @param qWeatherConfigManager 和风天气凭据管理器实例 [QWeatherConfigManager]（可选）
  */
-class WeatherDataSourceManager {
+class WeatherDataSourceManager(
+    private val qWeatherConfigManager: QWeatherConfigManager? = null
+) {
 
     /** 已注册的数据源映射表 (id -> WeatherDataSource) */
     private val dataSources = LinkedHashMap<String, WeatherDataSource>()
@@ -19,6 +25,8 @@ class WeatherDataSourceManager {
     init {
         // 注册默认天气源：中央气象台
         registerDataSource(CmaWeatherDataSource())
+        // 注册和风天气高精度天气源（支持 JWT 鉴权）
+        registerDataSource(QWeatherWeatherDataSource(qWeatherConfigManager))
         // 注册全球高精度开源天气源：Open-Meteo
         registerDataSource(OpenMeteoWeatherDataSource())
         // 注册国内多日预报天气源：SOJSON 天气

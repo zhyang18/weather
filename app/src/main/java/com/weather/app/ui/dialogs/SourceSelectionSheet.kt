@@ -44,6 +44,7 @@ import com.weather.app.model.WeatherSourceInfo
  * @param availableSources 系统支持的所有天气数据源元数据列表 [WeatherSourceInfo]
  * @param currentSourceId 当前正在生效的天气数据源唯一标识符
  * @param onSelectSource 用户选择目标天气源时的回调函数
+ * @param onConfigureQWeatherClick 点击配置和风天气凭据时的回调函数
  * @param onDismiss 关闭底部面板时的回调函数
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +53,7 @@ fun SourceSelectionSheet(
     availableSources: List<WeatherSourceInfo>,
     currentSourceId: String,
     onSelectSource: (String) -> Unit,
+    onConfigureQWeatherClick: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -167,21 +169,39 @@ fun SourceSelectionSheet(
                             )
                         }
 
-                        if (isSelected) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF2563EB)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = "当前选中",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (source.id == "qweather") {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color.White.copy(alpha = 0.15f))
+                                        .clickable { onConfigureQWeatherClick() }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "设置凭据",
+                                        color = Color.White,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF2563EB)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "当前选中",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }
