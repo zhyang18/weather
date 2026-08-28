@@ -607,6 +607,19 @@ private fun CityWeatherPageContent(
         onRefresh = onRefresh
     )
 
+    // 维护供 2小时短时降水、24小时逐时预报、近日天气等卡片展示的天气数据快照
+    // 主页面上下滑动过程中 (scrollState.isScrollInProgress == true) 禁止这三张卡片刷新数据，保持现有数据快照；
+    // 等滑动静止后 (scrollState.isScrollInProgress == false)，再同步更新为最新天气数据并触发卡片刷新。
+    var cardsWeatherData by remember(city) { mutableStateOf(weatherData) }
+
+    LaunchedEffect(weatherData, scrollState.isScrollInProgress) {
+        if (!scrollState.isScrollInProgress || cardsWeatherData == null) {
+            cardsWeatherData = weatherData
+        }
+    }
+
+    val displayCardsWeather = cardsWeatherData ?: weatherData
+
     val lastUpdatedTimeText = remember(weatherData?.updateTimestamp) {
         val ts = weatherData?.updateTimestamp ?: System.currentTimeMillis()
         val format = SimpleDateFormat("HH:mm", Locale.CHINA)
@@ -654,30 +667,33 @@ private fun CityWeatherPageContent(
                     }
                 }
 
-                // 3. 2小时分钟级短时降水预测走势卡片 (用户开启且当下雨、有降水预测或雨情预警时展示)
-                val hasRainCondition = weatherData.current.precipitation > 0.0 ||
-                        weatherData.current.weatherText.contains("雨") ||
-                        weatherData.hourlyForecasts.take(3).any { it.rain > 0.0 }
+                // 3. 2小时分钟级短时降水预测走势卡片 (用户开启且当下雨、有降水预测或雨情预警时展示；滑动中禁止刷新)
+                val targetCardsWeather = displayCardsWeather
+                if (targetCardsWeather != null) {
+                    val hasRainCondition = targetCardsWeather.current.precipitation > 0.0 ||
+                            targetCardsWeather.current.weatherText.contains("雨") ||
+                            targetCardsWeather.hourlyForecasts.take(3).any { it.rain > 0.0 }
 
-                if (cardConfig.showMinutelyPrecipitation && hasRainCondition) {
-                    MinutelyPrecipitationCard(weatherData = weatherData)
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
+                    if (cardConfig.showMinutelyPrecipitation && hasRainCondition) {
+                        MinutelyPrecipitationCard(weatherData = targetCardsWeather)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
 
-                // 4. 24小时逐时预报卡片 (用户开启时展示)
-                if (cardConfig.showHourlyForecast) {
-                    HourlyForecastCard(weatherData = weatherData)
-                    Spacer(modifier = Modifier.height(2.dp))
-                }
+                    // 4. 24小时逐时预报卡片 (用户开启时展示；滑动中禁止刷新)
+                    if (cardConfig.showHourlyForecast) {
+                        HourlyForecastCard(weatherData = targetCardsWeather)
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
 
-                // 5. 近日天气预报卡片 (用户开启时展示)
-                if (cardConfig.showDailyForecast) {
-                    DailyForecastCard(
-                        dailyList = weatherData.dailyForecasts,
-                        isChartMode = isDailyChartMode,
-                        onChartModeChange = onDailyChartModeChange
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    // 5. 近日天气预报卡片 (用户开启时展示；滑动中禁止刷新)
+                    if (cardConfig.showDailyForecast) {
+                        DailyForecastCard(
+                            dailyList = targetCardsWeather.dailyForecasts,
+                            isChartMode = isDailyChartMode,
+                            onChartModeChange = onDailyChartModeChange
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
                 }
 
                 // 6. 详细气象指标指标宫格 (由内部 cardConfig 进一步过滤各项详细指标卡片与月相卡片)
