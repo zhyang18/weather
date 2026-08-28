@@ -1,17 +1,15 @@
 package com.weather.app.ui.dialogs
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -41,10 +40,10 @@ import androidx.compose.ui.window.PopupProperties
 /**
  * 严格对齐设计要求的右上角设置弹出菜单组件
  *
- * 1. 紧凑自适应超小宽度（106dp ~ 126dp，紧密贴合文字，无多余横向冗余）；
- * 2. 与右上角设置按钮保持舒适的纵向间距；
- * 3. 支持从上到下顺滑垂直展开与滑下的进出场动效；
- * 4. 85% 半透明磨砂深灰卡片与圆润圆角容器（16.dp）。
+ * 1. 紧凑自适应超小宽度（110dp ~ 132dp，紧密贴合文字，无多余横向冗余）；
+ * 2. 优化进出场缩放与淡入动效，彻底消除高度伸缩抖动与闪烁问题；
+ * 3. 外层预留安全内边距，避免 Popup 窗口边界截断阴影产生黑色生硬边缘；
+ * 4. 95% 半透明磨砂深灰蓝背景结合精致微光边框与柔和阴影。
  *
  * @param expanded 菜单是否展开可见
  * @param onDismissRequest 关闭菜单回调
@@ -68,7 +67,7 @@ fun WeatherSettingsMenu(
 
     Popup(
         alignment = Alignment.TopEnd,
-        offset = IntOffset(x = 0, y = 135), // 与顶部设置按钮拉开舒适纵向间距
+        offset = IntOffset(x = 0, y = 115), // 结合外层 padding 与顶部设置按钮保持最佳视觉间距
         onDismissRequest = onDismissRequest,
         properties = PopupProperties(
             focusable = true,
@@ -81,75 +80,77 @@ fun WeatherSettingsMenu(
             isVisible = true
         }
 
-        // 从上到下垂直展开/滑下的流畅进出场动效
+        // 采用右上角为原点的平滑缩放淡入动效，避免动态改变高度产生的高度闪烁与回弹
         AnimatedVisibility(
             visible = isVisible,
-            enter = expandVertically(
-                expandFrom = Alignment.Top,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ) + slideInVertically(
-                initialOffsetY = { -it / 3 },
-                animationSpec = tween(180)
-            ) + fadeIn(animationSpec = tween(180)),
-            exit = shrinkVertically(
-                shrinkTowards = Alignment.Top,
-                animationSpec = tween(130)
-            ) + slideOutVertically(
-                targetOffsetY = { -it / 3 },
-                animationSpec = tween(130)
-            ) + fadeOut(animationSpec = tween(130))
+            enter = fadeIn(
+                animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+            ) + scaleIn(
+                initialScale = 0.85f,
+                transformOrigin = TransformOrigin(1f, 0f),
+                animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+            ),
+            exit = fadeOut(
+                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)
+            ) + scaleOut(
+                targetScale = 0.85f,
+                transformOrigin = TransformOrigin(1f, 0f),
+                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)
+            )
         ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xF2182230), // 95% 磨砂深灰蓝背景
-                shadowElevation = 14.dp,
-                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.15f)),
-                modifier = Modifier
-                    .wrapContentWidth()
-                    .widthIn(min = 110.dp, max = 132.dp)
+            // 外层添加 padding，为阴影提供自然的淡出扩散空间，防止被 Popup 窗口硬裁切产生黑边
+            Box(
+                modifier = Modifier.padding(8.dp)
             ) {
-                Column(
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xF2182230), // 95% 磨砂深灰蓝背景
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.16f)),
                     modifier = Modifier
                         .wrapContentWidth()
-                        .padding(vertical = 3.dp)
+                        .widthIn(min = 110.dp, max = 132.dp)
                 ) {
-                    val menuItems = listOf(
-                        "卡片显示" to { onCardSettingsClick() },
-                        "更新间隔" to { onIntervalClick() },
-                        "天气数据源" to { onSelectSourceClick() },
-                        "定位设置" to { onLocationSettingsClick() },
-                        "隐私与免责" to { onPrivacyClick() }
-                    )
+                    Column(
+                        modifier = Modifier
+                            .wrapContentWidth()
+                            .padding(vertical = 3.dp)
+                    ) {
+                        val menuItems = listOf(
+                            "卡片显示" to { onCardSettingsClick() },
+                            "更新间隔" to { onIntervalClick() },
+                            "天气数据源" to { onSelectSourceClick() },
+                            "定位设置" to { onLocationSettingsClick() },
+                            "隐私与免责" to { onPrivacyClick() }
+                        )
 
-                    menuItems.forEachIndexed { index, (title, action) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onDismissRequest()
-                                    action()
-                                }
-                                .padding(horizontal = 13.dp, vertical = 9.5.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = title,
-                                color = Color.White.copy(alpha = 0.95f),
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Normal,
-                                maxLines = 1
-                            )
-                        }
+                        menuItems.forEachIndexed { index, (title, action) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onDismissRequest()
+                                        action()
+                                    }
+                                    .padding(horizontal = 13.dp, vertical = 9.5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = title,
+                                    color = Color.White.copy(alpha = 0.95f),
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1
+                                )
+                            }
 
-                        if (index < menuItems.size - 1) {
-                            Divider(
-                                color = Color.White.copy(alpha = 0.10f),
-                                thickness = 0.5.dp,
-                                modifier = Modifier.padding(horizontal = 10.dp)
-                            )
+                            if (index < menuItems.size - 1) {
+                                Divider(
+                                    color = Color.White.copy(alpha = 0.10f),
+                                    thickness = 0.5.dp,
+                                    modifier = Modifier.padding(horizontal = 10.dp)
+                                )
+                            }
                         }
                     }
                 }
