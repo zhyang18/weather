@@ -45,10 +45,13 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.hypot
 
+import androidx.compose.runtime.Immutable
+
 /**
  * 近日天气趋势图单日轻量展示数据实体类 (Immutable UI Model)
  *
  * 预计算并封装单日图表所需的格式化文案与天气指标，彻底消除横向滚动时的重复计算。
+ * 显式声明为 [Immutable] 实体，确保 Compose 编译器能够对其智能跳过不必要的父级重组。
  *
  * @property weekLabel 星期显示文案（如 "昨天", "今天", "周四"）
  * @property dateText 短日期文本（如 "8月23日"）
@@ -58,6 +61,7 @@ import kotlin.math.hypot
  * @property minTempText 最低温显示文本（如 "25°"）
  * @property isYesterday 是否为昨天历史数据项
  */
+@Immutable
 private data class DailyChartDisplayItem(
     val weekLabel: String,
     val dateText: String,
@@ -72,6 +76,7 @@ private data class DailyChartDisplayItem(
  * 近日天气趋势图全量状态数据类
  *
  * 封装趋势图所需的展示实体列表、全局温度极值范围与坐标运算原语数组。
+ * 显式声明为 [Immutable] 实体，确保 Compose 能够在其未变更时跳过绘制重组。
  *
  * @property items 单日展示实体列表
  * @property allMax 全局最高温基准
@@ -80,6 +85,7 @@ private data class DailyChartDisplayItem(
  * @property maxTemps 原生最高温浮点数组 (FloatArray)
  * @property minTemps 原生最低温浮点数组 (FloatArray)
  */
+@Immutable
 private data class DailyChartUiState(
     val items: List<DailyChartDisplayItem>,
     val allMax: Float,
@@ -88,6 +94,7 @@ private data class DailyChartUiState(
     val maxTemps: FloatArray,
     val minTemps: FloatArray
 )
+
 
 /**
  * 构建包含“昨天”历史天气的完整近日预报列表
@@ -345,80 +352,7 @@ private fun DailyForecastChartView(
                 horizontalArrangement = Arrangement.Start
             ) {
                 chartState.items.forEach { item ->
-                    val isYesterday = item.isYesterday
-                    val itemAlpha = if (isYesterday) 0.55f else 1.0f
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(itemWidth)
-                    ) {
-                        // 星期
-                        Text(
-                            text = item.weekLabel,
-                            color = Color.White.copy(alpha = itemAlpha),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        // 日期
-                        Text(
-                            text = item.dateText,
-                            color = Color.White.copy(alpha = if (isYesterday) 0.40f else 0.65f),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // 天气现象名称
-                        Text(
-                            text = item.weatherText,
-                            color = Color.White.copy(alpha = if (isYesterday) 0.50f else 0.85f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Normal,
-                            maxLines = 1
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // 天气矢量图标容器
-                        Box(
-                            modifier = Modifier
-                                .width(itemWidth)
-                                .height(42.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            WeatherDynamicIcon(
-                                weatherText = item.weatherText,
-                                size = 24.dp,
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .graphicsLayer { alpha = itemAlpha }
-                            )
-
-                            if (item.rainPercentage != null && !isYesterday) {
-                                Text(
-                                    text = item.rainPercentage,
-                                    color = Color(0xFF64B5F6),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.align(Alignment.BottomCenter)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // 最高温度数值
-                        Text(
-                            text = item.maxTempText,
-                            color = Color.White.copy(alpha = if (isYesterday) 0.55f else 1.0f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
+                    DailyChartTopColumnItem(item = item, itemWidth = itemWidth)
                 }
             }
 
@@ -549,23 +483,127 @@ private fun DailyForecastChartView(
                 horizontalArrangement = Arrangement.Start
             ) {
                 chartState.items.forEach { item ->
-                    val isYesterday = item.isYesterday
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(itemWidth)
-                    ) {
-                        Text(
-                            text = item.minTempText,
-                            color = Color.White.copy(alpha = if (isYesterday) 0.55f else 0.90f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
+                    DailyChartBottomColumnItem(item = item, itemWidth = itemWidth)
                 }
             }
         }
     }
 }
+
+/**
+ * 趋势图单日顶部信息列组件 (Immutable UI Item)
+ *
+ * 显式声明为独立 Composable，支持 Compose 编译器进行细粒度跳过重组（Skippable），消除滚动时的全局重组。
+ *
+ * @param item 单日展示数据项 [DailyChartDisplayItem]
+ * @param itemWidth 单列宽度
+ */
+@Composable
+private fun DailyChartTopColumnItem(
+    item: DailyChartDisplayItem,
+    itemWidth: androidx.compose.ui.unit.Dp
+) {
+    val isYesterday = item.isYesterday
+    val itemAlpha = if (isYesterday) 0.55f else 1.0f
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(itemWidth)
+    ) {
+        // 星期
+        Text(
+            text = item.weekLabel,
+            color = Color.White.copy(alpha = itemAlpha),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Normal
+        )
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // 日期
+        Text(
+            text = item.dateText,
+            color = Color.White.copy(alpha = if (isYesterday) 0.40f else 0.65f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Normal
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // 天气现象名称
+        Text(
+            text = item.weatherText,
+            color = Color.White.copy(alpha = if (isYesterday) 0.50f else 0.85f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 1
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 天气矢量图标容器
+        Box(
+            modifier = Modifier
+                .width(itemWidth)
+                .height(42.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            WeatherDynamicIcon(
+                weatherText = item.weatherText,
+                size = 24.dp,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .graphicsLayer { alpha = itemAlpha }
+            )
+
+            if (item.rainPercentage != null && !isYesterday) {
+                Text(
+                    text = item.rainPercentage,
+                    color = Color(0xFF64B5F6),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 最高温度数值
+        Text(
+            text = item.maxTempText,
+            color = Color.White.copy(alpha = if (isYesterday) 0.55f else 1.0f),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Normal
+        )
+    }
+}
+
+/**
+ * 趋势图单日底部最低温度列组件 (Immutable UI Item)
+ *
+ * @param item 单日展示数据项 [DailyChartDisplayItem]
+ * @param itemWidth 单列宽度
+ */
+@Composable
+private fun DailyChartBottomColumnItem(
+    item: DailyChartDisplayItem,
+    itemWidth: androidx.compose.ui.unit.Dp
+) {
+    val isYesterday = item.isYesterday
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(itemWidth)
+    ) {
+        Text(
+            text = item.minTempText,
+            color = Color.White.copy(alpha = if (isYesterday) 0.55f else 0.90f),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Normal
+        )
+    }
+}
+
 
 /**
  * 包含“昨天”在内的近日天气温差条列表视图组件

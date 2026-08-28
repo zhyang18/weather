@@ -1,9 +1,12 @@
 package com.weather.app.model
 
+import androidx.compose.runtime.Immutable
+
 /**
  * 界面天气卡片显示与隐藏配置实体
  *
  * 用于支持用户在设置中自定义首页中各项天气卡片（预警、分钟降水、逐时预报、近日预报以及各项详细气象指标）的开启与隐藏展示。
+ * 显式声明为 [Immutable] 实体，确保 Compose 编译器能够对其智能跳过不必要的父级重组。
  *
  * @property showWeatherAlert 是否展示官方气象灾害预警卡片（默认 true）
  * @property showMinutelyPrecipitation 是否展示 2 小时分钟级短时降水预测走势卡片（默认 true）
@@ -18,6 +21,7 @@ package com.weather.app.model
  * @property showPressure 是否展示大气压强卡片（默认 true）
  * @property showPrecipitation 是否展示实时降水量卡片（默认 true）
  */
+@Immutable
 data class CardDisplayConfig(
     val showWeatherAlert: Boolean = true,
     val showMinutelyPrecipitation: Boolean = true,
@@ -32,6 +36,7 @@ data class CardDisplayConfig(
     val showPressure: Boolean = true,
     val showPrecipitation: Boolean = true
 ) {
+
     companion object {
         /**
          * 创建全部开启的默认配置

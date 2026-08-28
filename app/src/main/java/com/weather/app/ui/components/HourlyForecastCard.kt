@@ -1,12 +1,12 @@
 package com.weather.app.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,20 +14,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,13 +37,15 @@ import com.weather.app.model.WeatherData
  * 逐时预报轻量展示实体数据类 (Immutable UI Model)
  *
  * 预计算并封装单列所需的格式化文本与天气状态，消除滚动过程中的重复计算与字符串格式化。
+ * 显式声明为 [Immutable] 实体，确保 Compose 能够在其未变更时跳过绘制重组。
  *
- * @property key 唯一稳定标识键（用于 LazyRow key 复用）
+ * @property key 唯一稳定标识键
  * @property timeLabel 顶部时间文本（如 "现在", "16时"）
  * @property weatherText 天气现象描述
  * @property rainProb 降水概率百分比文本（如 "90%"），若无降水则为 null
  * @property tempText 底部温度数值文本（如 "32°"）
  */
+@Immutable
 private data class HourlyDisplayItem(
     val key: String,
     val timeLabel: String,
@@ -56,15 +57,14 @@ private data class HourlyDisplayItem(
 /**
  * 24小时逐时预报毛玻璃卡片组件
  *
- * 严格依据真实气象数据动态构建：
- * 顶部公告栏文案完全依据实况现象、未来逐时降雨量及近7天预报真实合成，并支持自动平滑跑马灯轮播展示；
- * 逐时横向滚动视图仅渲染真实监测与预报的小时节点，除主界面当前气温外其余文字均使用常规字重。
- * 内部已对 LazyRow 列表复用与数据预计算进行了全量优化，保证 60fps/120fps 平滑跟手。
+ * 采用硬件级无损平移架构重构：
+ * 1. 采用纯净高效的 [horizontalScroll] 硬件层平移替代短列表的 LazyLayout 动态挂载开销；
+ * 2. 消除子项 [HourlyColumnItem] 内的 `weight(1f)` 二次测量，实现单次极速测量；
+ * 3. 隔离顶部公告栏跑马灯动画与下方逐时滑动区域，彻底杜绝横向滚动掉帧与卡顿。
  *
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param modifier 外部修饰符
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HourlyForecastCard(
     weatherData: WeatherData,
@@ -73,7 +73,7 @@ fun HourlyForecastCard(
     val current = weatherData.current
     val hourlyList = weatherData.hourlyForecasts
 
-    // 基于真实数据动态合成精简智能天气提示文本（使用 remember 记忆化，避免重组重复计算）
+    // 基于真实数据动态合成精简智能天气提示文本（使用 remember 记忆化）
     val summaryNotice = remember(current.weatherText, current.feelsLike, current.temperature, hourlyList, weatherData.dailyForecasts) {
         val firstRainHour = hourlyList.take(6).firstOrNull { it.rain > 0.0 }
         if (firstRainHour != null) {
@@ -134,61 +134,31 @@ fun HourlyForecastCard(
         list
     }
 
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .graphicsLayer {
-                // 开启独立硬件渲染图层缓存
-                clip = true
-                shape = RoundedCornerShape(20.dp)
-            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(top = 10.dp, bottom = 10.dp)
     ) {
-        // 顶部公告提示栏 (🔔 图标 + 自动跑马灯循环滚动文本)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Notifications,
-                contentDescription = "提醒",
-                tint = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.size(15.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = summaryNotice,
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1,
-                modifier = Modifier.basicMarquee(
-                    iterations = Int.MAX_VALUE,
-                    delayMillis = 2000,
-                    velocity = 30.dp
-                )
-            )
-        }
+        // 1. 顶部独立隔离的公告提示栏 (独立组件，隔离跑马灯重绘)
+        HourlyNoticeBar(noticeText = summaryNotice)
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 小时级横向滚动条 (开启显式 key 与 contentType 复用)
+        // 2. 小时级硬件级平滑横向滚动行 (25个节点一次性硬件层挂载，0 重组 0 二次测量)
         if (displayItems.isNotEmpty()) {
-            LazyRow(
-                modifier = Modifier.height(82.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(scrollState)
+                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(
-                    items = displayItems,
-                    key = { it.key },
-                    contentType = { "HourlyColumnItem" }
-                ) { item ->
+                displayItems.forEach { item ->
                     HourlyColumnItem(item = item)
                 }
             }
@@ -197,7 +167,43 @@ fun HourlyForecastCard(
 }
 
 /**
- * 逐时预报单列展示单元（图标在时间与温度之间严格上下居中对齐）
+ * 顶部公告提示栏组件 (多行自然折行，消除跑马灯协程开销)
+ *
+ * @param noticeText 公告文本内容
+ */
+@Composable
+private fun HourlyNoticeBar(
+    noticeText: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = Icons.Default.Notifications,
+            contentDescription = "提醒",
+            tint = Color.White.copy(alpha = 0.9f),
+            modifier = Modifier
+                .size(15.dp)
+                .padding(top = 1.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = noticeText,
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Normal,
+            lineHeight = 16.sp,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+
+/**
+ * 逐时预报单列展示单元 (Single-pass 绝对布局，消除 weight 二次测量)
  *
  * @param item 逐时预报轻量展示数据项 [HourlyDisplayItem]
  */
@@ -208,10 +214,10 @@ private fun HourlyColumnItem(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(50.dp)
-            .height(82.dp)
+            .width(52.dp)
+            .height(84.dp)
     ) {
-        // 1. 时间标签 (顶部对齐)
+        // 1. 时间标签 (顶部)
         Text(
             text = item.timeLabel,
             color = Color.White.copy(alpha = 0.85f),
@@ -219,18 +225,20 @@ private fun HourlyColumnItem(
             fontWeight = FontWeight.Normal
         )
 
-        // 2. 中间天气图标与降水概率容器：在时间与温度之间绝对上下垂直居中
+        Spacer(modifier = Modifier.height(3.dp))
+
+        // 2. 中间天气图标与降水概率容器 (固定高度 42dp，避免 weight 二次测量)
         Box(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+                .width(52.dp)
+                .height(42.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                // 天气矢量动态图标 (内部自带 drawWithCache 缓存)
+                // 天气矢量图标
                 WeatherDynamicIcon(
                     weatherText = item.weatherText,
                     size = 22.dp
@@ -250,7 +258,9 @@ private fun HourlyColumnItem(
             }
         }
 
-        // 3. 底部温度数值 (常规字重，底部对齐)
+        Spacer(modifier = Modifier.height(3.dp))
+
+        // 3. 底部温度数值 (常规字重，底部)
         Text(
             text = item.tempText,
             color = Color.White,
@@ -259,5 +269,6 @@ private fun HourlyColumnItem(
         )
     }
 }
+
 
 

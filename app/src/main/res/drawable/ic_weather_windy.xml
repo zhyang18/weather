@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 三道纯净优雅风动流线 -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M3,7 L15,7 A2.5,2.5 0 0,0 17.5,4.5 M2,12 L18,12 A2.5,2.5 0 0,0 20.5,9.5 M4,17 L13,17 A2.5,2.5 0 0,0 15.5,14.5" />
+</vector>

@@ -1,7 +1,11 @@
 package com.weather.app.model
 
+import androidx.compose.runtime.Immutable
+
 /**
  * 官方气象预警数据实体
+ *
+ * 显式声明为 [Immutable] 实体，确保 Compose 编译器能够对其智能跳过不必要的父级重组。
  *
  * @property title 预警标题（如 "高温预警", "雷雨大风、高温预警", "暴雨蓝色预警"）
  * @property level 预警级别（如 "黄色", "橙色", "红色", "蓝色"）
@@ -9,6 +13,7 @@ package com.weather.app.model
  * @property publisher 发布机构全称（如 "预警信息发布中心"）
  * @property publishTime 具体发布时间描述（如 "2026年8月21日 09:31 发布"）
  */
+@Immutable
 data class WeatherAlert(
     val title: String = "",
     val level: String = "黄色",
@@ -16,3 +21,4 @@ data class WeatherAlert(
     val publisher: String = "预警信息发布中心",
     val publishTime: String = ""
 )
+

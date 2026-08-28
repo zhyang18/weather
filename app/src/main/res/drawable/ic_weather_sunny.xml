@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 太阳核心 -->
+    <path
+        android:fillColor="#FFB300"
+        android:pathData="M12,12m-5.5,0a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0" />
+    <!-- 8 根光芒射线 -->
+    <path
+        android:strokeColor="#FFB300"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M12,2 L12,4.5 M12,19.5 L12,22 M2,12 L4.5,12 M19.5,12 L22,12 M4.93,4.93 L6.7,6.7 M17.3,17.3 L19.07,19.07 M4.93,19.07 L6.7,17.3 M17.3,6.7 L19.07,4.93" />
+</vector>

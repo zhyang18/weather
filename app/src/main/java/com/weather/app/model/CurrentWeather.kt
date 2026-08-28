@@ -1,9 +1,12 @@
 package com.weather.app.model
 
+import androidx.compose.runtime.Immutable
+
 /**
  * 实时天气数据模型
  *
  * 记录当前时刻的气象实况指标。
+ * 显式声明为 [Immutable] 实体，确保 Compose 编译器能够对其智能跳过不必要的父级重组。
  *
  * @property temperature 当前气温，单位为摄氏度 (°C)
  * @property feelsLike 体感温度，单位为摄氏度 (°C)
@@ -17,6 +20,7 @@ package com.weather.app.model
  * @property precipitation 降水量，单位为 mm
  * @property publishTime 气象中心数据发布时间（如 "2026-08-21 14:00"）
  */
+@Immutable
 data class CurrentWeather(
     val temperature: Double,
     val feelsLike: Double? = null,
@@ -33,7 +37,7 @@ data class CurrentWeather(
     /**
      * 获取格式化后的温度文本
      *
-     * @return 带有摄氏度符号的温度字符串，如 "28°C"
+     * @return 带有摄氏度符号的温度字符串，如 "28°"
      */
     fun getFormattedTemp(): String {
         return "${temperature.toInt()}°"
@@ -52,3 +56,4 @@ data class CurrentWeather(
         }
     }
 }
+

@@ -1,10 +1,9 @@
 package com.weather.app.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,12 +47,12 @@ import java.util.Locale
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param modifier 外部修饰符
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MinutelyPrecipitationCard(
     weatherData: WeatherData,
     modifier: Modifier = Modifier
 ) {
+
     val current = weatherData.current
     val upcomingHourly = weatherData.hourlyForecasts.take(4)
 
@@ -142,30 +141,21 @@ fun MinutelyPrecipitationCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .graphicsLayer {
-                // 开启独立硬件渲染图层缓存
-                clip = true
-                shape = RoundedCornerShape(18.dp)
-            }
             .clip(RoundedCornerShape(18.dp))
             .background(Color(0x7514263A))
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
-        // 顶部真实降水说明 (单行平滑跑马灯轮播展示，杜绝换行撑高卡片)
+        // 顶部真实降水说明 (一行显示不下自然多行显示，消除跑马灯开销)
         Text(
             text = rainNoticeText,
             color = Color.White.copy(alpha = 0.95f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Normal,
-            maxLines = 1,
-            modifier = Modifier.basicMarquee(
-                iterations = Int.MAX_VALUE,
-                delayMillis = 2000,
-                velocity = 30.dp
-            )
+            lineHeight = 16.sp
         )
 
         Spacer(modifier = Modifier.height(8.dp))
+
 
         // 真实降雨强度柱状走势图 (适当调高高度，彻底消除下方时间文字被切割的问题)
         Row(

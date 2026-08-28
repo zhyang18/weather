@@ -1,5 +1,6 @@
 package com.weather.app.model
 
+import androidx.compose.runtime.Immutable
 import com.google.gson.JsonDeserializationContext
 import com.google.gson.JsonDeserializer
 import com.google.gson.JsonElement
@@ -12,6 +13,7 @@ import java.lang.reflect.Type
  * 城市信息数据模型
  *
  * 用于表示天气应用中的地理位置与站点信息。
+ * 显式声明为 [Immutable] 实体，确保 Compose 编译器能够对其智能跳过不必要的父级重组。
  *
  * @property code 城市或气象站点唯一编码 (如中央气象台站点编号 "Wqsps")
  * @property name 城市或区县名称 (如 "北京", "海淀", "紫峰大厦")
@@ -23,6 +25,7 @@ import java.lang.reflect.Type
  * @property landmark 附近地标或街道名称 (如 "软件谷", "紫峰大厦")
  * @property parentCity 所属地级市名称 (如 "南京市", "西安市")
  */
+@Immutable
 data class CityInfo(
     val code: String = "",
     val name: String = "",
@@ -34,6 +37,7 @@ data class CityInfo(
     val landmark: String = "",
     val parentCity: String = ""
 ) {
+
     /**
      * 清理并保证所有非空字段不为 null
      *

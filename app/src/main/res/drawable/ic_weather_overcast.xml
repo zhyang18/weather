@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 饱满纯白云朵 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M19,17.5 H6.5 C4.6,17.5 3,15.9 3,14 C3,12.3 4.2,10.8 5.9,10.5 C6.4,8 8.5,6 11,6 C13.9,6 16.3,8.1 16.6,11 C18.1,11.2 19.5,12.5 19.5,14 C19.5,14.3 19.4,14.6 19.3,14.9 C20.3,15.3 21,16.3 21,17.5 C21,17.5 20,17.5 19,17.5 Z" />
+</vector>

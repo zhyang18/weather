@@ -1,9 +1,12 @@
 package com.weather.app.model
 
+import androidx.compose.runtime.Immutable
+
 /**
  * 小时级/历史实况走势数据模型
  *
  * 记录单小时的气象实况或预报指标。
+ * 显式声明为 [Immutable] 实体，确保 Compose 能够在其未变更时跳过绘制重组。
  *
  * @property time 时间字符串（如 "14:00" 或 "2026-08-21 14:00"）
  * @property temperature 当前小时温度 (°C)
@@ -13,6 +16,7 @@ package com.weather.app.model
  * @property rain 降水量 (mm)
  * @property pressure 气压值 (hPa)
  */
+@Immutable
 data class HourlyForecast(
     val time: String,
     val temperature: Double,
@@ -35,3 +39,4 @@ data class HourlyForecast(
         }
     }
 }
+

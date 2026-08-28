@@ -1,9 +1,12 @@
 package com.weather.app.model
 
+import androidx.compose.runtime.Immutable
+
 /**
  * 每日天气预报数据模型
  *
  * 记录单日的白天与夜间天气预报详情。
+ * 显式声明为 [Immutable] 实体，确保 Compose 编译器对其开启 Smart Recomposition 优化。
  *
  * @property date 预报日期字符串，格式为 "YYYY-MM-DD"
  * @property dayOfWeek 星期几描述（如 "星期一", "今天", "明天"）
@@ -17,6 +20,7 @@ package com.weather.app.model
  * @property windPower 风力等级
  * @property precipitation 降水概率或降水量
  */
+@Immutable
 data class DailyForecast(
     val date: String,
     val dayOfWeek: String,
@@ -72,3 +76,4 @@ data class DailyForecast(
         }
     }
 }
+

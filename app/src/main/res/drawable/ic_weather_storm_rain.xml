@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 顶部饱满云朵 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18.5,13.5 H6.5 C4.8,13.5 3.5,12.2 3.5,10.5 C3.5,9 4.5,7.7 6,7.4 C6.5,5.2 8.5,3.5 10.8,3.5 C13.3,3.5 15.4,5.3 15.7,7.8 C17,8 18,9.1 18,10.5 C18,10.8 18,11 17.9,11.2 C18.8,11.6 19.5,12.5 19.5,13.5 Z" />
+    <!-- 5 条密集急倾斜雨丝（深天蓝色，粗线表示暴雨） -->
+    <path
+        android:strokeColor="#2196F3"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M5.5,15.5 L3.5,21 M8.5,15.5 L6.5,21 M11.5,15.5 L9.5,21 M14.5,15.5 L12.5,21 M17.5,15.5 L15.5,21" />
+</vector>

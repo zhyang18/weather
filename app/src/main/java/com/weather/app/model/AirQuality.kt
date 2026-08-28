@@ -1,17 +1,20 @@
 package com.weather.app.model
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 /**
  * 空气质量指数数据模型
  *
  * 记录 AQI 数值、空气质量级别与健康提示建议。
+ * 显式声明为 [Immutable] 实体，确保 Compose 编译器能够对其智能跳过不必要的父级重组。
  *
  * @property aqi 空气质量指数数值（如 34, 75, 120 等）
  * @property level 等级序号（1-优, 2-良, 3-轻度污染, 4-中度污染, 5-重度污染, 6-严重污染）
  * @property qualityText 空气质量文字描述（如 "优", "良", "轻度污染"）
  * @property updateTime 数据更新时间
  */
+@Immutable
 data class AirQuality(
     val aqi: Int,
     val level: Int = 1,
@@ -49,3 +52,4 @@ data class AirQuality(
         }
     }
 }
+
