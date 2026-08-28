@@ -1,5 +1,6 @@
 package com.weather.app.ui.components
 
+import android.content.Context
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
@@ -39,6 +40,41 @@ fun WeatherDynamicIcon(
  * 天气图标辅助与资源映射工具类
  */
 object WeatherIcons {
+
+    /**
+     * 预加载所有专属天气矢量图标到系统 Drawable 缓存池
+     *
+     * 适用于冷启动时在后台协程异步调用，提前完成 XML 解析与 Inflate，彻底消除滑动时由于首次解析图标产生的掉帧卡顿。
+     *
+     * @param context 上下文对象 [Context]
+     */
+    fun preloadIcons(context: Context) {
+        val iconResIds = intArrayOf(
+            R.drawable.ic_weather_sunny,
+            R.drawable.ic_weather_cloudy,
+            R.drawable.ic_weather_overcast,
+            R.drawable.ic_weather_thunderstorm,
+            R.drawable.ic_weather_storm_rain,
+            R.drawable.ic_weather_heavy_rain,
+            R.drawable.ic_weather_moderate_rain,
+            R.drawable.ic_weather_shower,
+            R.drawable.ic_weather_sleet,
+            R.drawable.ic_weather_light_rain,
+            R.drawable.ic_weather_heavy_snow,
+            R.drawable.ic_weather_snow,
+            R.drawable.ic_weather_haze,
+            R.drawable.ic_weather_sandstorm,
+            R.drawable.ic_weather_dust,
+            R.drawable.ic_weather_windy,
+            R.drawable.ic_weather_fog,
+            R.drawable.ic_weather_hail
+        )
+        for (resId in iconResIds) {
+            try {
+                context.getDrawable(resId)
+            } catch (_: Throwable) {}
+        }
+    }
 
     /**
      * 根据天气文本映射对应的本地专属矢量图标资源 ID

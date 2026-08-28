@@ -2233,8 +2233,9 @@ private fun DrawScope.drawFallingSnow(
     rotation: Float,
     isHeavy: Boolean
 ) {
-    val activeFlakes = if (isHeavy) flakes else flakes.take(40)
-    activeFlakes.forEach { flake ->
+    val flakeCount = if (isHeavy) flakes.size else flakes.size.coerceAtMost(40)
+    for (flakeIndex in 0 until flakeCount) {
+        val flake = flakes[flakeIndex]
         val curProgress = (progress * flake.speedMultiplier + flake.yOffset) % 1f
         val y = curProgress * (height + 30f) - 15f
         val drift = sin(curProgress * flake.driftFrequency * 2f * PI.toFloat()) * flake.driftAmplitude

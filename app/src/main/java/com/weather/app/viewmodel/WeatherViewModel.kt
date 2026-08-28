@@ -425,6 +425,31 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * 调整城市在列表中的显示顺序并持久化保存
+     *
+     * @param fromIndex 原位置索引
+     * @param toIndex 目标位置索引
+     */
+    fun moveCity(fromIndex: Int, toIndex: Int) {
+        val currentList = _uiState.value.savedCities.toMutableList()
+        if (fromIndex in currentList.indices && toIndex in currentList.indices && fromIndex != toIndex) {
+            val item = currentList.removeAt(fromIndex)
+            currentList.add(toIndex, item)
+            repository.saveSavedCities(currentList)
+            val currentCity = _uiState.value.getCurrentCity()
+            val newCurrentIndex = currentList.indexOfFirst { it.name == currentCity.name && it.code == currentCity.code }
+                .coerceIn(0, (currentList.size - 1).coerceAtLeast(0))
+
+            _uiState.update {
+                it.copy(
+                    savedCities = currentList,
+                    currentCityIndex = newCurrentIndex
+                )
+            }
+        }
+    }
+
+    /**
      * 切换当前激活的天气数据源并刷新所有城市天气，保持当前展示的城市 Tab 索引不变
      *
      * 切换数据源后优先立即请求并刷新当前停靠展示的城市天气，同时在后台静默预加载更新其余保存城市的数据，

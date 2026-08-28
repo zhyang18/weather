@@ -152,6 +152,14 @@ fun WeatherScreen(
         }
     }
 
+    val appContext = LocalContext.current.applicationContext
+    // 冷启动后台预热天气矢量图标到系统 DrawableCache，彻底消除初次滚动时的 XML 解析与 Inflate 阻塞
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.weather.app.ui.components.WeatherIcons.preloadIcons(appContext)
+        }
+    }
+
     val cityCount = uiState.savedCities.size.coerceAtLeast(1)
     val pagerState = rememberPagerState(
         initialPage = uiState.currentCityIndex.coerceIn(0, cityCount - 1),
@@ -306,6 +314,9 @@ fun WeatherScreen(
             },
             onRestoreCity = { city, index ->
                 viewModel.restoreCity(city, index)
+            },
+            onMoveCity = { from, to ->
+                viewModel.moveCity(from, to)
             },
             onAddCityClick = {
                 viewModel.setShowAddCityDialog(true)

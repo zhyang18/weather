@@ -76,13 +76,17 @@ import com.weather.app.ui.components.WeatherSkyBackground
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+
 /**
  * 城市管理全屏沉浸式界面组件
  *
  * 严格对齐设计要求：
  * 1. 背景色由当前天气主页色动态驱动、全屏沉浸式展示；
- * 2. 移除卡片表面删除按钮，界面更加清爽干净；
- * 3. 向左滑动卡片露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
+ * 2. 顶部提供“排序 / 完成”切换入口，支持直观的城市顺序上下调整；
+ * 3. 移除卡片表面删除按钮，普通模式下向左滑动卡片露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
  * 4. 点击该方块切换为深红棕色“✓”对勾图标（代表确定删除状态）；
  * 5. 再次点击“✓”对勾执行删除，并弹出底部“撤销”按钮；
  * 6. 底部提供“+ 添加城市”操作入口。
@@ -94,9 +98,11 @@ import kotlin.math.roundToInt
  * @param onCityClick 点击选中城市时的回调 (切换至该城市并关闭弹窗)
  * @param onDeleteCity 删除指定城市时的回调
  * @param onRestoreCity 撤销删除并恢复城市时的回调
+ * @param onMoveCity 调整城市显示顺序时的回调
  * @param onAddCityClick 点击底部“添加城市”按钮时的回调
  * @param onBackClick 点击返回按钮时的回调
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CityManagementFullScreen(
     visible: Boolean,
@@ -106,15 +112,21 @@ fun CityManagementFullScreen(
     onCityClick: (Int) -> Unit,
     onDeleteCity: (CityInfo) -> Unit,
     onRestoreCity: (CityInfo, Int) -> Unit,
+    onMoveCity: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     onAddCityClick: () -> Unit,
     onBackClick: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    var isReorderMode by remember { mutableStateOf(false) }
 
-    // 拦截物理返回键与侧滑返回手势，按下时自动收回抽屉
+    // 拦截物理返回键与侧滑返回手势，按下时优先退出排序模式或收回抽屉
     BackHandler(enabled = visible) {
-        onBackClick()
+        if (isReorderMode) {
+            isReorderMode = false
+        } else {
+            onBackClick()
+        }
     }
 
     // 1. 半透明暗色背景遮罩层（独立淡入淡出，点击空白处收回抽屉）
@@ -127,7 +139,9 @@ fun CityManagementFullScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.55f))
-                .clickable(onClick = onBackClick)
+                .clickable(onClick = {
+                    if (isReorderMode) isReorderMode = false else onBackClick()
+                })
         )
     }
 
@@ -168,41 +182,65 @@ fun CityManagementFullScreen(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp)
             ) {
-                // 顶部导航栏：返回按钮与“管理城市”标题
+                // 顶部导航栏：返回按钮、“管理城市”标题 与 “排序/完成”切换按钮
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.20f),
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        IconButton(onClick = onBackClick) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = "返回",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.20f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            IconButton(onClick = {
+                                if (isReorderMode) isReorderMode = false else onBackClick()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowBack,
+                                    contentDescription = "返回",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Text(
+                            text = if (isReorderMode) "调整城市顺序" else "管理城市",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+
+                    // 仅当保存城市数量 >= 2 时展示排序/完成操作按钮
+                    if (savedCities.size >= 2) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isReorderMode) Color(0xFF64B5F6).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.18f),
+                            modifier = Modifier.clickable {
+                                isReorderMode = !isReorderMode
+                            }
+                        ) {
+                            Text(
+                                text = if (isReorderMode) "完成" else "排序",
+                                color = if (isReorderMode) Color(0xFF90CAF9) else Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Text(
-                        text = "管理城市",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Normal
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 城市卡片列表 (支持向左滑动露出粉色删除块，点击切换为勾选确定删除)
+                // 城市卡片列表 (支持排序模式上下调整与普通模式向左滑动删除)
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
@@ -211,7 +249,7 @@ fun CityManagementFullScreen(
                 ) {
                     itemsIndexed(
                         items = savedCities,
-                        key = { index, city -> "${city.getCacheKey()}_$index" }
+                        key = { _, city -> city.getCacheKey() }
                     ) { index, city ->
                         val weather = weatherCache[city.getCacheKey()]
                             ?: weatherCache[city.code.ifEmpty { city.name }]
@@ -222,7 +260,16 @@ fun CityManagementFullScreen(
                             city = city,
                             weather = weather,
                             canDelete = canDelete,
-                            onClick = { onCityClick(index) },
+                            isReorderMode = isReorderMode,
+                            isFirst = index == 0,
+                            isLast = index == savedCities.size - 1,
+                            onMoveUp = { onMoveCity(index, index - 1) },
+                            onMoveDown = { onMoveCity(index, index + 1) },
+                            onClick = {
+                                if (!isReorderMode) {
+                                    onCityClick(index)
+                                }
+                            },
                             onDelete = {
                                 val deletedCity = city
                                 val deletedIndex = index
@@ -238,39 +285,44 @@ fun CityManagementFullScreen(
                                         onRestoreCity(deletedCity, deletedIndex)
                                     }
                                 }
-                            }
+                            },
+                            modifier = Modifier.animateItemPlacement()
                         )
                     }
                 }
 
-                // 底部居中“+ 添加城市”操作按钮
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 18.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                // 底部居中“+ 添加城市”操作按钮 (排序模式下隐藏，界面更专注)
+                if (!isReorderMode) {
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onAddCityClick() }
-                            .padding(horizontal = 24.dp, vertical = 8.dp)
+                            .fillMaxWidth()
+                            .padding(vertical = 18.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "添加城市",
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "添加城市",
-                            color = Color.White.copy(alpha = 0.9f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onAddCityClick() }
+                                .padding(horizontal = 24.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "添加城市",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "添加城市",
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
                     }
+                } else {
+                    Spacer(modifier = Modifier.height(18.dp))
                 }
             }
 
@@ -295,29 +347,39 @@ fun CityManagementFullScreen(
 }
 
 /**
- * 支持两段式滑动确认删除的城市卡片组件
+ * 支持两段式滑动确认删除与排序上下调整的城市卡片组件
  *
  * 严格对齐设计与交互要求：
- * 1. 默认状态下卡片完全闭合，删除按钮不可见（不向外渗色/露角）；
- * 2. 仅在向左滑动时平滑显露右侧独立浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
- * 3. 拖拽释放或中断时自动弹性吸附至完全展开或完全关闭，杜绝停留在中间任意位置；
- * 4. 首次点击该方块切换为“✓”对勾图标（代表确定删除状态）；
- * 5. 再次点击“✓”对勾执行删除，并弹出底部撤销 Snackbar；
- * 6. 点击左侧卡片或右滑自动平滑收回。
+ * 1. 在排序模式下：右侧展示清晰优雅的上下移动操作区，点击箭头即可与相邻城市平滑交换位置；
+ * 2. 默认模式下：卡片完全闭合，向左滑动露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
+ * 3. 首次点击该方块切换为“✓”对勾图标（代表确定删除状态）；
+ * 4. 再次点击“✓”对勾执行删除，并弹出底部撤销 Snackbar。
  *
  * @param city 城市信息 [CityInfo]
  * @param weather 城市天气数据 [WeatherData]
  * @param canDelete 是否允许删除
+ * @param isReorderMode 是否处于城市排序调整模式
+ * @param isFirst 是否为列表首个城市（首个城市不可上移）
+ * @param isLast 是否为列表末尾城市（末尾城市不可下移）
+ * @param onMoveUp 点击上移回调
+ * @param onMoveDown 点击下移回调
  * @param onClick 点击查看城市天气回调
  * @param onDelete 确认删除回调
+ * @param modifier 外部修饰符
  */
 @Composable
 private fun SwipeableCityCard(
     city: CityInfo,
     weather: WeatherData?,
     canDelete: Boolean,
+    isReorderMode: Boolean = false,
+    isFirst: Boolean = false,
+    isLast: Boolean = false,
+    onMoveUp: () -> Unit = {},
+    onMoveDown: () -> Unit = {},
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var revealState by remember { mutableStateOf(0) } // 0: 闭合, 1: 垃圾桶状态, 2: 勾选✓确定删除状态
     val offsetX = remember { Animatable(0f) }
@@ -326,6 +388,14 @@ private fun SwipeableCityCard(
     val spacing = 8.dp
     val density = LocalDensity.current
     val totalRevealPx = with(density) { (actionButtonWidth + spacing).toPx() }
+
+    // 退出排序模式时自动收回偏移
+    LaunchedEffect(isReorderMode) {
+        if (isReorderMode && offsetX.value != 0f) {
+            offsetX.snapTo(0f)
+            revealState = 0
+        }
+    }
 
     /**
      * 平滑弹性吸附至目标状态（0: 闭合, 1: 展开）
@@ -350,12 +420,12 @@ private fun SwipeableCityCard(
     val revealProgress = (-currentOffset / totalRevealPx).coerceIn(0f, 1f)
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(86.dp)
     ) {
-        // 右侧独立浅珊瑚粉色操作方块：仅在向左滑动或已展开时渲染，随滑动进度平滑淡入和缩放
-        if (canDelete && revealProgress > 0.005f) {
+        // 普通模式下：右侧独立浅珊瑚粉色操作方块
+        if (!isReorderMode && canDelete && revealProgress > 0.005f) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Color(0xFFF6B8AB), // 浅珊瑚粉红
@@ -412,17 +482,17 @@ private fun SwipeableCityCard(
             }
         }
 
-        // 上层城市天空卡片 (支持流畅手势拖动与弹性吸附平移)
+        // 上层城市天空卡片
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .pointerInput(canDelete) {
-                    if (!canDelete) return@pointerInput
+                .offset {
+                    if (isReorderMode) IntOffset.Zero else IntOffset(offsetX.value.roundToInt(), 0)
+                }
+                .pointerInput(canDelete, isReorderMode) {
+                    if (!canDelete || isReorderMode) return@pointerInput
                     detectHorizontalDragGestures(
-                        onDragStart = {
-                            // 开始手势拖拽
-                        },
+                        onDragStart = {},
                         onDragEnd = {
                             val shouldOpen = offsetX.value < -totalRevealPx * 0.35f
                             settleTo(if (shouldOpen) 1 else 0)
@@ -445,13 +515,62 @@ private fun SwipeableCityCard(
                 city = city,
                 weather = weather,
                 onClick = {
-                    if (revealState != 0 || offsetX.value < -1f) {
+                    if (!isReorderMode && (revealState != 0 || offsetX.value < -1f)) {
                         settleTo(0)
                     } else {
                         onClick()
                     }
                 }
             )
+
+            // 排序模式：卡片内部右侧展示上移与下移操作按钮
+            if (isReorderMode) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 上移按钮
+                    Surface(
+                        shape = CircleShape,
+                        color = if (!isFirst) Color.White.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable(enabled = !isFirst) { onMoveUp() }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "上移",
+                                tint = if (!isFirst) Color.White else Color.White.copy(alpha = 0.30f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    // 下移按钮
+                    Surface(
+                        shape = CircleShape,
+                        color = if (!isLast) Color.White.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable(enabled = !isLast) { onMoveDown() }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "下移",
+                                tint = if (!isLast) Color.White else Color.White.copy(alpha = 0.30f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
