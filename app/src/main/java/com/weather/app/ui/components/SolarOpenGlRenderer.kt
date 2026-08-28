@@ -46,6 +46,60 @@ class SolarOpenGlRenderer {
     private var cachedSize: Int = 0
 
     companion object {
+        @Volatile
+        private var globalRenderer: SolarOpenGlRenderer? = null
+
+        /** 全局静态分桶 ImageBitmap 缓存 */
+        @Volatile
+        private var globalCachedImageBitmap: ImageBitmap? = null
+        private var globalCachedBucket: Int = -1
+        private var globalCachedSize: Int = 0
+
+        /**
+         * 获取已预先渲染好的太阳 ImageBitmap（若未命中返回 null）
+         *
+         * @param sizePx 目标尺寸像素值
+         * @param dayProgress 日照时间进度 (0.0f ~ 1.0f)
+         * @return 缓存的高精度太阳 ImageBitmap [ImageBitmap]，未就绪时返回 null
+         */
+        fun getPrecachedSun(sizePx: Int = 384, dayProgress: Float = 0.5f): ImageBitmap? {
+            val bucket = ((dayProgress.coerceIn(0f, 1f)) * 40f).roundToInt()
+            return if (globalCachedSize == sizePx && globalCachedBucket == bucket) {
+                globalCachedImageBitmap
+            } else {
+                null
+            }
+        }
+
+        /**
+         * 获取或立即渲染高精度 3D 真实太阳 ImageBitmap
+         *
+         * @param sizePx 目标尺寸像素值（推荐 256 ~ 512）
+         * @param dayProgress 归一化日照进度 (0.0f ~ 1.0f)
+         * @param timePhase 动画相位
+         * @return 渲染完毕的高精度太阳 ImageBitmap [ImageBitmap]，失败时返回 null
+         */
+        fun getOrRenderSun(
+            sizePx: Int = 384,
+            dayProgress: Float = 0.5f,
+            timePhase: Float = 0f
+        ): ImageBitmap? {
+            val bucket = ((dayProgress.coerceIn(0f, 1f)) * 40f).roundToInt()
+            if (globalCachedSize == sizePx && globalCachedBucket == bucket && globalCachedImageBitmap != null) {
+                return globalCachedImageBitmap
+            }
+            val renderer = globalRenderer ?: synchronized(this) {
+                globalRenderer ?: SolarOpenGlRenderer().also { globalRenderer = it }
+            }
+            val bitmap = renderer.renderSun(sizePx, dayProgress, timePhase)
+            if (bitmap != null) {
+                globalCachedImageBitmap = bitmap
+                globalCachedBucket = bucket
+                globalCachedSize = sizePx
+            }
+            return bitmap
+        }
+
         /** 全屏四边形顶点数据 */
         private val QUAD_VERTICES = floatArrayOf(
             -1.0f, -1.0f,
@@ -220,30 +274,41 @@ class SolarOpenGlRenderer {
                     k2 = 45.0;
                 }
 
-                // ------------------ 2. 单一严格单调连续物理光强函数 L(r) ------------------
-                // 微扰动有机星芒光羽（连续光滑调制，绝无生硬阶跃）
-                float rayNoise = fbm(vec3(cos(angle * 4.0), sin(angle * 4.0), u_time * 0.15 + r * 2.0)) * 0.18;
-                float starburst = pow(max(0.0, cos(angle * 6.0 + u_time * 0.08)), 4.0) * 0.10 +
-                                  pow(max(0.0, sin(angle * 4.0 - u_time * 0.06)), 6.0) * 0.08;
-                float flareMod = 1.0 + (rayNoise + starburst) * rayScale * exp(-r * 3.5);
+                // ------------------ 2. 真实 3D 天文日盘与日冕复合物理辐射场 ------------------
+                float R_sun = 0.38; // 真实太阳球体日盘视半径
+                float lum = 0.0;
 
-                // 洛伦兹-幂律单调递减连续光强函数 (从中心 1.0 平滑衰减至边缘 0.0)
-                float lum = 1.0 / (1.0 + k1 * r * r + k2 * r * r * r * r);
-                lum *= flareMod;
+                // 3D 太阳日面等离子沸腾米粒流体组织与 8 束自转星芒
+                float gran = fbm(vec3(uv * 14.0, u_time * 0.15)) * 0.15;
+                float flareStarburst = pow(max(0.0, cos(angle * 4.0 + u_time * 0.06)), 10.0) * 0.45 +
+                                       pow(max(0.0, sin(angle * 4.0 - u_time * 0.05)), 14.0) * 0.28;
 
-                // 边缘超平滑羽化，彻底归零
-                float edgeFade = smoothstep(1.0, 0.25, r);
+                if (r <= R_sun) {
+                    // 日盘内部：3D 球体连续曲率与临边昏暗效应 (Limb Darkening)
+                    float z = sqrt(max(0.0, 1.0 - (r / R_sun) * (r / R_sun)));
+                    float limb = pow(z, 0.42);
+                    lum = (0.92 + gran) * (0.60 + 0.40 * limb);
+                } else {
+                    // 日盘外部：等离子日珥、日冕辐射与 8 束长短交错自转星芒
+                    float dist = (r - R_sun) / (1.0 - R_sun);
+                    float coronaNoise = fbm(vec3(cos(angle * 6.0) * 2.0, sin(angle * 6.0) * 2.0, u_time * 0.12 + dist * 2.5)) * 0.25;
+                    float corona = (1.0 / (1.0 + 9.0 * dist + 42.0 * dist * dist)) * (1.0 + coronaNoise + flareStarburst * rayScale);
+                    lum = corona;
+                }
+
+                // 边缘超平滑羽化消散
+                float edgeFade = smoothstep(1.0, 0.35, r);
                 lum *= edgeFade;
 
                 // ------------------ 3. 连续黑体辐射光谱映射（单一参数驱动，杜绝分层） ------------------
                 vec3 finalRgb;
-                if (lum < 0.40) {
+                if (lum < 0.35) {
                     // 外围微光区：从外部环境色平滑过渡到中层色温
-                    float t = lum / 0.40;
+                    float t = lum / 0.35;
                     finalRgb = mix(colOuter, colMid, smoothstep(0.0, 1.0, t));
                 } else {
                     // 中心高亮区：从中层色温平滑过渡到炽热白金核心
-                    float t = (lum - 0.40) / 0.60;
+                    float t = (lum - 0.35) / 0.65;
                     finalRgb = mix(colMid, colCore, smoothstep(0.0, 1.0, t));
                 }
 
@@ -251,7 +316,7 @@ class SolarOpenGlRenderer {
                 float dither = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * (1.0 / 255.0);
                 finalRgb += dither;
 
-                float alpha = clamp(lum * 1.15, 0.0, 1.0);
+                float alpha = clamp(lum * 1.25, 0.0, 1.0);
                 gl_FragColor = vec4(clamp(finalRgb, 0.0, 1.0) * alpha, alpha);
             }
         """

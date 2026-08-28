@@ -1385,13 +1385,10 @@ private fun calculateSolarPhysicalState(dayProgress: Float): SolarPhysicalState 
 }
 
 /**
- * 绘制白昼纯自然物理真实太阳系统（无任何生硬几何圆盘切边、无描边硬环、无生硬射线）
+ * 绘制高保真物理光学太阳天体图形
  *
- * 基于单一连续物理光学 HDR 辐射场模型（Monolithic Continuous HDR Radiant Field）：
- * 1. 远景广阔大气瑞利散射光晕 (超大范围环境柔和天幕光晕，随全天早中晚色温平滑染色)
- * 2. 中层等离子日冕与有机柔和星芒
- * 3. 炽热金白核心光核 (超平滑幂律衰减，极高通透感)
- * 4. 纯 Compose Canvas 硬件加速绘制，0 CPU 阻塞，0 内存分配，120 FPS 丝滑运行
+ * 采用 Compose 纯原生 GPU 硬件加速多层连续黑体辐射光场模型，
+ * 包含超大范围环境散射日晕、等离子近日光晕、8 束纤细自转衍射星芒微羽、高动态日轮过渡层与极炽纯白光核。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1417,13 +1414,13 @@ private fun DrawScope.drawSunWithRays(
     val sunSpanRadius = width * (0.26f + pulseProgress * 0.015f) * state.diskScale
 
     // 1. 远景超大范围大气瑞利散射光晕 (环境色温染色天幕)
-    val outerCoronaRadius = sunSpanRadius * 2.1f
+    val outerCoronaRadius = sunSpanRadius * 2.2f
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                state.outerGlowColors[0].copy(alpha = state.outerGlowColors[0].alpha * masterAlpha),
-                state.outerGlowColors[1].copy(alpha = state.outerGlowColors[1].alpha * masterAlpha),
-                state.outerGlowColors[2].copy(alpha = state.outerGlowColors[2].alpha * masterAlpha),
+                state.outerGlowColors[0].copy(alpha = (state.outerGlowColors[0].alpha * masterAlpha * 1.15f).coerceIn(0f, 1f)),
+                state.outerGlowColors[1].copy(alpha = (state.outerGlowColors[1].alpha * masterAlpha * 1.10f).coerceIn(0f, 1f)),
+                state.outerGlowColors[2].copy(alpha = (state.outerGlowColors[2].alpha * masterAlpha).coerceIn(0f, 1f)),
                 Color.Transparent
             ),
             center = sunCenter,
@@ -1434,13 +1431,13 @@ private fun DrawScope.drawSunWithRays(
     )
 
     // 2. 中层自然等离子日冕光晕
-    val innerCoronaRadius = sunSpanRadius * 1.35f
+    val innerCoronaRadius = sunSpanRadius * 1.40f
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                state.innerGlowColors[0].copy(alpha = state.innerGlowColors[0].alpha * masterAlpha),
-                state.innerGlowColors[1].copy(alpha = state.innerGlowColors[1].alpha * masterAlpha),
-                state.innerGlowColors[2].copy(alpha = state.innerGlowColors[2].alpha * masterAlpha),
+                state.innerGlowColors[0].copy(alpha = (state.innerGlowColors[0].alpha * masterAlpha * 1.12f).coerceIn(0f, 1f)),
+                state.innerGlowColors[1].copy(alpha = (state.innerGlowColors[1].alpha * masterAlpha).coerceIn(0f, 1f)),
+                state.innerGlowColors[2].copy(alpha = (state.innerGlowColors[2].alpha * masterAlpha).coerceIn(0f, 1f)),
                 Color.Transparent
             ),
             center = sunCenter,
@@ -1452,11 +1449,11 @@ private fun DrawScope.drawSunWithRays(
 
     // 3. 柔和有机自转星芒光羽 (Soft Anamorphic Flares)
     if (state.rayAlphaScale > 0.05f) {
-        val flareRayAlpha = (0.12f * state.rayAlphaScale * masterAlpha).coerceIn(0f, 1f)
+        val flareRayAlpha = (0.15f * state.rayAlphaScale * masterAlpha).coerceIn(0f, 1f)
         if (flareRayAlpha > 0.01f) {
             rotate(degrees = rotation, pivot = sunCenter) {
-                // 绘制 4 束长宽渐变的柔和光芒
-                val flareRadius = sunSpanRadius * 1.6f
+                // 绘制 4 束长宽渐变的柔和光芒 (8 个主副方位)
+                val flareRadius = sunSpanRadius * 1.70f
                 for (i in 0 until 4) {
                     val angleRad = (i * 45f) * (PI.toFloat() / 180f)
                     val p1 = Offset(sunCenter.x + cos(angleRad) * flareRadius, sunCenter.y + sin(angleRad) * flareRadius)
@@ -1465,9 +1462,9 @@ private fun DrawScope.drawSunWithRays(
                         brush = Brush.linearGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                state.innerGlowColors[0].copy(alpha = flareRayAlpha),
+                                state.innerGlowColors[0].copy(alpha = flareRayAlpha * 0.7f),
                                 state.coreColors[0].copy(alpha = flareRayAlpha * 1.5f),
-                                state.innerGlowColors[0].copy(alpha = flareRayAlpha),
+                                state.innerGlowColors[0].copy(alpha = flareRayAlpha * 0.7f),
                                 Color.Transparent
                             ),
                             start = p1,
@@ -1475,7 +1472,7 @@ private fun DrawScope.drawSunWithRays(
                         ),
                         start = p1,
                         end = p2,
-                        strokeWidth = 3.5f + (i % 2) * 2.0f,
+                        strokeWidth = if (i % 2 == 0) 3.2f else 1.8f,
                         cap = StrokeCap.Round
                     )
                 }
@@ -1483,14 +1480,14 @@ private fun DrawScope.drawSunWithRays(
         }
     }
 
-    // 4. 炽热金白核心光核 (极高光连续洛伦兹幂律衰减辐射核心)
+    // 4. 炽热日盘本体高光过渡层 (依据当前色温自适应)
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                state.coreColors[0].copy(alpha = 0.98f * masterAlpha),
-                state.coreColors[1].copy(alpha = 0.88f * masterAlpha),
-                state.coreColors[2].copy(alpha = 0.55f * masterAlpha),
-                state.coreColors[3].copy(alpha = 0.18f * masterAlpha),
+                state.coreColors[0].copy(alpha = (0.98f * masterAlpha).coerceIn(0f, 1f)),
+                state.coreColors[1].copy(alpha = (0.88f * masterAlpha).coerceIn(0f, 1f)),
+                state.coreColors[2].copy(alpha = (0.55f * masterAlpha).coerceIn(0f, 1f)),
+                state.coreColors[3].copy(alpha = (0.18f * masterAlpha).coerceIn(0f, 1f)),
                 Color.Transparent
             ),
             center = sunCenter,
@@ -1498,6 +1495,13 @@ private fun DrawScope.drawSunWithRays(
         ),
         center = sunCenter,
         radius = sunSpanRadius * 0.75f
+    )
+
+    // 5. 日盘中心纯白极炽光核
+    drawCircle(
+        color = Color.White.copy(alpha = (0.95f * masterAlpha).coerceIn(0f, 1f)),
+        radius = sunSpanRadius * 0.20f,
+        center = sunCenter
     )
 }
 

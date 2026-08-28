@@ -1,5 +1,12 @@
 package com.weather.app.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +53,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -861,10 +870,316 @@ private fun formatMinutesToTime(minutes: Int): String {
 }
 
 /**
+ * 日出日落卡片太阳光学视觉特征参数
+ *
+ * @property photosphereCenterColor 日盘核心极炽光核中心色
+ * @property photosphereEdgeColor 日盘核心边缘色温过渡色
+ * @property innerCoronaColor 中层等离子日冕辉光色
+ * @property outerHaloColor 外层瑞利散射与漫射日晕色
+ * @property diffractionRayColor 衍射星芒微羽色
+ * @property skyGlowGradientColors 日照天光漫射光幕垂直渐变色彩列表
+ * @property rayIntensity 星芒与光芒强度比例 (0.0f ~ 1.0f)
+ * @property diskScale 太阳视直径缩放因子 (0.8f ~ 1.3f)
+ */
+private data class SolarCardVisualState(
+    val photosphereCenterColor: Color,
+    val photosphereEdgeColor: Color,
+    val innerCoronaColor: Color,
+    val outerHaloColor: Color,
+    val diffractionRayColor: Color,
+    val skyGlowGradientColors: List<Color>,
+    val rayIntensity: Float,
+    val diskScale: Float
+)
+
+/**
+ * 根据日照时间进度与昼夜状态计算太阳在卡片中的物理色温与光学参数
+ *
+ * 严格遵从自然光学原理与色温红移规律：
+ * 1. 清晨日出 (progress < 0.12)：穿透厚大气层产生强烈瑞利散射，呈现温润朱红/朝霞金橙朝阳；
+ * 2. 晨光跃升 (0.12 <= progress < 0.35)：色温迅速升高，转为璀璨金黄与暖白金；
+ * 3. 烈日正午 (0.35 <= progress <= 0.65)：直射天顶，光程最短，呈现纯白极炽光核 (6500K) 与耀眼星芒；
+ * 4. 午后斜阳 (0.65 < progress <= 0.88)：色温重归温润香槟金与暖琥珀金；
+ * 5. 晚霞落日 (progress > 0.88)：晚霞浓郁散射，呈现落日熔金紫红与深赤霞光。
+ *
+ * @param progress 归一化日照进度 (0.0f ~ 1.0f)
+ * @param isNight 是否为夜间模式
+ * @return 太阳卡片光学视觉状态对象 [SolarCardVisualState]
+ */
+private fun calculateCardSolarVisualState(
+    progress: Float,
+    isNight: Boolean
+): SolarCardVisualState {
+    if (isNight) {
+        return SolarCardVisualState(
+            photosphereCenterColor = Color(0xFF90CAF9),
+            photosphereEdgeColor = Color(0xFF37474F),
+            innerCoronaColor = Color(0x3364B5F6),
+            outerHaloColor = Color(0x1A1E88E5),
+            diffractionRayColor = Color(0x2290CAF9),
+            skyGlowGradientColors = listOf(Color(0x1564B5F6), Color(0x001E88E5)),
+            rayIntensity = 0.20f,
+            diskScale = 0.85f
+        )
+    }
+
+    val p = progress.coerceIn(0f, 1f)
+    return when {
+        // 1. 清晨日出 (0.00 ~ 0.12)：朱红朝阳，温润红日
+        p < 0.12f -> {
+            val t = p / 0.12f
+            SolarCardVisualState(
+                photosphereCenterColor = Color(0xFFFFF3E0),
+                photosphereEdgeColor = Color(0xFFFF5722),
+                innerCoronaColor = Color(0xFFFF7043).copy(alpha = 0.70f),
+                outerHaloColor = Color(0xFFFF3D00).copy(alpha = 0.30f),
+                diffractionRayColor = Color(0xFFFFAB91).copy(alpha = 0.75f),
+                skyGlowGradientColors = listOf(
+                    Color(0xFFFF7043).copy(alpha = 0.35f),
+                    Color(0xFFFF8A65).copy(alpha = 0.12f),
+                    Color(0xFFFF7043).copy(alpha = 0.01f)
+                ),
+                rayIntensity = 0.45f + 0.30f * t,
+                diskScale = 1.18f - 0.08f * t
+            )
+        }
+        // 2. 晨光跃升 (0.12 ~ 0.35)：璀璨金橙与亮金
+        p < 0.35f -> {
+            val t = (p - 0.12f) / 0.23f
+            SolarCardVisualState(
+                photosphereCenterColor = Color.White,
+                photosphereEdgeColor = Color(0xFFFFD54F),
+                innerCoronaColor = Color(0xFFFFCA28).copy(alpha = 0.75f),
+                outerHaloColor = Color(0xFFFFB300).copy(alpha = 0.32f),
+                diffractionRayColor = Color(0xFFFFF176).copy(alpha = 0.85f),
+                skyGlowGradientColors = listOf(
+                    Color(0xFFFFD54F).copy(alpha = 0.32f),
+                    Color(0xFFFFE082).copy(alpha = 0.10f),
+                    Color(0xFFFFD54F).copy(alpha = 0.01f)
+                ),
+                rayIntensity = 0.75f + 0.25f * t,
+                diskScale = 1.10f - 0.10f * t
+            )
+        }
+        // 3. 烈日正午 (0.35 ~ 0.65)：纯白极炽光核 (6500K)
+        p <= 0.65f -> {
+            SolarCardVisualState(
+                photosphereCenterColor = Color.White,
+                photosphereEdgeColor = Color(0xFFFFFDE7),
+                innerCoronaColor = Color(0xFFFFE082).copy(alpha = 0.80f),
+                outerHaloColor = Color(0xFFFFD54F).copy(alpha = 0.35f),
+                diffractionRayColor = Color(0xFFFFF9C4).copy(alpha = 0.95f),
+                skyGlowGradientColors = listOf(
+                    Color(0xFFFFD54F).copy(alpha = 0.30f),
+                    Color(0xFFFFF59D).copy(alpha = 0.08f),
+                    Color(0xFFFFD54F).copy(alpha = 0.01f)
+                ),
+                rayIntensity = 1.00f,
+                diskScale = 1.00f
+            )
+        }
+        // 4. 午后斜阳 (0.65 ~ 0.88)：温润香槟金与暖琥珀金
+        p < 0.88f -> {
+            val t = (p - 0.65f) / 0.23f
+            SolarCardVisualState(
+                photosphereCenterColor = Color.White,
+                photosphereEdgeColor = Color(0xFFFFB74D),
+                innerCoronaColor = Color(0xFFFF9800).copy(alpha = 0.75f),
+                outerHaloColor = Color(0xFFF57C00).copy(alpha = 0.30f),
+                diffractionRayColor = Color(0xFFFFE082).copy(alpha = 0.85f),
+                skyGlowGradientColors = listOf(
+                    Color(0xFFFFB74D).copy(alpha = 0.32f),
+                    Color(0xFFFFCC80).copy(alpha = 0.10f),
+                    Color(0xFFFFB74D).copy(alpha = 0.01f)
+                ),
+                rayIntensity = 1.00f - 0.30f * t,
+                diskScale = 1.00f + 0.10f * t
+            )
+        }
+        // 5. 晚霞落日 (0.88 ~ 1.00)：浓郁壮丽晚霞落日熔金
+        else -> {
+            val t = (p - 0.88f) / 0.12f
+            SolarCardVisualState(
+                photosphereCenterColor = Color(0xFFFFF3E0),
+                photosphereEdgeColor = Color(0xFFFF3D00),
+                innerCoronaColor = Color(0xFFFF5722).copy(alpha = 0.75f),
+                outerHaloColor = Color(0xFFD84315).copy(alpha = 0.35f),
+                diffractionRayColor = Color(0xFFFF8A65).copy(alpha = 0.80f),
+                skyGlowGradientColors = listOf(
+                    Color(0xFFFF5722).copy(alpha = 0.36f),
+                    Color(0xFFE64A19).copy(alpha = 0.12f),
+                    Color(0xFFFF5722).copy(alpha = 0.01f)
+                ),
+                rayIntensity = 0.70f - 0.30f * t,
+                diskScale = 1.10f + 0.10f * t
+            )
+        }
+    }
+}
+
+/**
+ * 绘制高保真拟真发光太阳天体图形
+ *
+ * 采用 Compose 原生硬件加速 5 重物理光学层次：
+ * 1. 广阔大气瑞利散射柔光外晕（超平滑向外消散）；
+ * 2. 中层等离子日冕辉光球（充盈饱满发光体）；
+ * 3. 8 束纤细通透自转衍射星芒微羽（4 束主光芒 + 4 束次光芒，双向渐变衰减）；
+ * 4. 日盘本体高光过渡层（依据色温动态变化）；
+ * 5. 日盘中心纯白极炽光核（高能光焦点）。
+ *
+ * @param center 太阳中心屏幕坐标 [Offset]
+ * @param state 太阳实时光学视觉状态 [SolarCardVisualState]
+ * @param pulse 呼吸脉动缩放系数
+ * @param rotationDeg 星芒自转角度 (0° ~ 360°)
+ * @param isNight 是否处于夜间模式
+ */
+private fun DrawScope.drawPhotorealisticSun(
+    center: Offset,
+    state: SolarCardVisualState,
+    pulse: Float,
+    rotationDeg: Float,
+    isNight: Boolean
+) {
+    if (isNight) {
+        // 夜间模式：地平线下方潜行天体微弱暗光标记
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFF90CAF9).copy(alpha = 0.35f),
+                    Color(0xFF1E88E5).copy(alpha = 0.10f),
+                    Color.Transparent
+                ),
+                center = center,
+                radius = 10.dp.toPx()
+            ),
+            radius = 10.dp.toPx(),
+            center = center
+        )
+        drawCircle(
+            color = Color.White.copy(alpha = 0.50f),
+            radius = 3.2.dp.toPx(),
+            center = center
+        )
+        return
+    }
+
+    val baseRadius = 6.4.dp.toPx() * state.diskScale * pulse
+
+    // 1. 最外层广阔大气瑞利散射柔光外晕
+    val outerHaloRadius = baseRadius * 3.8f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                state.outerHaloColor,
+                state.outerHaloColor.copy(alpha = state.outerHaloColor.alpha * 0.38f),
+                Color.Transparent
+            ),
+            center = center,
+            radius = outerHaloRadius
+        ),
+        radius = outerHaloRadius,
+        center = center
+    )
+
+    // 2. 中层等离子日冕辉光球
+    val coronaRadius = baseRadius * 2.15f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                state.innerCoronaColor,
+                state.innerCoronaColor.copy(alpha = state.innerCoronaColor.alpha * 0.32f),
+                Color.Transparent
+            ),
+            center = center,
+            radius = coronaRadius
+        ),
+        radius = coronaRadius,
+        center = center
+    )
+
+    // 3. 8 束纤细自转衍射星芒微羽 (Diffraction Spikes)
+    if (state.rayIntensity > 0.08f) {
+        val rayAlpha = (state.rayIntensity * 0.88f).coerceIn(0f, 1f)
+        rotate(degrees = rotationDeg, pivot = center) {
+            // 4 束长主星芒 (0°, 90°, 180°, 270°)
+            val majorRayLen = baseRadius * 2.8f
+            for (i in 0 until 2) {
+                val angleRad = (i * 90f) * (PI.toFloat() / 180f)
+                val p1 = Offset(center.x + cos(angleRad) * majorRayLen, center.y + sin(angleRad) * majorRayLen)
+                val p2 = Offset(center.x - cos(angleRad) * majorRayLen, center.y - sin(angleRad) * majorRayLen)
+                drawLine(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            state.diffractionRayColor.copy(alpha = rayAlpha * 0.90f),
+                            Color.White.copy(alpha = rayAlpha),
+                            state.diffractionRayColor.copy(alpha = rayAlpha * 0.90f),
+                            Color.Transparent
+                        ),
+                        start = p1,
+                        end = p2
+                    ),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 1.4.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+            // 4 束次星芒 (45°, 135°, 225°, 315°)
+            val minorRayLen = baseRadius * 1.95f
+            for (i in 0 until 2) {
+                val angleRad = (45f + i * 90f) * (PI.toFloat() / 180f)
+                val p1 = Offset(center.x + cos(angleRad) * minorRayLen, center.y + sin(angleRad) * minorRayLen)
+                val p2 = Offset(center.x - cos(angleRad) * minorRayLen, center.y - sin(angleRad) * minorRayLen)
+                drawLine(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            state.diffractionRayColor.copy(alpha = rayAlpha * 0.55f),
+                            state.photosphereCenterColor.copy(alpha = rayAlpha * 0.75f),
+                            state.diffractionRayColor.copy(alpha = rayAlpha * 0.55f),
+                            Color.Transparent
+                        ),
+                        start = p1,
+                        end = p2
+                    ),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 1.0.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+    }
+
+    // 4. 日盘本体高光过渡层
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                state.photosphereCenterColor,
+                state.photosphereEdgeColor,
+                state.innerCoronaColor.copy(alpha = 0.50f)
+            ),
+            center = center,
+            radius = baseRadius
+        ),
+        radius = baseRadius,
+        center = center
+    )
+
+    // 5. 日盘中心纯白极炽光核
+    drawCircle(
+        color = Color.White,
+        radius = baseRadius * 0.46f,
+        center = center
+    )
+}
+
+/**
  * 真实日出日落卡片组件
  *
- * 结合当前城市地理经纬度与 NOAA 高精度天文算法，展示当日日出日落时间、太阳实时运行轨迹拱弧与白昼时长。
- * 支持系统时间修改及应用返回前台时的秒级即时动态刷新。
+ * 结合当前城市地理经纬度与 NOAA 高精度天文算法，展示当日日出日落时间、写实太阳实时运行轨迹拱弧与白昼倒计时。
+ * 太阳图形采用高保真 5 重物理光学模型，支持色温演变、自转衍射星芒与呼吸脉动。
  *
  * @param city 当前城市实体 [CityInfo]
  * @param modifier 外部修饰符
@@ -896,6 +1211,27 @@ private fun SunriseSunsetRealCard(
             delay(1000L)
         }
     }
+
+    // 太阳图形呼吸与星芒自转动画
+    val animTransition = rememberInfiniteTransition(label = "CardSunAnim")
+    val sunPulse by animTransition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sunPulse"
+    )
+    val rayRotation by animTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(24000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rayRotation"
+    )
 
     val calendar = remember(currentSystemTimeMillis / 10000L) {
         Calendar.getInstance().apply { timeInMillis = currentSystemTimeMillis }
@@ -929,6 +1265,11 @@ private fun SunriseSunsetRealCard(
         val remM = remaining % 60
         val remDesc = if (remH > 0) "${remH}小时${remM}分" else "${remM}分钟"
         Pair(sunriseStr, "距日出还有 $remDesc")
+    }
+
+    val sunProgress = celestial.sunProgress.coerceIn(0f, 1f)
+    val solarVisualState = remember(sunProgress, isNight) {
+        calculateCardSolarVisualState(sunProgress, isNight)
     }
 
     MetricBaseCard(
@@ -965,31 +1306,40 @@ private fun SunriseSunsetRealCard(
             // 3. 太阳天球拱形轨迹 Canvas
             val arcPath = remember { Path() }
             val passedPath = remember { Path() }
-            val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f) }
+            val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f) }
 
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(34.dp)
+                    .height(36.dp)
             ) {
                 val w = size.width
                 val h = size.height
 
-                val startX = 4.dp.toPx()
-                val endX = w - 4.dp.toPx()
-                val horizonY = h - 1.5.dp.toPx()
-                val arcHeight = h * 0.88f
+                val startX = 6.dp.toPx()
+                val endX = w - 6.dp.toPx()
+                val horizonY = h - 2.5.dp.toPx()
+                val arcHeight = h * 0.86f
 
-                // 1. 绘制地平线细线
+                // 1. 绘制地平线渐变细线
                 drawLine(
-                    color = Color.White.copy(alpha = 0.30f),
-                    start = Offset(startX - 2.dp.toPx(), horizonY),
-                    end = Offset(endX + 2.dp.toPx(), horizonY),
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.40f),
+                            Color.White.copy(alpha = 0.40f),
+                            Color.White.copy(alpha = 0.10f)
+                        ),
+                        startX = startX - 4.dp.toPx(),
+                        endX = endX + 4.dp.toPx()
+                    ),
+                    start = Offset(startX - 4.dp.toPx(), horizonY),
+                    end = Offset(endX + 4.dp.toPx(), horizonY),
                     strokeWidth = 1.2f,
                     cap = StrokeCap.Round
                 )
 
-                // 2. 绘制完整白昼拱形轨迹路径 (复用 Path 避免垃圾回收)
+                // 2. 绘制完整白昼拱形轨迹路径
                 arcPath.reset()
                 arcPath.moveTo(startX, horizonY)
                 arcPath.cubicTo(
@@ -1001,26 +1351,25 @@ private fun SunriseSunsetRealCard(
                 // 轨迹底虚线
                 drawPath(
                     path = arcPath,
-                    color = Color.White.copy(alpha = 0.35f),
+                    color = Color.White.copy(alpha = 0.32f),
                     style = Stroke(
-                        width = 2.0f,
+                        width = 1.8f,
                         cap = StrokeCap.Round,
                         pathEffect = dashEffect
                     )
                 )
 
                 // 3. 计算当前太阳位置
-                val progress = celestial.sunProgress.coerceIn(0f, 1f)
-                val sunX = startX + progress * (endX - startX)
-                val sunY = horizonY - sin(progress * PI.toFloat()) * (arcHeight * 0.88f)
+                val sunX = startX + sunProgress * (endX - startX)
+                val sunY = horizonY - sin(sunProgress * PI.toFloat()) * (arcHeight * 0.88f)
 
-                // 如果处于白天，绘制已走过轨迹的高亮渐变弧线与天光漫射填充
-                if (!isNight && progress > 0f) {
+                // 如果处于白天，绘制已走过轨迹的天光漫射渐变光幕与高亮弧线
+                if (!isNight && sunProgress > 0f) {
                     passedPath.reset()
                     passedPath.moveTo(startX, horizonY)
-                    val stepCount = (progress * 30).toInt().coerceAtLeast(1)
+                    val stepCount = (sunProgress * 32).toInt().coerceAtLeast(2)
                     for (i in 1..stepCount) {
-                        val t = (i.toFloat() / 30f).coerceAtMost(progress)
+                        val t = (i.toFloat() / 32f).coerceAtMost(sunProgress)
                         val px = startX + t * (endX - startX)
                         val py = horizonY - sin(t * PI.toFloat()) * (arcHeight * 0.88f)
                         passedPath.lineTo(px, py)
@@ -1031,56 +1380,58 @@ private fun SunriseSunsetRealCard(
                     drawPath(
                         path = passedPath,
                         brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xFFFFD54F).copy(alpha = 0.25f),
-                                Color(0xFFFFD54F).copy(alpha = 0.02f)
-                            ),
+                            colors = solarVisualState.skyGlowGradientColors,
                             startY = sunY,
                             endY = horizonY
                         )
                     )
                 }
 
-                // 4. 绘制太阳实体发光粒子
-                if (!isNight) {
-                    // 外层柔光日晕
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFFFD54F).copy(alpha = 0.70f),
-                                Color(0xFFFFB300).copy(alpha = 0.25f),
-                                Color.Transparent
-                            ),
-                            center = Offset(sunX, sunY),
-                            radius = 13.dp.toPx()
-                        ),
-                        radius = 13.dp.toPx(),
-                        center = Offset(sunX, sunY)
-                    )
-                    // 中层暖金核心
-                    drawCircle(
-                        color = Color(0xFFFFD54F),
-                        radius = 4.2.dp.toPx(),
-                        center = Offset(sunX, sunY)
-                    )
-                    // 内层纯白极高光点
-                    drawCircle(
-                        color = Color.White,
-                        radius = 2.4.dp.toPx(),
-                        center = Offset(sunX, sunY)
-                    )
+                // 4. 地平线日出/日落端点精致光标 (Sunrise & Sunset Horizon Anchors)
+                // 日出锚点
+                drawCircle(
+                    color = Color(0xFFFFAB91).copy(alpha = 0.45f),
+                    radius = 3.0.dp.toPx(),
+                    center = Offset(startX, horizonY)
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.90f),
+                    radius = 1.5.dp.toPx(),
+                    center = Offset(startX, horizonY)
+                )
+                // 日落锚点
+                drawCircle(
+                    color = Color(0xFFFF8A65).copy(alpha = 0.45f),
+                    radius = 3.0.dp.toPx(),
+                    center = Offset(endX, horizonY)
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.90f),
+                    radius = 1.5.dp.toPx(),
+                    center = Offset(endX, horizonY)
+                )
+
+                // 5. 绘制高保真拟真 5 重物理光学太阳天体图形
+                val renderSunCenter = if (!isNight) {
+                    Offset(sunX, sunY)
                 } else {
-                    // 夜间模式：地平线下方轻微沉落标识
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.45f),
-                        radius = 3.5.dp.toPx(),
-                        center = Offset(if (currentMinutes >= celestial.sunsetMinutes) endX else startX, horizonY + 2.dp.toPx())
+                    Offset(
+                        if (currentMinutes >= celestial.sunsetMinutes) endX else startX,
+                        horizonY + 3.dp.toPx()
                     )
                 }
+
+                drawPhotorealisticSun(
+                    center = renderSunCenter,
+                    state = solarVisualState,
+                    pulse = sunPulse,
+                    rotationDeg = rayRotation,
+                    isNight = isNight
+                )
             }
 
             // 4. 拱形轨迹与下方时间小字之间的留白间隔
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
             // 5. 地平线两端日出日落时间标注（纯白色高保真文字）
             Row(
