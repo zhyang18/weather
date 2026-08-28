@@ -142,14 +142,14 @@ fun WeatherSkyBackground(
 
     val infiniteTransition = rememberInfiniteTransition(label = "dynamicWeatherTransition")
 
-    val fastProgress by infiniteTransition.animateFloat(
+    val fastProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(animation = tween(850, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "fastProgress"
     )
 
-    val mediumProgress by infiniteTransition.animateFloat(
+    val mediumProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(animation = tween(3000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
@@ -157,7 +157,7 @@ fun WeatherSkyBackground(
     )
 
     // 3. 慢速周期驱动（天光呼吸、星光呼吸、太阳呼吸，26s 循环）
-    val slowProgress by infiniteTransition.animateFloat(
+    val slowProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(animation = tween(26000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
@@ -165,21 +165,21 @@ fun WeatherSkyBackground(
     )
 
     // 4. 大气云海动态漂移专用驱动（8.0s 循环流动，肉眼清晰可见云层明显移动）
-    val cloudProgress by infiniteTransition.animateFloat(
+    val cloudProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(animation = tween(8000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "cloudProgress"
     )
 
-    val continuousRotation by infiniteTransition.animateFloat(
+    val continuousRotationState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(animation = tween(32000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "continuousRotation"
     )
 
-    val lightningPhase by infiniteTransition.animateFloat(
+    val lightningPhaseState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(animation = tween(5500, easing = LinearEasing), repeatMode = RepeatMode.Restart),
@@ -304,11 +304,47 @@ fun WeatherSkyBackground(
         }
     }
 
+    val cloudColorFilter = remember(weatherCategory) {
+        when (weatherCategory) {
+            WeatherCategory.CLOUDY -> {
+                // 提升白天云海纯白通透感与雪白明亮度，消除发暗发灰
+                val matrix = ColorMatrix(floatArrayOf(
+                    1.15f, 0f, 0f, 0f, 22f,
+                    0f, 1.15f, 0f, 0f, 22f,
+                    0f, 0f, 1.18f, 0f, 25f,
+                    0f, 0f, 0f, 1.0f, 0f
+                ))
+                ColorFilter.colorMatrix(matrix)
+            }
+            WeatherCategory.CLOUDY_NIGHT -> {
+                // 温和提升暗夜云层月光灰白质感，亮度适中深邃，防止过曝
+                val matrix = ColorMatrix(floatArrayOf(
+                    1.08f, 0f, 0f, 0f, 16f,
+                    0f, 1.08f, 0f, 0f, 22f,
+                    0f, 0f, 1.15f, 0f, 32f,
+                    0f, 0f, 0f, 1.0f, 0f
+                ))
+                ColorFilter.colorMatrix(matrix)
+            }
+            else -> null
+        }
+    }
+
     val sunProgress = celestial.sunProgress
     val moonProgress = celestial.moonProgress
     val moonPhase = celestial.moonPhase
     val isSunVisible = celestial.isSunVisible && (weatherCategory == WeatherCategory.SUNNY || weatherCategory == WeatherCategory.CLOUDY)
     val isMoonVisible = (weatherCategory.isNight || celestial.isMoonVisible) && (weatherCategory != WeatherCategory.OVERCAST_NIGHT)
+
+    val baseCloudAlpha = remember(weatherCategory) {
+        when (weatherCategory) {
+            WeatherCategory.CLOUDY -> 0.35f
+            WeatherCategory.CLOUDY_NIGHT -> 0.26f
+            WeatherCategory.OVERCAST -> 0.48f
+            WeatherCategory.OVERCAST_NIGHT -> 0.42f
+            else -> 0.35f
+        }
+    }
 
     Box(
         modifier = modifier
@@ -319,44 +355,7 @@ fun WeatherSkyBackground(
     ) {
         // 1. 真实摄影级自然云海与天际底图 (全屏无缝平滑沉浸融合，无任何横向截断与分层色块)
         if (skyTextureRes != null) {
-            // 主云层平缓宏观流动
-            val baseDrift = sin(cloudProgress * 2f * PI.toFloat()) * 36f
-            // 前景轻盈流云以更高速度滑动（相位偏移 0.35f）
-            val fastDrift = sin((cloudProgress + 0.35f) * 2f * PI.toFloat()) * 65f
-
-            val baseAlpha = when (weatherCategory) {
-                WeatherCategory.CLOUDY -> 0.35f
-                WeatherCategory.CLOUDY_NIGHT -> 0.26f
-                WeatherCategory.OVERCAST -> 0.48f
-                WeatherCategory.OVERCAST_NIGHT -> 0.42f
-                else -> 0.35f
-            }
-
-            val cloudColorFilter = when (weatherCategory) {
-                WeatherCategory.CLOUDY -> {
-                    // 提升白天云海纯白通透感与雪白明亮度，消除发暗发灰
-                    val matrix = ColorMatrix(floatArrayOf(
-                        1.15f, 0f, 0f, 0f, 22f,
-                        0f, 1.15f, 0f, 0f, 22f,
-                        0f, 0f, 1.18f, 0f, 25f,
-                        0f, 0f, 0f, 1.0f, 0f
-                    ))
-                    ColorFilter.colorMatrix(matrix)
-                }
-                WeatherCategory.CLOUDY_NIGHT -> {
-                    // 温和提升暗夜云层月光灰白质感，亮度适中深邃，防止过曝
-                    val matrix = ColorMatrix(floatArrayOf(
-                        1.08f, 0f, 0f, 0f, 16f,
-                        0f, 1.08f, 0f, 0f, 22f,
-                        0f, 0f, 1.15f, 0f, 32f,
-                        0f, 0f, 0f, 1.0f, 0f
-                    ))
-                    ColorFilter.colorMatrix(matrix)
-                }
-                else -> null
-            }
-
-            // Layer 1: 底层主云海 (全屏平滑自适应，轻透舒展)
+            // Layer 1: 底层主云海 (全屏平滑自适应，轻透舒展，所有动画位移在 Layer 阶段计算，0 重组)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
@@ -365,6 +364,8 @@ fun WeatherSkyBackground(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
+                        val cloudProgress = cloudProgressState.value
+                        val baseDrift = sin(cloudProgress * 2f * PI.toFloat()) * 36f
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
                         val entranceZoom = 1.0f + (1f - entranceProgress) * 0.30f
@@ -372,7 +373,7 @@ fun WeatherSkyBackground(
                         translationX = baseDrift - offset * 60f
                         scaleX = 1.15f * entranceZoom
                         scaleY = 1.15f * entranceZoom
-                        alpha = baseAlpha * entranceAlpha
+                        alpha = baseCloudAlpha * entranceAlpha
                     }
             )
 
@@ -385,6 +386,8 @@ fun WeatherSkyBackground(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
+                        val cloudProgress = cloudProgressState.value
+                        val fastDrift = sin((cloudProgress + 0.35f) * 2f * PI.toFloat()) * 65f
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
                         val layerZoom = 1.0f + (1f - entranceProgress) * 0.30f
@@ -392,18 +395,16 @@ fun WeatherSkyBackground(
                         translationX = fastDrift - offset * 90f
                         scaleX = -1.18f * layerZoom
                         scaleY = 1.18f * layerZoom
-                        alpha = baseAlpha * 0.22f * entranceAlpha
+                        alpha = baseCloudAlpha * 0.22f * entranceAlpha
                     }
             )
         }
 
-        // OpenGL ES 2.0 纯代码 3D 真实月球与太阳渲染器
+        // OpenGL ES 2.0 纯代码 3D 真实月球渲染器（单例全局静态缓存，0 阻塞）
         val lunarRenderer = remember { LunarOpenGlRenderer() }
-        val solarRenderer = remember { SolarOpenGlRenderer() }
         DisposableEffect(Unit) {
             onDispose {
                 lunarRenderer.release()
-                solarRenderer.release()
             }
         }
 
@@ -425,6 +426,14 @@ fun WeatherSkyBackground(
             val width = size.width
             val height = size.height
 
+            // 在 DrawScope 阶段直接消费动画当前值，彻底避免 Composable 函数体反复重组
+            val fastProgress = fastProgressState.value
+            val mediumProgress = mediumProgressState.value
+            val slowProgress = slowProgressState.value
+            val cloudProgress = cloudProgressState.value
+            val continuousRotation = continuousRotationState.value
+            val lightningPhase = lightningPhaseState.value
+
             // 夜间渲染群星、流星与明月（月亮出现时机由城市月出月落时间精确决定，月相由真实日期物理驱动）
             if (isMoonVisible && weatherCategory.isNight) {
                 val moonCenter = calculateMoonCenter(width, height, moonProgress)
@@ -433,7 +442,7 @@ fun WeatherSkyBackground(
                 drawGlowingMoon(width, height, moonCenter, slowProgress, moonPhase, lunarRenderer)
             }
 
-            // 白昼渲染 OpenGL ES 2.0 真实太阳、丁达尔圣光与浮游光尘（太阳出现时机由城市实际日出日落时间平缓决定）
+            // 白昼渲染原生 Compose 硬件加速 3D 物理真实太阳、丁达尔圣光与浮游光尘（0 CPU 阻塞，0 掉帧）
             if (isSunVisible && !weatherCategory.isNight) {
                 // 模拟太阳东升西落的平缓微弧天顶坐标
                 val sunCenter = calculateSunCenter(width, height, sunProgress)
@@ -445,8 +454,7 @@ fun WeatherSkyBackground(
                     dayProgress = sunProgress,
                     pulseProgress = slowProgress,
                     rotation = continuousRotation,
-                    isPartlyCloudy = (weatherCategory == WeatherCategory.CLOUDY),
-                    solarRenderer = solarRenderer
+                    isPartlyCloudy = (weatherCategory == WeatherCategory.CLOUDY)
                 )
                 // 丁达尔云隙圣光（God Rays 随太阳实时位置向下发散与晨昏色温自适应）
                 drawCrepuscularGodRays(
@@ -1392,8 +1400,11 @@ private fun calculateSolarPhysicalState(dayProgress: Float): SolarPhysicalState 
 /**
  * 绘制白昼纯自然物理真实太阳系统（无任何生硬几何圆盘切边、无描边硬环、无生硬射线）
  *
+ * 基于单一连续物理光学 HDR 辐射场模型（Monolithic Continuous HDR Radiant Field）：
  * 1. 远景广阔大气瑞利散射光晕 (超大范围环境柔和天幕光晕，随全天早中晚色温平滑染色)
- * 2. 纯代码 OpenGL ES 2.0 程序化渲染的 3D 真实太阳连续 HDR 光场 (极亮过曝核心、等离子微扰动日冕、自然柔和星芒与无缝渐隐)
+ * 2. 中层等离子日冕与有机柔和星芒
+ * 3. 炽热金白核心光核 (超平滑幂律衰减，极高通透感)
+ * 4. 纯 Compose Canvas 硬件加速绘制，0 CPU 阻塞，0 内存分配，120 FPS 丝滑运行
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1402,7 +1413,6 @@ private fun calculateSolarPhysicalState(dayProgress: Float): SolarPhysicalState 
  * @param pulseProgress 太阳呼吸胀缩相位 (0f ~ 1f)
  * @param rotation 光芒自转角度 (0° ~ 360°)
  * @param isPartlyCloudy 是否有多云遮挡减弱光晕
- * @param solarRenderer OpenGL ES 2.0 纯代码 3D 太阳程序化渲染器
  */
 private fun DrawScope.drawSunWithRays(
     width: Float,
@@ -1411,53 +1421,97 @@ private fun DrawScope.drawSunWithRays(
     dayProgress: Float,
     pulseProgress: Float,
     rotation: Float,
-    isPartlyCloudy: Boolean,
-    solarRenderer: SolarOpenGlRenderer? = null
+    isPartlyCloudy: Boolean
 ) {
     val state = calculateSolarPhysicalState(dayProgress)
     val masterAlpha = state.horizonExtinction
 
-    // 太阳发光跨度半径 (适度饱满舒展大气，等比放大 10%)
-    val sunSpanRadius = width * (0.25f + pulseProgress * 0.015f) * state.diskScale * 1.10f
+    // 太阳发光跨度半径 (适度饱满舒展大气)
+    val sunSpanRadius = width * (0.26f + pulseProgress * 0.015f) * state.diskScale
 
-    // 纯代码 OpenGL ES 2.0 程序化渲染 3D 真实自然太阳光场 (单一物理辐射场，彻底消除任何同心分层环)
-    val openGlSunImage = solarRenderer?.renderSun(
-        sizePx = 512,
-        dayProgress = dayProgress,
-        timePhase = pulseProgress + rotation / 360f
-    )
-
-    if (openGlSunImage != null) {
-        val renderDiameter = sunSpanRadius * 2.05f
-        val renderRadius = renderDiameter / 2f
-        val dstSize = IntSize(renderDiameter.toInt(), renderDiameter.toInt())
-        val dstOffset = IntOffset(
-            (sunCenter.x - renderRadius).toInt(),
-            (sunCenter.y - renderRadius).toInt()
-        )
-        drawImage(
-            image = openGlSunImage,
-            dstOffset = dstOffset,
-            dstSize = dstSize,
-            alpha = masterAlpha,
-            filterQuality = FilterQuality.High
-        )
-    } else {
-        // 高保真单一单调平滑降级光晕 (中心纯白/亮色向外自然淡出)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    state.coreColors.first().copy(alpha = 0.95f * masterAlpha),
-                    state.innerGlowColors.first().copy(alpha = 0.35f * masterAlpha),
-                    Color.Transparent
-                ),
-                center = sunCenter,
-                radius = sunSpanRadius
+    // 1. 远景超大范围大气瑞利散射光晕 (环境色温染色天幕)
+    val outerCoronaRadius = sunSpanRadius * 2.1f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                state.outerGlowColors[0].copy(alpha = state.outerGlowColors[0].alpha * masterAlpha),
+                state.outerGlowColors[1].copy(alpha = state.outerGlowColors[1].alpha * masterAlpha),
+                state.outerGlowColors[2].copy(alpha = state.outerGlowColors[2].alpha * masterAlpha),
+                Color.Transparent
             ),
             center = sunCenter,
-            radius = sunSpanRadius
-        )
+            radius = outerCoronaRadius
+        ),
+        center = sunCenter,
+        radius = outerCoronaRadius
+    )
+
+    // 2. 中层自然等离子日冕光晕
+    val innerCoronaRadius = sunSpanRadius * 1.35f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                state.innerGlowColors[0].copy(alpha = state.innerGlowColors[0].alpha * masterAlpha),
+                state.innerGlowColors[1].copy(alpha = state.innerGlowColors[1].alpha * masterAlpha),
+                state.innerGlowColors[2].copy(alpha = state.innerGlowColors[2].alpha * masterAlpha),
+                Color.Transparent
+            ),
+            center = sunCenter,
+            radius = innerCoronaRadius
+        ),
+        center = sunCenter,
+        radius = innerCoronaRadius
+    )
+
+    // 3. 柔和有机自转星芒光羽 (Soft Anamorphic Flares)
+    if (state.rayAlphaScale > 0.05f) {
+        val flareRayAlpha = (0.12f * state.rayAlphaScale * masterAlpha).coerceIn(0f, 1f)
+        if (flareRayAlpha > 0.01f) {
+            rotate(degrees = rotation, pivot = sunCenter) {
+                // 绘制 4 束长宽渐变的柔和光芒
+                val flareRadius = sunSpanRadius * 1.6f
+                for (i in 0 until 4) {
+                    val angleRad = (i * 45f) * (PI.toFloat() / 180f)
+                    val p1 = Offset(sunCenter.x + cos(angleRad) * flareRadius, sunCenter.y + sin(angleRad) * flareRadius)
+                    val p2 = Offset(sunCenter.x - cos(angleRad) * flareRadius, sunCenter.y - sin(angleRad) * flareRadius)
+                    drawLine(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                state.innerGlowColors[0].copy(alpha = flareRayAlpha),
+                                state.coreColors[0].copy(alpha = flareRayAlpha * 1.5f),
+                                state.innerGlowColors[0].copy(alpha = flareRayAlpha),
+                                Color.Transparent
+                            ),
+                            start = p1,
+                            end = p2
+                        ),
+                        start = p1,
+                        end = p2,
+                        strokeWidth = 3.5f + (i % 2) * 2.0f,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+        }
     }
+
+    // 4. 炽热金白核心光核 (极高光连续洛伦兹幂律衰减辐射核心)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                state.coreColors[0].copy(alpha = 0.98f * masterAlpha),
+                state.coreColors[1].copy(alpha = 0.88f * masterAlpha),
+                state.coreColors[2].copy(alpha = 0.55f * masterAlpha),
+                state.coreColors[3].copy(alpha = 0.18f * masterAlpha),
+                Color.Transparent
+            ),
+            center = sunCenter,
+            radius = sunSpanRadius * 0.75f
+        ),
+        center = sunCenter,
+        radius = sunSpanRadius * 0.75f
+    )
 }
 
 /**

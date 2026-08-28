@@ -56,13 +56,19 @@ fun Modifier.directionLockDetector(
 
     pointerInput(Unit) {
         awaitPointerEventScope {
+            var lastDispatchedLock = ScrollDirectionLock.UNDETERMINED
+
             while (true) {
                 // 等待手指按下
                 val downEvent = awaitPointerEvent(PointerEventPass.Initial)
                 val firstDown = downEvent.changes.firstOrNull { it.pressed } ?: continue
                 val downPosition = firstDown.position
                 var currentLock = ScrollDirectionLock.UNDETERMINED
-                currentOnDirectionLocked(ScrollDirectionLock.UNDETERMINED)
+
+                if (lastDispatchedLock != ScrollDirectionLock.UNDETERMINED) {
+                    lastDispatchedLock = ScrollDirectionLock.UNDETERMINED
+                    currentOnDirectionLocked(ScrollDirectionLock.UNDETERMINED)
+                }
 
                 // 在手势移动过程中持续追踪位移
                 while (true) {
@@ -71,7 +77,8 @@ fun Modifier.directionLockDetector(
 
                     // 如果所有手指均已离开屏幕或被取消，结束本次手势生命周期
                     if (activeChanges.isEmpty()) {
-                        if (currentLock != ScrollDirectionLock.UNDETERMINED) {
+                        if (lastDispatchedLock != ScrollDirectionLock.UNDETERMINED) {
+                            lastDispatchedLock = ScrollDirectionLock.UNDETERMINED
                             currentOnDirectionLocked(ScrollDirectionLock.UNDETERMINED)
                         }
                         break
@@ -92,11 +99,17 @@ fun Modifier.directionLockDetector(
                         if (absDy >= absDx * verticalRatio) {
                             // 垂直分量明显占优，锁定为垂直滚动（上下翻阅卡片或下拉刷新）
                             currentLock = ScrollDirectionLock.VERTICAL
-                            currentOnDirectionLocked(ScrollDirectionLock.VERTICAL)
+                            if (lastDispatchedLock != ScrollDirectionLock.VERTICAL) {
+                                lastDispatchedLock = ScrollDirectionLock.VERTICAL
+                                currentOnDirectionLocked(ScrollDirectionLock.VERTICAL)
+                            }
                         } else if (absDx > absDy * horizontalRatio) {
                             // 水平分量明显占优，锁定为水平切页（左右切换城市）
                             currentLock = ScrollDirectionLock.HORIZONTAL
-                            currentOnDirectionLocked(ScrollDirectionLock.HORIZONTAL)
+                            if (lastDispatchedLock != ScrollDirectionLock.HORIZONTAL) {
+                                lastDispatchedLock = ScrollDirectionLock.HORIZONTAL
+                                currentOnDirectionLocked(ScrollDirectionLock.HORIZONTAL)
+                            }
                         }
                     }
                 }
