@@ -74,9 +74,13 @@ import com.weather.app.ui.components.WeatherAlertCard
 import com.weather.app.ui.components.WeatherDetailGrid
 import com.weather.app.ui.components.WeatherSkyBackground
 import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
-import com.weather.app.ui.dialogs.PrivacyAgreementDialog
+import com.weather.app.ui.dialogs.BackupRestoreDialog
 import com.weather.app.ui.dialogs.CitySelectionSheet
+import com.weather.app.ui.dialogs.PrivacyAgreementDialog
+import com.weather.app.ui.dialogs.RestoreConfirmationDialog
 import com.weather.app.ui.dialogs.SourceSelectionSheet
 import com.weather.app.ui.dialogs.UpdateIntervalDialog
 import com.weather.app.ui.dialogs.WeatherSettingsMenu
@@ -104,8 +108,49 @@ fun WeatherScreen(
     onRequestLocationPermission: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 导出备份文件 Launcher
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportBackupToUri(
+                uri = uri,
+                onSuccess = {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("数据备份已成功导出")
+                    }
+                },
+                onError = { error ->
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("备份导出失败: $error")
+                    }
+                }
+            )
+        }
+    }
+
+    // 导入恢复备份文件 Launcher
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.parseBackupFile(
+                uri = uri,
+                onSuccess = { backupData ->
+                    viewModel.setPendingRestoreData(backupData)
+                },
+                onError = { error ->
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("备份文件解析失败: $error")
+                    }
+                }
+            )
+        }
+    }
 
     val cityCount = uiState.savedCities.size.coerceAtLeast(1)
     val pagerState = rememberPagerState(
@@ -192,6 +237,7 @@ fun WeatherScreen(
                 onSourceClick = { viewModel.setShowSourceDialog(true) },
                 onIntervalClick = { viewModel.showIntervalDialog(true) },
                 onLocationSettingsClick = { viewModel.setShowLocationSettings(true) },
+                onBackupRestoreClick = { viewModel.setShowBackupRestoreDialog(true) },
                 onPrivacyClick = { viewModel.setShowPrivacyDialog(true) }
             )
 
@@ -300,6 +346,9 @@ fun WeatherScreen(
             onConfigureQWeatherClick = {
                 viewModel.setShowQWeatherConfigDialog(true)
             },
+            onConfigureCaiyunClick = {
+                viewModel.setShowCaiyunConfigDialog(true)
+            },
             onDismiss = { viewModel.setShowSourceDialog(false) }
         )
     }
@@ -317,6 +366,19 @@ fun WeatherScreen(
         )
     }
 
+    // 彩云天气 Token 凭据配置对话框
+    if (uiState.showCaiyunConfigDialog) {
+        com.weather.app.ui.dialogs.CaiyunConfigDialog(
+            config = uiState.caiyunConfig,
+            onSave = { config ->
+                viewModel.saveCaiyunConfig(config)
+            },
+            onDismiss = {
+                viewModel.setShowCaiyunConfigDialog(false)
+            }
+        )
+    }
+
     // 请求失败或数据不符合弹框提示
     uiState.errorMessage?.let { errorMsg ->
         com.weather.app.ui.dialogs.WeatherErrorDialog(
@@ -327,6 +389,9 @@ fun WeatherScreen(
             },
             onConfigureQWeatherClick = {
                 viewModel.setShowQWeatherConfigDialog(true)
+            },
+            onConfigureCaiyunClick = {
+                viewModel.setShowCaiyunConfigDialog(true)
             },
             onDismiss = {
                 viewModel.clearErrorMessage()
@@ -416,6 +481,56 @@ fun WeatherScreen(
             )
         }
     }
+
+    // 数据备份与恢复底部操作抽屉 (由设置菜单触发)
+    if (uiState.showBackupRestoreDialog) {
+        BackupRestoreDialog(
+            onExportClick = {
+                exportBackupLauncher.launch(viewModel.getDefaultBackupFileName())
+            },
+            onShareClick = {
+                viewModel.shareBackupFile(
+                    context = context,
+                    onError = { errorMsg ->
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar(errorMsg)
+                        }
+                    }
+                )
+            },
+            onImportClick = {
+                importBackupLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
+            },
+            onDismiss = {
+                viewModel.setShowBackupRestoreDialog(false)
+            }
+        )
+    }
+
+    // 备份数据恢复确认对话框 (导入合法备份文件后触发二次确认)
+    uiState.pendingRestoreData?.let { pendingData ->
+        RestoreConfirmationDialog(
+            backupData = pendingData,
+            onConfirm = {
+                viewModel.confirmRestore(
+                    backupData = pendingData,
+                    onSuccess = {
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("数据已成功恢复，城市与配置已全部更新")
+                        }
+                    },
+                    onError = { errorMsg ->
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar(errorMsg)
+                        }
+                    }
+                )
+            },
+            onDismiss = {
+                viewModel.setPendingRestoreData(null)
+            }
+        )
+    }
 }
 
 /**
@@ -432,6 +547,7 @@ fun WeatherScreen(
  * @param onSourceClick 点击切换天气源回调
  * @param onIntervalClick 点击设置更新间隔回调
  * @param onLocationSettingsClick 点击打开定位设置回调
+ * @param onBackupRestoreClick 点击打开数据备份与恢复回调
  * @param onPrivacyClick 点击打开隐私协议与免责声明回调
  */
 @Composable
@@ -447,6 +563,7 @@ private fun TopImmersiveWeatherBar(
     onSourceClick: () -> Unit,
     onIntervalClick: () -> Unit,
     onLocationSettingsClick: () -> Unit,
+    onBackupRestoreClick: () -> Unit = {},
     onPrivacyClick: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -593,6 +710,7 @@ private fun TopImmersiveWeatherBar(
                 onSelectSourceClick = onSourceClick,
                 onIntervalClick = onIntervalClick,
                 onLocationSettingsClick = onLocationSettingsClick,
+                onBackupRestoreClick = onBackupRestoreClick,
                 onPrivacyClick = onPrivacyClick
             )
         }

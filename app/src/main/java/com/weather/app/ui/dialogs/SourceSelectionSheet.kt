@@ -45,6 +45,7 @@ import com.weather.app.model.WeatherSourceInfo
  * @param currentSourceId 当前正在生效的天气数据源唯一标识符
  * @param onSelectSource 用户选择目标天气源时的回调函数
  * @param onConfigureQWeatherClick 点击配置和风天气凭据时的回调函数
+ * @param onConfigureCaiyunClick 点击配置彩云天气凭据时的回调函数
  * @param onDismiss 关闭底部面板时的回调函数
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,6 +55,7 @@ fun SourceSelectionSheet(
     currentSourceId: String,
     onSelectSource: (String) -> Unit,
     onConfigureQWeatherClick: () -> Unit = {},
+    onConfigureCaiyunClick: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -177,9 +179,24 @@ fun SourceSelectionSheet(
                                         .background(Color.White.copy(alpha = 0.15f))
                                         .clickable { onConfigureQWeatherClick() }
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
+                                 ) {
                                     Text(
                                         text = "设置凭据",
+                                        color = Color.White,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            } else if (source.id == "caiyun") {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color.White.copy(alpha = 0.15f))
+                                        .clickable { onConfigureCaiyunClick() }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "设置 Token",
                                         color = Color.White,
                                         fontSize = 11.sp
                                     )

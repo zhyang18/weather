@@ -34,9 +34,10 @@ import androidx.compose.ui.window.DialogProperties
  * 并提供快捷重试或跳转配置凭据操作。
  *
  * @param errorMessage 异常错误详细描述文本
- * @param currentSourceId 当前激活的数据源 ID（如 "qweather", "cma"）
+ * @param currentSourceId 当前激活的数据源 ID（如 "qweather", "caiyun", "cma"）
  * @param onRetry 点击重试时的回调函数（可选）
  * @param onConfigureQWeatherClick 点击去配置和风天气凭据时的回调函数
+ * @param onConfigureCaiyunClick 点击去配置彩云天气凭据时的回调函数
  * @param onDismiss 点击确认或关闭弹窗时的回调函数
  */
 @Composable
@@ -45,10 +46,13 @@ fun WeatherErrorDialog(
     currentSourceId: String = "",
     onRetry: (() -> Unit)? = null,
     onConfigureQWeatherClick: () -> Unit = {},
+    onConfigureCaiyunClick: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val isQWeatherAuthError = currentSourceId == "qweather" &&
             (errorMessage.contains("401") || errorMessage.contains("JWT") || errorMessage.contains("Authentication failed") || errorMessage.contains("未配置"))
+    val isCaiyunAuthError = currentSourceId == "caiyun" &&
+            (errorMessage.contains("401") || errorMessage.contains("403") || errorMessage.contains("Token") || errorMessage.contains("token") || errorMessage.contains("未配置") || errorMessage.contains("invalid token"))
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -76,7 +80,11 @@ fun WeatherErrorDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isQWeatherAuthError) "和风天气身份认证失败" else "请求失败或数据异常",
+                        text = when {
+                            isQWeatherAuthError -> "和风天气身份认证失败"
+                            isCaiyunAuthError -> "彩云天气令牌认证失败"
+                            else -> "请求失败或数据异常"
+                        },
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFFF87171)
@@ -116,6 +124,14 @@ fun WeatherErrorDialog(
                         color = Color.White.copy(alpha = 0.6f),
                         lineHeight = 15.sp
                     )
+                } else if (isCaiyunAuthError) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "提示：请检查彩云天气 Token 是否填写正确，或前往彩云开放平台重新获取免费开发者令牌。",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        lineHeight = 15.sp
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(18.dp))
@@ -148,6 +164,29 @@ fun WeatherErrorDialog(
                             )
                         ) {
                             Text("设置凭据")
+                        }
+                    } else if (isCaiyunAuthError) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        ) {
+                            Text("关闭", color = Color.White.copy(alpha = 0.85f))
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onConfigureCaiyunClick()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF2563EB),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("设置 Token")
                         }
                     } else {
                         if (onRetry != null) {

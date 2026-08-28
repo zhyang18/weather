@@ -53,6 +53,7 @@ import com.weather.app.ui.components.getWeatherMenuBackgroundColor
  * @param onCardSettingsClick 点击“卡片显示设置”回调
  * @param onIntervalClick 点击“更新间隔”回调
  * @param onLocationSettingsClick 点击“定位设置”回调
+ * @param onBackupRestoreClick 点击“备份与恢复”回调
  * @param onPrivacyClick 点击“隐私与免责声明”回调
  */
 @Composable
@@ -64,6 +65,7 @@ fun WeatherSettingsMenu(
     onCardSettingsClick: () -> Unit = {},
     onIntervalClick: () -> Unit = {},
     onLocationSettingsClick: () -> Unit = {},
+    onBackupRestoreClick: () -> Unit = {},
     onPrivacyClick: () -> Unit = {}
 ) {
     if (!expanded) return
@@ -132,6 +134,7 @@ fun WeatherSettingsMenu(
                             "更新间隔" to { onIntervalClick() },
                             "天气数据源" to { onSelectSourceClick() },
                             "定位设置" to { onLocationSettingsClick() },
+                            "备份与恢复" to { onBackupRestoreClick() },
                             "隐私与免责" to { onPrivacyClick() }
                         )
 

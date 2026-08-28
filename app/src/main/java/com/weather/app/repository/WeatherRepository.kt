@@ -12,6 +12,8 @@ import com.weather.app.location.AppLocationManager
 import com.weather.app.model.CityInfo
 import com.weather.app.model.CityInfoJsonAdapter
 import com.weather.app.model.WeatherData
+import com.weather.app.datasource.caiyun.CaiyunConfig
+import com.weather.app.datasource.caiyun.CaiyunConfigManager
 import com.weather.app.datasource.qweather.QWeatherConfig
 import com.weather.app.datasource.qweather.QWeatherConfigManager
 import com.weather.app.datasource.qweather.QWeatherJwtGenerator
@@ -26,13 +28,15 @@ import kotlinx.coroutines.withContext
  *
  * @property context Android 应用上下文
  * @property qWeatherConfigManager 和风天气配置管理器 [QWeatherConfigManager]
+ * @property caiyunConfigManager 彩云天气配置管理器 [CaiyunConfigManager]
  * @property dataSourceManager 天气数据源统一管理器 [WeatherDataSourceManager]
  * @property locationManager 定位管理器 [AppLocationManager]
  */
 class WeatherRepository(
     private val context: Context,
     private val qWeatherConfigManager: QWeatherConfigManager = QWeatherConfigManager(context),
-    private val dataSourceManager: WeatherDataSourceManager = WeatherDataSourceManager(qWeatherConfigManager),
+    private val caiyunConfigManager: CaiyunConfigManager = CaiyunConfigManager(context),
+    private val dataSourceManager: WeatherDataSourceManager = WeatherDataSourceManager(qWeatherConfigManager, caiyunConfigManager),
     private val locationManager: AppLocationManager = AppLocationManager(context)
 ) {
 
@@ -41,6 +45,11 @@ class WeatherRepository(
         .registerTypeAdapter(CityInfo::class.java, CityInfoJsonAdapter())
         .setLenient()
         .create()
+
+    /**
+     * 数据备份与恢复管理器
+     */
+    val backupManager: BackupManager by lazy { BackupManager(context, this) }
 
     /**
      * 获取和风天气 JWT 凭据与网络配置
@@ -59,6 +68,24 @@ class WeatherRepository(
     fun saveQWeatherConfig(config: QWeatherConfig) {
         qWeatherConfigManager.saveConfig(config)
         QWeatherJwtGenerator.clearCache()
+    }
+
+    /**
+     * 获取彩云天气 Token 凭据与网络配置
+     *
+     * @return 当前持久化的彩云天气配置实体 [CaiyunConfig]
+     */
+    fun getCaiyunConfig(): CaiyunConfig {
+        return caiyunConfigManager.getConfig()
+    }
+
+    /**
+     * 保存彩云天气 Token 凭据与网络配置
+     *
+     * @param config 待保存的彩云天气配置实体 [CaiyunConfig]
+     */
+    fun saveCaiyunConfig(config: CaiyunConfig) {
+        caiyunConfigManager.saveConfig(config)
     }
 
     companion object {
@@ -507,5 +534,82 @@ class WeatherRepository(
      */
     fun hasLocationPermission(): Boolean {
         return locationManager.hasLocationPermission()
+    }
+
+    /**
+     * 导出全量应用配置与城市数据为 JSON 字符串
+     *
+     * @return 格式化后的 JSON 备份字符串
+     */
+    fun exportBackupJson(): String {
+        return backupManager.exportBackupJson()
+    }
+
+    /**
+     * 将应用备份数据写入目标文件 Uri
+     *
+     * @param uri 用户通过系统文件保存器选定的目标文件 [android.net.Uri]
+     * @return 写入操作执行结果 [Result]
+     */
+    fun writeBackupToUri(uri: android.net.Uri): Result<Unit> {
+        return backupManager.writeBackupToUri(uri)
+    }
+
+    /**
+     * 创建临时备份文件以便系统分享
+     *
+     * @return 包含临时备份文件对象 [java.io.File] 的结果 [Result]
+     */
+    fun createTempBackupFile(): Result<java.io.File> {
+        return backupManager.createTempBackupFile()
+    }
+
+    /**
+     * 获取临时备份文件的系统分享安全 Uri
+     *
+     * @param file 临时备份文件对象 [java.io.File]
+     * @return FileProvider 安全授权的 [android.net.Uri]
+     */
+    fun getShareUriForFile(file: java.io.File): android.net.Uri {
+        return backupManager.getShareUriForFile(file)
+    }
+
+    /**
+     * 从指定文件 Uri 读取并解析备份数据
+     *
+     * @param uri 备份文件 [android.net.Uri]
+     * @return 解析得到的备份数据实体 [com.weather.app.model.AppBackupData] 结果 [Result]
+     */
+    fun readBackupFromUri(uri: android.net.Uri): Result<com.weather.app.model.AppBackupData> {
+        return backupManager.readBackupFromUri(uri)
+    }
+
+    /**
+     * 解析并校验 JSON 备份字符串
+     *
+     * @param jsonString 备份文本内容
+     * @return 解析得到的备份数据实体 [com.weather.app.model.AppBackupData] 结果 [Result]
+     */
+    fun parseBackupJson(jsonString: String): Result<com.weather.app.model.AppBackupData> {
+        return backupManager.parseBackupJson(jsonString)
+    }
+
+    /**
+     * 从备份数据实体全量恢复应用数据与配置
+     *
+     * @param backupData 备份数据实体 [com.weather.app.model.AppBackupData]
+     * @return 恢复操作执行结果 [Result]
+     */
+    fun restoreFromBackupData(backupData: com.weather.app.model.AppBackupData): Result<Unit> {
+        return backupManager.restoreFromBackupData(backupData)
+    }
+
+    /**
+     * 获取推荐的默认备份文件名
+     *
+     * @return 默认文件名（如 "WeatherBackup_20260828_163000.json"）
+     */
+    fun getDefaultBackupFileName(): String {
+        return backupManager.getDefaultBackupFileName()
     }
 }

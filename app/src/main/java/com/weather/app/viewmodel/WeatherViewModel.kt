@@ -1,13 +1,18 @@
 package com.weather.app.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.weather.app.datasource.ProvinceItem
+import com.weather.app.model.AppBackupData
 import com.weather.app.model.CityInfo
 import com.weather.app.model.WeatherData
 import com.weather.app.model.WeatherSourceInfo
 import com.weather.app.repository.WeatherRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 界面完整状态数据模型
@@ -75,7 +81,11 @@ data class WeatherUiState(
     val showCardSettingsDialog: Boolean = false,
     val showEarthDaylightScreen: Boolean = false,
     val showQWeatherConfigDialog: Boolean = false,
-    val qWeatherConfig: com.weather.app.datasource.qweather.QWeatherConfig = com.weather.app.datasource.qweather.QWeatherConfig()
+    val qWeatherConfig: com.weather.app.datasource.qweather.QWeatherConfig = com.weather.app.datasource.qweather.QWeatherConfig(),
+    val showCaiyunConfigDialog: Boolean = false,
+    val caiyunConfig: com.weather.app.datasource.caiyun.CaiyunConfig = com.weather.app.datasource.caiyun.CaiyunConfig(),
+    val showBackupRestoreDialog: Boolean = false,
+    val pendingRestoreData: com.weather.app.model.AppBackupData? = null
 ) {
     /**
      * 获取当前选中的城市实体
@@ -139,6 +149,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val intervalMinutes = repository.getAutoUpdateIntervalMinutes()
         val cardConfig = repository.getCardDisplayConfig()
         val qWeatherConfig = repository.getQWeatherConfig()
+        val caiyunConfig = repository.getCaiyunConfig()
 
         // 预加载各城市持久化天气快照缓存，保障冷启动秒开
         val initialCache = mutableMapOf<String, WeatherData>()
@@ -165,6 +176,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 autoUpdateIntervalHours = (intervalMinutes / 60).coerceAtLeast(0),
                 cardDisplayConfig = cardConfig,
                 qWeatherConfig = qWeatherConfig,
+                caiyunConfig = caiyunConfig,
                 weatherCache = initialCache,
                 isLoading = initialCache.isEmpty() && isPrivacyAgreed
             )
@@ -429,18 +441,21 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val safeIndex = currentIndex.coerceIn(0, (cities.size - 1).coerceAtLeast(0))
 
         val isQWeatherUnconfigured = sourceId == "qweather" && !_uiState.value.qWeatherConfig.isConfigured()
+        val isCaiyunUnconfigured = sourceId == "caiyun" && !_uiState.value.caiyunConfig.isConfigured()
+        val needsConfig = isQWeatherUnconfigured || isCaiyunUnconfigured
 
         _uiState.update {
             it.copy(
                 currentSource = newSourceInfo,
                 showSourceDialog = false,
                 showQWeatherConfigDialog = isQWeatherUnconfigured,
-                isRefreshing = !isQWeatherUnconfigured,
+                showCaiyunConfigDialog = isCaiyunUnconfigured,
+                isRefreshing = !needsConfig,
                 currentCityIndex = safeIndex
             )
         }
 
-        if (isQWeatherUnconfigured) {
+        if (needsConfig) {
             return
         }
 
@@ -915,9 +930,227 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * 控制彩云天气 Token 凭据配置对话框的显示状态
+     *
+     * @param show 是否显示对话框
+     */
+    fun setShowCaiyunConfigDialog(show: Boolean) {
+        _uiState.update { it.copy(showCaiyunConfigDialog = show) }
+    }
+
+    /**
+     * 保存彩云天气 Token 配置并在当前激活时立即重新拉取天气
+     *
+     * @param config 待保存的彩云天气配置实体 [com.weather.app.datasource.caiyun.CaiyunConfig]
+     */
+    fun saveCaiyunConfig(config: com.weather.app.datasource.caiyun.CaiyunConfig) {
+        repository.saveCaiyunConfig(config)
+        _uiState.update {
+            it.copy(
+                caiyunConfig = config,
+                showCaiyunConfigDialog = false
+            )
+        }
+        if (_uiState.value.currentSource.id == "caiyun") {
+            refreshCurrentCity()
+        }
+    }
+
+    /**
      * 清除当前异常错误提示
      */
     fun clearErrorMessage() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    /**
+     * 控制“数据备份与恢复”底部面板的显隐状态
+     *
+     * @param show 是否显示面板
+     */
+    fun setShowBackupRestoreDialog(show: Boolean) {
+        _uiState.update { it.copy(showBackupRestoreDialog = show) }
+    }
+
+    /**
+     * 设置或清除待用户确认的备份恢复预览数据实体
+     *
+     * @param data 待恢复的备份数据实体 [AppBackupData]，传 null 即清除
+     */
+    fun setPendingRestoreData(data: AppBackupData?) {
+        _uiState.update { it.copy(pendingRestoreData = data) }
+    }
+
+    /**
+     * 获取推荐的默认备份文件名
+     *
+     * @return 格式化后的默认文件名（如 "WeatherBackup_20260828_163000.json"）
+     */
+    fun getDefaultBackupFileName(): String {
+        return repository.getDefaultBackupFileName()
+    }
+
+    /**
+     * 将当前数据导出并写入指定的用户存储文件 Uri
+     *
+     * @param uri 用户通过系统文件保存器选定的目标文件 [Uri]
+     * @param onSuccess 导出成功回调
+     * @param onError 导出失败回调，携带错误描述信息
+     */
+    fun exportBackupToUri(
+        uri: Uri,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repository.writeBackupToUri(uri)
+            withContext(Dispatchers.Main) {
+                result.fold(
+                    onSuccess = {
+                        onSuccess()
+                    },
+                    onFailure = { error ->
+                        onError(error.localizedMessage ?: "备份文件写入失败")
+                    }
+                )
+            }
+        }
+    }
+
+    /**
+     * 生成临时备份文件并唤起系统 ShareSheet 供用户分享至其他应用
+     *
+     * @param context Android 上下文对象
+     * @param onError 分享失败回调，携带错误描述信息
+     */
+    fun shareBackupFile(
+        context: Context,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val tempResult = repository.createTempBackupFile()
+            withContext(Dispatchers.Main) {
+                tempResult.fold(
+                    onSuccess = { file ->
+                        try {
+                            val shareUri = repository.getShareUriForFile(file)
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_STREAM, shareUri)
+                                putExtra(Intent.EXTRA_SUBJECT, "天气应用数据备份")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            val chooserIntent = Intent.createChooser(shareIntent, "分享天气备份文件").apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(chooserIntent)
+                        } catch (e: Exception) {
+                            onError("唤起系统分享失败: ${e.localizedMessage ?: e.message}")
+                        }
+                    },
+                    onFailure = { error ->
+                        onError("生成分享备份失败: ${error.localizedMessage ?: error.message}")
+                    }
+                )
+            }
+        }
+    }
+
+    /**
+     * 从用户选取的备份文件 Uri 中读取并解析备份数据
+     *
+     * @param uri 用户选取的备份文件 [Uri]
+     * @param onSuccess 成功解析回调，回传解析后的备份数据实体 [AppBackupData]
+     * @param onError 解析失败回调，回传错误描述信息
+     */
+    fun parseBackupFile(
+        uri: Uri,
+        onSuccess: (AppBackupData) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repository.readBackupFromUri(uri)
+            withContext(Dispatchers.Main) {
+                result.fold(
+                    onSuccess = { data ->
+                        onSuccess(data)
+                    },
+                    onFailure = { error ->
+                        onError(error.localizedMessage ?: "备份文件解析失败")
+                    }
+                )
+            }
+        }
+    }
+
+    /**
+     * 确认并执行恢复备份数据，重载全局配置与城市列表并触发天气刷新
+     *
+     * @param backupData 待恢复的应用数据实体 [AppBackupData]
+     * @param onSuccess 恢复成功回调
+     * @param onError 恢复失败回调，携带错误描述信息
+     */
+    fun confirmRestore(
+        backupData: AppBackupData,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val restoreResult = repository.restoreFromBackupData(backupData)
+            withContext(Dispatchers.Main) {
+                restoreResult.fold(
+                    onSuccess = {
+                        // 1. 同步刷新本地 ViewModel 状态
+                        val restoredCities = repository.getSavedCities()
+                        val restoredActiveSource = repository.getActiveDataSource().getSourceInfo()
+                        val restoredSources = repository.getAvailableSources()
+                        val restoredCardConfig = repository.getCardDisplayConfig()
+                        val restoredLocationMode = repository.getLocationDisplayMode()
+                        val restoredDailyChart = repository.isDailyChartMode()
+                        val restoredIntervalMinutes = repository.getAutoUpdateIntervalMinutes()
+                        val restoredQWeather = repository.getQWeatherConfig()
+                        val restoredCaiyun = repository.getCaiyunConfig()
+
+                        // 预热缓存
+                        val refreshedCache = mutableMapOf<String, WeatherData>()
+                        restoredCities.forEach { city ->
+                            val cached = repository.getCachedWeatherData(city)
+                            if (cached != null) {
+                                refreshedCache[city.getCacheKey()] = cached
+                                refreshedCache[city.code.ifEmpty { city.name }] = cached
+                                refreshedCache[city.name] = cached
+                            }
+                        }
+
+                        _uiState.update {
+                            it.copy(
+                                savedCities = restoredCities,
+                                currentCityIndex = 0,
+                                currentSource = restoredActiveSource,
+                                availableSources = restoredSources,
+                                cardDisplayConfig = restoredCardConfig,
+                                locationDisplayMode = restoredLocationMode,
+                                isDailyChartMode = restoredDailyChart,
+                                autoUpdateIntervalMinutes = restoredIntervalMinutes,
+                                autoUpdateIntervalHours = (restoredIntervalMinutes / 60).coerceAtLeast(0),
+                                qWeatherConfig = restoredQWeather,
+                                caiyunConfig = restoredCaiyun,
+                                weatherCache = refreshedCache,
+                                showBackupRestoreDialog = false,
+                                pendingRestoreData = null
+                            )
+                        }
+
+                        // 2. 重新拉取当前生效城市天气
+                        refreshCurrentCity()
+
+                        onSuccess()
+                    },
+                    onFailure = { error ->
+                        onError(error.localizedMessage ?: "恢复备份数据失败")
+                    }
+                )
+            }
+        }
     }
 }
