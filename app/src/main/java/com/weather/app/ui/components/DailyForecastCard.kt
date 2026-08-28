@@ -29,7 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -170,11 +172,6 @@ fun DailyForecastCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .graphicsLayer {
-                // 开启独立硬件渲染图层缓存
-                clip = true
-                shape = RoundedCornerShape(20.dp)
-            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(top = 16.dp, bottom = 16.dp)
@@ -266,7 +263,7 @@ fun DailyForecastCard(
 /**
  * 近日天气趋势折线图表视图组件（水平内边距为 0、加粗 2 倍至 9.6f 的饱满线条、昨日与今天虚线连接、今日往后实线）
  *
- * 采用 [remember] 预计算全量 UI 数据与 Float 原生数组，消除横向滚动时的任何重复计算与重绘抖动。
+ * 采用 [drawWithCache] 静态缓存 Canvas 指令，消除垂直滑动与水平平移时的任何重复计算与 GPU 重新光栅化。
  *
  * @param dailyList 包含昨天在内的逐日预报数据项列表 [DailyForecast]
  */
@@ -358,122 +355,130 @@ private fun DailyForecastChartView(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 2. 中间金黄/天蓝双温走势图
+            // 2. 中间金黄/天蓝双温走势图 (使用 drawWithCache 缓存 GPU 渲染指令，垂直滑动时 0 开销复用)
             Box(
                 modifier = Modifier
                     .width(totalWidth)
                     .height(72.dp)
             ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
-                    val count = chartState.items.size
-                    if (count < 2) return@Canvas
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .drawWithCache {
+                            val w = size.width
+                            val h = size.height
+                            val count = chartState.items.size
 
-                    val stepX = w / count
-                    val maxTemps = chartState.maxTemps
-                    val minTemps = chartState.minTemps
-                    val allMin = chartState.allMin
-                    val range = chartState.range
+                            onDrawBehind {
+                                if (count < 2) return@onDrawBehind
 
-                    val strokeWidthPx = 9.6f
-                    val circleRadius = 13.3f
-                    val circleGap = 6.0f
-                    val totalOffset = circleRadius + circleGap
+                                val stepX = w / count
+                                val maxTemps = chartState.maxTemps
+                                val minTemps = chartState.minTemps
+                                val allMin = chartState.allMin
+                                val range = chartState.range
 
-                    val highColor = Color(0xFFF9BF33)
-                    val lowColor = Color(0xFF38BDF8)
-                    val historyAlpha = 0.42f
+                                val strokeWidthPx = 9.6f
+                                val circleRadius = 13.3f
+                                val circleGap = 6.0f
+                                val totalOffset = circleRadius + circleGap
 
-                    // ================= 1. 最高温走势（金黄色线段 + 实心圆点） =================
-                    for (i in 0 until count - 1) {
-                        val cx1 = stepX * i + stepX / 2f
-                        val highNorm1 = (maxTemps[i] - allMin) / range
-                        val hy1 = h * (0.42f - highNorm1 * 0.24f)
+                                val highColor = Color(0xFFF9BF33)
+                                val lowColor = Color(0xFF38BDF8)
+                                val historyAlpha = 0.42f
 
-                        val cx2 = stepX * (i + 1) + stepX / 2f
-                        val highNorm2 = (maxTemps[i + 1] - allMin) / range
-                        val hy2 = h * (0.42f - highNorm2 * 0.24f)
+                                // ================= 1. 最高温走势（金黄色线段 + 实心圆点） =================
+                                for (i in 0 until count - 1) {
+                                    val cx1 = stepX * i + stepX / 2f
+                                    val highNorm1 = (maxTemps[i] - allMin) / range
+                                    val hy1 = h * (0.42f - highNorm1 * 0.24f)
 
-                        val isYesterdaySegment = (i == 0)
-                        val segColor = if (isYesterdaySegment) highColor.copy(alpha = historyAlpha) else highColor
+                                    val cx2 = stepX * (i + 1) + stepX / 2f
+                                    val highNorm2 = (maxTemps[i + 1] - allMin) / range
+                                    val hy2 = h * (0.42f - highNorm2 * 0.24f)
 
-                        val dx = cx2 - cx1
-                        val dy = hy2 - hy1
-                        val dist = hypot(dx, dy)
-                        if (dist > totalOffset * 2f) {
-                            val ux = dx / dist
-                            val uy = dy / dist
-                            val start = Offset(cx1 + ux * totalOffset, hy1 + uy * totalOffset)
-                            val end = Offset(cx2 - ux * totalOffset, hy2 - uy * totalOffset)
-                            drawLine(
-                                color = segColor,
-                                start = start,
-                                end = end,
-                                strokeWidth = strokeWidthPx,
-                                cap = StrokeCap.Round,
-                                pathEffect = if (isYesterdaySegment) dashEffect else null
-                            )
+                                    val isYesterdaySegment = (i == 0)
+                                    val segColor = if (isYesterdaySegment) highColor.copy(alpha = historyAlpha) else highColor
+
+                                    val dx = cx2 - cx1
+                                    val dy = hy2 - hy1
+                                    val dist = hypot(dx, dy)
+                                    if (dist > totalOffset * 2f) {
+                                        val ux = dx / dist
+                                        val uy = dy / dist
+                                        val start = Offset(cx1 + ux * totalOffset, hy1 + uy * totalOffset)
+                                        val end = Offset(cx2 - ux * totalOffset, hy2 - uy * totalOffset)
+                                        drawLine(
+                                            color = segColor,
+                                            start = start,
+                                            end = end,
+                                            strokeWidth = strokeWidthPx,
+                                            cap = StrokeCap.Round,
+                                            pathEffect = if (isYesterdaySegment) dashEffect else null
+                                        )
+                                    }
+                                }
+
+                                for (i in 0 until count) {
+                                    val cx = stepX * i + stepX / 2f
+                                    val highNorm = (maxTemps[i] - allMin) / range
+                                    val hy = h * (0.42f - highNorm * 0.24f)
+                                    val ptColor = if (i == 0) highColor.copy(alpha = historyAlpha) else highColor
+                                    drawCircle(
+                                        color = ptColor,
+                                        radius = circleRadius,
+                                        center = Offset(cx, hy)
+                                    )
+                                }
+
+                                // ================= 2. 最低温走势（天蓝色线段 + 实心圆点） =================
+                                for (i in 0 until count - 1) {
+                                    val cx1 = stepX * i + stepX / 2f
+                                    val lowNorm1 = (minTemps[i] - allMin) / range
+                                    val ly1 = h * (0.82f - lowNorm1 * 0.24f)
+
+                                    val cx2 = stepX * (i + 1) + stepX / 2f
+                                    val lowNorm2 = (minTemps[i + 1] - allMin) / range
+                                    val ly2 = h * (0.82f - lowNorm2 * 0.24f)
+
+                                    val isYesterdaySegment = (i == 0)
+                                    val segColor = if (isYesterdaySegment) lowColor.copy(alpha = historyAlpha) else lowColor
+
+                                    val dx = cx2 - cx1
+                                    val dy = ly2 - ly1
+                                    val dist = hypot(dx, dy)
+                                    if (dist > totalOffset * 2f) {
+                                        val ux = dx / dist
+                                        val uy = dy / dist
+                                        val start = Offset(cx1 + ux * totalOffset, ly1 + uy * totalOffset)
+                                        val end = Offset(cx2 - ux * totalOffset, ly2 - uy * totalOffset)
+                                        drawLine(
+                                            color = segColor,
+                                            start = start,
+                                            end = end,
+                                            strokeWidth = strokeWidthPx,
+                                            cap = StrokeCap.Round,
+                                            pathEffect = if (isYesterdaySegment) dashEffect else null
+                                        )
+                                    }
+                                }
+
+                                for (i in 0 until count) {
+                                    val cx = stepX * i + stepX / 2f
+                                    val lowNorm = (minTemps[i] - allMin) / range
+                                    val ly = h * (0.82f - lowNorm * 0.24f)
+                                    val ptColor = if (i == 0) lowColor.copy(alpha = historyAlpha) else lowColor
+                                    drawCircle(
+                                        color = ptColor,
+                                        radius = circleRadius,
+                                        center = Offset(cx, ly)
+                                    )
+                                }
+                            }
                         }
-                    }
-
-                    for (i in 0 until count) {
-                        val cx = stepX * i + stepX / 2f
-                        val highNorm = (maxTemps[i] - allMin) / range
-                        val hy = h * (0.42f - highNorm * 0.24f)
-                        val ptColor = if (i == 0) highColor.copy(alpha = historyAlpha) else highColor
-                        drawCircle(
-                            color = ptColor,
-                            radius = circleRadius,
-                            center = Offset(cx, hy)
-                        )
-                    }
-
-                    // ================= 2. 最低温走势（天蓝色线段 + 实心圆点） =================
-                    for (i in 0 until count - 1) {
-                        val cx1 = stepX * i + stepX / 2f
-                        val lowNorm1 = (minTemps[i] - allMin) / range
-                        val ly1 = h * (0.82f - lowNorm1 * 0.24f)
-
-                        val cx2 = stepX * (i + 1) + stepX / 2f
-                        val lowNorm2 = (minTemps[i + 1] - allMin) / range
-                        val ly2 = h * (0.82f - lowNorm2 * 0.24f)
-
-                        val isYesterdaySegment = (i == 0)
-                        val segColor = if (isYesterdaySegment) lowColor.copy(alpha = historyAlpha) else lowColor
-
-                        val dx = cx2 - cx1
-                        val dy = ly2 - ly1
-                        val dist = hypot(dx, dy)
-                        if (dist > totalOffset * 2f) {
-                            val ux = dx / dist
-                            val uy = dy / dist
-                            val start = Offset(cx1 + ux * totalOffset, ly1 + uy * totalOffset)
-                            val end = Offset(cx2 - ux * totalOffset, ly2 - uy * totalOffset)
-                            drawLine(
-                                color = segColor,
-                                start = start,
-                                end = end,
-                                strokeWidth = strokeWidthPx,
-                                cap = StrokeCap.Round,
-                                pathEffect = if (isYesterdaySegment) dashEffect else null
-                            )
-                        }
-                    }
-
-                    for (i in 0 until count) {
-                        val cx = stepX * i + stepX / 2f
-                        val lowNorm = (minTemps[i] - allMin) / range
-                        val ly = h * (0.82f - lowNorm * 0.24f)
-                        val ptColor = if (i == 0) lowColor.copy(alpha = historyAlpha) else lowColor
-                        drawCircle(
-                            color = ptColor,
-                            radius = circleRadius,
-                            center = Offset(cx, ly)
-                        )
-                    }
-                }
+                )
             }
+
 
             Spacer(modifier = Modifier.height(6.dp))
 
