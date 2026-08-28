@@ -107,9 +107,6 @@ fun WeatherScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 手势滑动主方向锁定状态（用于仲裁水平左右切页与垂直上下翻阅卡片/下拉刷新）
-    var gestureDirectionLock by remember { mutableStateOf(ScrollDirectionLock.UNDETERMINED) }
-
     // 错误提示响应
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { msg ->
@@ -169,11 +166,7 @@ fun WeatherScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .directionLockDetector { lock ->
-                gestureDirectionLock = lock
-            }
+        modifier = Modifier.fillMaxSize()
     ) {
         // 沉浸式动态真实天气天空背景 (支持昼夜即时刷新切换，滑动过程视差无缝过渡，停靠结算后播放景深推远动效；带死区过滤防抖)
         WeatherSkyBackground(
@@ -181,12 +174,8 @@ fun WeatherScreen(
             city = settledCity,
             lastUpdatedTimestamp = settledWeather?.updateTimestamp ?: System.currentTimeMillis(),
             parallaxOffsetProvider = {
-                if (gestureDirectionLock == ScrollDirectionLock.VERTICAL) {
-                    0f
-                } else {
-                    val offset = pagerState.currentPageOffsetFraction
-                    if (kotlin.math.abs(offset) < 0.003f) 0f else offset
-                }
+                val offset = pagerState.currentPageOffsetFraction
+                if (kotlin.math.abs(offset) < 0.003f) 0f else offset
             }
         )
 
@@ -216,11 +205,9 @@ fun WeatherScreen(
             // 水平滑动手势分页器 (左右滑动切换城市)
             // 启用 beyondBoundsPageCount = 1 预热前后邻近页面
             // 配置 snapPositionalThreshold = 0.35f，提供充裕的容错空间，消除斜向滑动导致的剧烈回弹与误切页
-            // 依据手势方向判决动态设置 userScrollEnabled，垂直上下滑动时完全锁死横向晃动
             HorizontalPager(
                 state = pagerState,
                 beyondBoundsPageCount = 1,
-                userScrollEnabled = gestureDirectionLock != ScrollDirectionLock.VERTICAL,
                 flingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
                     state = pagerState,
                     snapPositionalThreshold = 0.35f,
@@ -251,7 +238,7 @@ fun WeatherScreen(
                     isRefreshing = uiState.isRefreshing,
                     isDailyChartMode = uiState.isDailyChartMode,
                     scrollState = pageScrollState,
-                    isVerticalScrollEnabled = gestureDirectionLock != ScrollDirectionLock.HORIZONTAL,
+                    isVerticalScrollEnabled = true,
                     onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
                     onRefresh = { viewModel.refreshCityAtIndex(page) }
                 )

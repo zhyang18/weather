@@ -71,7 +71,7 @@ fun HeroWeatherView(
         // - 上滑受挤压时（scroll > 220px）：伴随正弦阻尼缓动平滑缩小、上推并渐隐
         Layout(
             content = {
-                // 温度主体数值 Text（严格水平居中）
+                // 温度主体数值 Text（严格水平居中，采用 GPU 纯硬件加速投影）
                 Text(
                     text = "${current.temperature.toInt()}",
                     style = TextStyle(
@@ -79,9 +79,9 @@ fun HeroWeatherView(
                         fontWeight = FontWeight.Light,
                         color = Color.White,
                         shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.38f),
-                            offset = Offset(0f, 3f),
-                            blurRadius = 8f
+                            color = Color.Black.copy(alpha = 0.35f),
+                            offset = Offset(0f, 2f),
+                            blurRadius = 0f
                         )
                     )
                 )
@@ -93,9 +93,9 @@ fun HeroWeatherView(
                         fontWeight = FontWeight.Light,
                         color = Color.White,
                         shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.38f),
-                            offset = Offset(0f, 3f),
-                            blurRadius = 8f
+                            color = Color.Black.copy(alpha = 0.35f),
+                            offset = Offset(0f, 2f),
+                            blurRadius = 0f
                         )
                     )
                 )
@@ -161,9 +161,9 @@ fun HeroWeatherView(
                 fontWeight = FontWeight.Normal,
                 color = Color.White.copy(alpha = 0.95f),
                 shadow = Shadow(
-                    color = Color.Black.copy(alpha = 0.38f),
-                    offset = Offset(0f, 2f),
-                    blurRadius = 5f
+                    color = Color.Black.copy(alpha = 0.35f),
+                    offset = Offset(0f, 1.5f),
+                    blurRadius = 0f
                 )
             ),
             modifier = Modifier.graphicsLayer {
@@ -187,9 +187,9 @@ fun HeroWeatherView(
                 fontWeight = FontWeight.Normal,
                 color = Color.White.copy(alpha = 0.95f),
                 shadow = Shadow(
-                    color = Color.Black.copy(alpha = 0.38f),
-                    offset = Offset(0f, 2f),
-                    blurRadius = 5f
+                    color = Color.Black.copy(alpha = 0.35f),
+                    offset = Offset(0f, 1.5f),
+                    blurRadius = 0f
                 )
             ),
             modifier = Modifier.graphicsLayer {

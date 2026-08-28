@@ -1160,47 +1160,34 @@ private fun DrawScope.drawCrepuscularGodRays(
     // 晨昏色温自适应：清晨与黄昏呈现温暖朝夕金霞光束，正午呈现明净白金光束
     val duskDawnFactor = (abs(dayProgress - 0.5f) * 2f).coerceIn(0f, 1f)
     val rayColorCenter = if (duskDawnFactor > 0.5f) Color(0xFFFFE082) else Color(0xFFFFF9C4)
-    val rayColorEdge = if (duskDawnFactor > 0.5f) Color(0xFFFFB74D) else Color(0xFFFFECB3)
 
-    val rayAngles = listOf(baseAngleDeg - 32f, baseAngleDeg - 16f, baseAngleDeg, baseAngleDeg + 16f, baseAngleDeg + 32f)
-    val rayWidths = listOf(13f, 18f, 15f, 19f, 14f)
+    val rayAngles = floatArrayOf(baseAngleDeg - 32f, baseAngleDeg - 16f, baseAngleDeg, baseAngleDeg + 16f, baseAngleDeg + 32f)
+    val rayWidths = floatArrayOf(14f, 20f, 16f, 22f, 15f)
 
-    rayAngles.forEachIndexed { index, angleDeg ->
+    for (index in 0 until 5) {
+        val angleDeg = rayAngles[index]
         val pulse = (sin((progress + index * 0.2f) * 2f * PI.toFloat()) + 1f) / 2f
         val currentAlpha = rayAlphaBase * (0.70f + pulse * 0.30f)
-        val angleRad = angleDeg * (PI / 180f)
-        val beamWidthDeg = rayWidths[index] * (PI / 180f)
+        val angleRad = angleDeg * (PI.toFloat() / 180f)
 
-        val leftAngle = angleRad - beamWidthDeg * 0.5f
-        val rightAngle = angleRad + beamWidthDeg * 0.5f
+        val endX = sunCenter.x + maxRayLength * cos(angleRad)
+        val endY = sunCenter.y + maxRayLength * sin(angleRad)
+        val endPt = Offset(endX, endY)
 
-        val p1 = Offset(
-            sunCenter.x + (maxRayLength * cos(leftAngle)).toFloat(),
-            sunCenter.y + (maxRayLength * sin(leftAngle)).toFloat()
-        )
-        val p2 = Offset(
-            sunCenter.x + (maxRayLength * cos(rightAngle)).toFloat(),
-            sunCenter.y + (maxRayLength * sin(rightAngle)).toFloat()
-        )
-
-        val beamPath = Path().apply {
-            moveTo(sunCenter.x, sunCenter.y)
-            lineTo(p1.x, p1.y)
-            lineTo(p2.x, p2.y)
-            close()
-        }
-
-        drawPath(
-            path = beamPath,
-            brush = Brush.radialGradient(
+        drawLine(
+            brush = Brush.linearGradient(
                 colors = listOf(
-                    rayColorCenter.copy(alpha = currentAlpha),
-                    rayColorEdge.copy(alpha = currentAlpha * 0.35f),
+                    rayColorCenter.copy(alpha = currentAlpha * 1.8f),
+                    rayColorCenter.copy(alpha = currentAlpha * 0.6f),
                     Color.Transparent
                 ),
-                center = sunCenter,
-                radius = maxRayLength
-            )
+                start = sunCenter,
+                end = endPt
+            ),
+            start = sunCenter,
+            end = endPt,
+            strokeWidth = rayWidths[index] * 2.8f,
+            cap = StrokeCap.Round
         )
     }
 }
@@ -1541,6 +1528,7 @@ private fun DrawScope.drawRealisticHighDefRain(
     // 依设计图调整为垂直微斜 (约 3.5 度斜角)
     val slantFactor = if (isHeavy) 0.08f else 0.06f
     val activeDrops = if (isHeavy) drops else drops.take(135)
+    val rainColor = Color(0xFFE3F2FD)
 
     // 暴雨水汽雨雾层
     if (isHeavy) {
@@ -1571,21 +1559,10 @@ private fun DrawScope.drawRealisticHighDefRain(
 
         if (endY > 0f && startY < height) {
             val alphaMultiplier = if (isHeavy) 1.2f else 1.0f
-            val baseAlpha = (drop.alpha * alphaMultiplier).coerceIn(0.18f, 1.0f)
-
-            val rainBrush = Brush.linearGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = baseAlpha * 0.15f),
-                    Color(0xFFE1F5FE).copy(alpha = baseAlpha * 0.85f),
-                    Color.White.copy(alpha = baseAlpha * 0.95f),
-                    Color.White.copy(alpha = baseAlpha * 0.30f)
-                ),
-                start = Offset(startX, startY),
-                end = Offset(endX, endY)
-            )
+            val baseAlpha = (drop.alpha * alphaMultiplier).coerceIn(0.18f, 0.95f)
 
             drawLine(
-                brush = rainBrush,
+                color = rainColor.copy(alpha = baseAlpha * 0.85f),
                 start = Offset(startX, startY),
                 end = Offset(endX, endY),
                 strokeWidth = if (isHeavy) drop.strokeWidth * 1.15f else drop.strokeWidth,

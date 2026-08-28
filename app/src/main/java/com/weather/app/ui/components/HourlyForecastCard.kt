@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,6 +75,11 @@ fun HourlyForecastCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
+            .graphicsLayer {
+                // 开启独立硬件渲染图层缓存
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(top = 10.dp, bottom = 10.dp)

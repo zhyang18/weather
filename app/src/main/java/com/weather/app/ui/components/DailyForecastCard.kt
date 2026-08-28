@@ -120,6 +120,11 @@ fun DailyForecastCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
+            .graphicsLayer {
+                // 开启独立硬件渲染图层缓存
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(top = 16.dp, bottom = 16.dp) // 外层水平内边距设为 0，允许趋势图全宽满幅横滑
@@ -209,7 +214,7 @@ fun DailyForecastCard(
 }
 
 /**
- * 近日天气趋势折线图表视图组件（水平内边距为 0、加粗 2 倍至 9.0f 的饱满线条、昨日与今天虚线连接、今日往后实线）
+ * 近日天气趋势折线图表视图组件（水平内边距为 0、加粗 2 倍至 9.6f 的饱满线条、昨日与今天虚线连接、今日往后实线）
  *
  * @param dailyList 包含昨天在内的逐日预报数据项列表 [DailyForecast]
  */
@@ -227,6 +232,7 @@ private fun DailyForecastChartView(
 
     val itemWidth = 58.dp
     val totalWidth = itemWidth * dailyList.size
+    val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(9.0f, 9.0f), 0f) }
 
     // 横向可平滑滑动容器（水平内边距为 0）
     Row(
@@ -344,49 +350,32 @@ private fun DailyForecastChartView(
                     if (count < 2) return@Canvas
 
                     val stepX = w / count
-                    val highPoints = mutableListOf<Offset>()
-                    val lowPoints = mutableListOf<Offset>()
-
-                    for (i in 0 until count) {
-                        val cx = stepX * i + stepX / 2f
-                        val highNorm = (maxTemps[i] - allMin) / range
-                        val lowNorm = (minTemps[i] - allMin) / range
-
-                        // 最高温在上部 (y: 18% ~ 42%)
-                        val hy = h * (0.42f - highNorm * 0.24f)
-                        // 最低温在下部 (y: 58% ~ 82%)
-                        val ly = h * (0.82f - lowNorm * 0.24f)
-
-                        highPoints.add(Offset(cx, hy))
-                        lowPoints.add(Offset(cx, ly))
-                    }
 
                     // 线条与圆点规范（线段减粗 1.5 倍至 9.6f，节点圆点减小 1.5 倍至半径 13.3f）
                     val strokeWidthPx = 9.6f
                     val circleRadius = 13.3f
                     val circleGap = 6.0f
                     val totalOffset = circleRadius + circleGap
-                    val dashEffect = PathEffect.dashPathEffect(floatArrayOf(9.0f, 9.0f), 0f)
 
                     val highColor = Color(0xFFF9BF33) // 明亮金黄色
                     val lowColor = Color(0xFF38BDF8)  // 清爽天蓝色
                     val historyAlpha = 0.42f
 
-                    // 绘制带有两端圆点间隙留白的线段
+                    // 绘制带有两端圆点间隙留白的线段 (直接计算坐标，0 对象分配)
                     fun drawSegmentWithGap(
-                        p1: Offset,
-                        p2: Offset,
+                        x1: Float, y1: Float,
+                        x2: Float, y2: Float,
                         color: Color,
                         isDashed: Boolean
                     ) {
-                        val dx = p2.x - p1.x
-                        val dy = p2.y - p1.y
+                        val dx = x2 - x1
+                        val dy = y2 - y1
                         val dist = kotlin.math.hypot(dx, dy)
                         if (dist > totalOffset * 2f) {
                             val ux = dx / dist
                             val uy = dy / dist
-                            val start = Offset(p1.x + ux * totalOffset, p1.y + uy * totalOffset)
-                            val end = Offset(p2.x - ux * totalOffset, p2.y - uy * totalOffset)
+                            val start = Offset(x1 + ux * totalOffset, y1 + uy * totalOffset)
+                            val end = Offset(x2 - ux * totalOffset, y2 - uy * totalOffset)
 
                             drawLine(
                                 color = color,
@@ -401,43 +390,65 @@ private fun DailyForecastChartView(
 
                     // ================= 1. 最高温走势（金黄色线段 + 实心圆点） =================
                     for (i in 0 until count - 1) {
+                        val cx1 = stepX * i + stepX / 2f
+                        val highNorm1 = (maxTemps[i] - allMin) / range
+                        val hy1 = h * (0.42f - highNorm1 * 0.24f)
+
+                        val cx2 = stepX * (i + 1) + stepX / 2f
+                        val highNorm2 = (maxTemps[i + 1] - allMin) / range
+                        val hy2 = h * (0.42f - highNorm2 * 0.24f)
+
                         val isYesterdaySegment = (i == 0)
                         val segColor = if (isYesterdaySegment) highColor.copy(alpha = historyAlpha) else highColor
                         drawSegmentWithGap(
-                            p1 = highPoints[i],
-                            p2 = highPoints[i + 1],
+                            x1 = cx1, y1 = hy1,
+                            x2 = cx2, y2 = hy2,
                             color = segColor,
                             isDashed = isYesterdaySegment
                         )
                     }
 
-                    highPoints.forEachIndexed { i, pt ->
+                    for (i in 0 until count) {
+                        val cx = stepX * i + stepX / 2f
+                        val highNorm = (maxTemps[i] - allMin) / range
+                        val hy = h * (0.42f - highNorm * 0.24f)
                         val ptColor = if (i == 0) highColor.copy(alpha = historyAlpha) else highColor
                         drawCircle(
                             color = ptColor,
                             radius = circleRadius,
-                            center = pt
+                            center = Offset(cx, hy)
                         )
                     }
 
                     // ================= 2. 最低温走势（天蓝色线段 + 实心圆点） =================
                     for (i in 0 until count - 1) {
+                        val cx1 = stepX * i + stepX / 2f
+                        val lowNorm1 = (minTemps[i] - allMin) / range
+                        val ly1 = h * (0.82f - lowNorm1 * 0.24f)
+
+                        val cx2 = stepX * (i + 1) + stepX / 2f
+                        val lowNorm2 = (minTemps[i + 1] - allMin) / range
+                        val ly2 = h * (0.82f - lowNorm2 * 0.24f)
+
                         val isYesterdaySegment = (i == 0)
                         val segColor = if (isYesterdaySegment) lowColor.copy(alpha = historyAlpha) else lowColor
                         drawSegmentWithGap(
-                            p1 = lowPoints[i],
-                            p2 = lowPoints[i + 1],
+                            x1 = cx1, y1 = ly1,
+                            x2 = cx2, y2 = ly2,
                             color = segColor,
                             isDashed = isYesterdaySegment
                         )
                     }
 
-                    lowPoints.forEachIndexed { i, pt ->
+                    for (i in 0 until count) {
+                        val cx = stepX * i + stepX / 2f
+                        val lowNorm = (minTemps[i] - allMin) / range
+                        val ly = h * (0.82f - lowNorm * 0.24f)
                         val ptColor = if (i == 0) lowColor.copy(alpha = historyAlpha) else lowColor
                         drawCircle(
                             color = ptColor,
                             radius = circleRadius,
-                            center = pt
+                            center = Offset(cx, ly)
                         )
                     }
                 }

@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -474,6 +475,9 @@ private fun WindRealCard(
         title = "风",
         modifier = modifier
     ) {
+        val arrowPath = remember { Path() }
+        val arrowShadowPath = remember { Path() }
+
         Column(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
@@ -540,7 +544,7 @@ private fun WindRealCard(
                         center = startPt
                     )
 
-                    // 导向实心粗大三角形箭头 (加大加粗至长 28.0f)
+                    // 导向实心粗大三角形箭头 (复用 Path 避免每次重绘产生垃圾对象)
                     val arrowLen = 28.0f
                     val arrowAngle1 = rad + 150f * (PI.toFloat() / 180f)
                     val arrowAngle2 = rad - 150f * (PI.toFloat() / 180f)
@@ -548,20 +552,18 @@ private fun WindRealCard(
                     val a1 = Offset(endPt.x + arrowLen * cos(arrowAngle1), endPt.y + arrowLen * sin(arrowAngle1))
                     val a2 = Offset(endPt.x + arrowLen * cos(arrowAngle2), endPt.y + arrowLen * sin(arrowAngle2))
 
-                    val arrowShadowPath = Path().apply {
-                        moveTo(endPt.x, endPt.y + 2f)
-                        lineTo(a1.x, a1.y + 2f)
-                        lineTo(a2.x, a2.y + 2f)
-                        close()
-                    }
+                    arrowShadowPath.reset()
+                    arrowShadowPath.moveTo(endPt.x, endPt.y + 2f)
+                    arrowShadowPath.lineTo(a1.x, a1.y + 2f)
+                    arrowShadowPath.lineTo(a2.x, a2.y + 2f)
+                    arrowShadowPath.close()
                     drawPath(path = arrowShadowPath, color = Color.Black.copy(alpha = 0.35f))
 
-                    val arrowPath = Path().apply {
-                        moveTo(endPt.x, endPt.y)
-                        lineTo(a1.x, a1.y)
-                        lineTo(a2.x, a2.y)
-                        close()
-                    }
+                    arrowPath.reset()
+                    arrowPath.moveTo(endPt.x, endPt.y)
+                    arrowPath.lineTo(a1.x, a1.y)
+                    arrowPath.lineTo(a2.x, a2.y)
+                    arrowPath.close()
                     drawPath(path = arrowPath, color = Color.White)
 
                     // 3. 居中覆盖在指针上方的不透明磨砂渐变圆形表盘底衬 (中间较亮向外渐变，遮盖穿过中心的指针线，让中间文字清晰悬浮)
@@ -961,6 +963,10 @@ private fun SunriseSunsetRealCard(
             Spacer(modifier = Modifier.height(2.dp))
 
             // 3. 太阳天球拱形轨迹 Canvas
+            val arcPath = remember { Path() }
+            val passedPath = remember { Path() }
+            val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f) }
+
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -983,15 +989,14 @@ private fun SunriseSunsetRealCard(
                     cap = StrokeCap.Round
                 )
 
-                // 2. 绘制完整白昼拱形轨迹路径
-                val arcPath = Path().apply {
-                    moveTo(startX, horizonY)
-                    cubicTo(
-                        startX + (endX - startX) * 0.22f, horizonY - arcHeight * 1.10f,
-                        startX + (endX - startX) * 0.78f, horizonY - arcHeight * 1.10f,
-                        endX, horizonY
-                    )
-                }
+                // 2. 绘制完整白昼拱形轨迹路径 (复用 Path 避免垃圾回收)
+                arcPath.reset()
+                arcPath.moveTo(startX, horizonY)
+                arcPath.cubicTo(
+                    startX + (endX - startX) * 0.22f, horizonY - arcHeight * 1.10f,
+                    startX + (endX - startX) * 0.78f, horizonY - arcHeight * 1.10f,
+                    endX, horizonY
+                )
 
                 // 轨迹底虚线
                 drawPath(
@@ -1000,7 +1005,7 @@ private fun SunriseSunsetRealCard(
                     style = Stroke(
                         width = 2.0f,
                         cap = StrokeCap.Round,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                        pathEffect = dashEffect
                     )
                 )
 
@@ -1011,18 +1016,17 @@ private fun SunriseSunsetRealCard(
 
                 // 如果处于白天，绘制已走过轨迹的高亮渐变弧线与天光漫射填充
                 if (!isNight && progress > 0f) {
-                    val passedPath = Path().apply {
-                        moveTo(startX, horizonY)
-                        val stepCount = (progress * 30).toInt().coerceAtLeast(1)
-                        for (i in 1..stepCount) {
-                            val t = (i.toFloat() / 30f).coerceAtMost(progress)
-                            val px = startX + t * (endX - startX)
-                            val py = horizonY - sin(t * PI.toFloat()) * (arcHeight * 0.88f)
-                            lineTo(px, py)
-                        }
-                        lineTo(sunX, horizonY)
-                        close()
+                    passedPath.reset()
+                    passedPath.moveTo(startX, horizonY)
+                    val stepCount = (progress * 30).toInt().coerceAtLeast(1)
+                    for (i in 1..stepCount) {
+                        val t = (i.toFloat() / 30f).coerceAtMost(progress)
+                        val px = startX + t * (endX - startX)
+                        val py = horizonY - sin(t * PI.toFloat()) * (arcHeight * 0.88f)
+                        passedPath.lineTo(px, py)
                     }
+                    passedPath.lineTo(sunX, horizonY)
+                    passedPath.close()
 
                     drawPath(
                         path = passedPath,
@@ -1108,7 +1112,7 @@ private fun SunriseSunsetRealCard(
  * 通用双列基础毛玻璃卡片组件容器
  *
  * 统一所有 2x2 指标卡片的高度为 152.dp，并采用 SpaceBetween 布局，使各个卡片在网格中高度严格齐平对齐。
- * 具有深色半透明磨砂底色，有效遮挡底层天空雨滴，避免文字被雨滴穿透覆盖。
+ * 启用独立硬件渲染图层缓存 (graphicsLayer)，有效隔绝滚动过程中的重绘扩散。
  *
  * @param icon 卡片左上角气象指标图标 [ImageVector]
  * @param title 卡片标题
@@ -1126,6 +1130,11 @@ private fun MetricBaseCard(
         modifier = modifier
             .fillMaxWidth()
             .height(152.dp)
+            .graphicsLayer {
+                // 开启独立硬件渲染图层缓存
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(14.dp),

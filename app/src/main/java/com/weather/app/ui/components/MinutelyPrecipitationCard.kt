@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -134,10 +135,17 @@ fun MinutelyPrecipitationCard(
         values.toList()
     }
 
+    val dashedEffect = remember { PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f) }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
+            .graphicsLayer {
+                // 开启独立硬件渲染图层缓存
+                clip = true
+                shape = RoundedCornerShape(18.dp)
+            }
             .clip(RoundedCornerShape(18.dp))
             .background(Color(0x7514263A))
             .padding(horizontal = 14.dp, vertical = 12.dp)
@@ -192,19 +200,31 @@ fun MinutelyPrecipitationCard(
                         val h = size.height
 
                         // 绘制 3 条水平参考辅助虚线 (对应 大、中、小 降水等级)
-                        val dashedEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f)
-                        val lineAlphas = floatArrayOf(0.15f, 0.15f, 0.22f)
-                        val yLevels = floatArrayOf(h * 0.15f, h * 0.52f, h * 0.88f)
+                        val y1 = h * 0.15f
+                        val y2 = h * 0.52f
+                        val y3 = h * 0.88f
 
-                        yLevels.forEachIndexed { i, y ->
-                            drawLine(
-                                color = Color.White.copy(alpha = lineAlphas[i]),
-                                start = Offset(0f, y),
-                                end = Offset(w, y),
-                                strokeWidth = 1f,
-                                pathEffect = dashedEffect
-                            )
-                        }
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.15f),
+                            start = Offset(0f, y1),
+                            end = Offset(w, y1),
+                            strokeWidth = 1f,
+                            pathEffect = dashedEffect
+                        )
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.15f),
+                            start = Offset(0f, y2),
+                            end = Offset(w, y2),
+                            strokeWidth = 1f,
+                            pathEffect = dashedEffect
+                        )
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.22f),
+                            start = Offset(0f, y3),
+                            end = Offset(w, y3),
+                            strokeWidth = 1f,
+                            pathEffect = dashedEffect
+                        )
 
                         // 绘制垂直降雨强度柱
                         val barCount = rainIntensities.size
