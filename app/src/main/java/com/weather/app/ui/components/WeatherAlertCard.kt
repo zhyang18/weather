@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weather.app.model.WeatherAlert
 
+import androidx.compose.ui.graphics.graphicsLayer
+
 /**
  * 官方气象灾害预警卡片组件
  *
@@ -43,6 +45,10 @@ fun WeatherAlertCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(18.dp)

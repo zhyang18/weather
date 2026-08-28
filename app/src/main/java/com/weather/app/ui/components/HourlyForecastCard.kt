@@ -1,9 +1,9 @@
 package com.weather.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,8 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
@@ -25,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,9 +50,10 @@ private data class HourlyDisplayItem(
 )
 
 /**
- * 24小时逐时预报卡片组件 (极简原生实现)
+ * 24小时逐时预报卡片组件 (极致扁平高性能实现)
  *
- * 采用原生标准 LazyRow 构建，结构极致扁平，零冗余图层，保障主页面上下滑动满帧流畅。
+ * 采用轻量扁平的 Row + horizontalScroll 构建，彻底消除嵌套在垂直滚动容器中的 LazyRow 测量与嵌套手势派发开销，
+ * 开启独立硬件渲染图层 (graphicsLayer)，保障主页面上下滑动满帧流畅。
  *
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param modifier 外部修饰符
@@ -125,10 +126,16 @@ fun HourlyForecastCard(
         list
     }
 
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(vertical = 12.dp)
@@ -161,16 +168,15 @@ fun HourlyForecastCard(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // 2. 原生极简 LazyRow
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 10.dp),
+        // 2. 原生极简轻量横向滚动容器 (消除 LazyRow 测量与嵌套滑动拦截)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .padding(horizontal = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(
-                items = displayItems,
-                key = { it.key }
-            ) { item ->
+            displayItems.forEach { item ->
                 HourlyColumnItem(item = item)
             }
         }

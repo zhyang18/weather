@@ -141,6 +141,10 @@ fun MinutelyPrecipitationCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(18.dp)
+            }
             .clip(RoundedCornerShape(18.dp))
             .background(Color(0x7514263A))
             .padding(horizontal = 14.dp, vertical = 12.dp)

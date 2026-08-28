@@ -30,7 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -172,6 +174,10 @@ fun DailyForecastCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(top = 16.dp, bottom = 16.dp)
@@ -727,43 +733,48 @@ private fun DailyForecastRow(
             modifier = Modifier.width(32.dp)
         )
 
-        // 温差指示条 (支持点指示器)
-        Box(
+        // 温差指示条 (单层 Canvas 高性能硬件加速绘制，彻底消除多层嵌套 Box 测量开销)
+        Canvas(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp)
                 .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Color.White.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.CenterStart
         ) {
-            val startRatio = ((forecast.minTemperature - globalMin) / tempSpan).toFloat().coerceIn(0f, 0.8f)
-            val endRatio = ((forecast.maxTemperature - globalMin) / tempSpan).toFloat().coerceIn(startRatio + 0.2f, 1f)
+            val w = size.width
+            val h = size.height
+            val radius = CornerRadius(h / 2f, h / 2f)
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(endRatio)
-                    .padding(start = (startRatio * 100).dp)
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                Color(0xFFF9A825),
-                                Color(0xFFFFB74D)
-                            )
-                        )
-                    )
+            // 1. 灰色背景槽
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.15f),
+                size = size,
+                cornerRadius = radius
             )
 
-            // 实况高亮点
+            // 2. 橙黄温差渐变进度条
+            val startRatio = ((forecast.minTemperature - globalMin) / tempSpan).toFloat().coerceIn(0f, 0.8f)
+            val endRatio = ((forecast.maxTemperature - globalMin) / tempSpan).toFloat().coerceIn(startRatio + 0.2f, 1f)
+            val startX = startRatio * w
+            val barW = ((endRatio - startRatio) * w).coerceAtLeast(h)
+
+            drawRoundRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color(0xFFF9A825), Color(0xFFFFB74D)),
+                    startX = startX,
+                    endX = startX + barW
+                ),
+                topLeft = Offset(startX, 0f),
+                size = Size(barW, h),
+                cornerRadius = radius
+            )
+
+            // 3. 实况当前气温指示白点
             if (showDot) {
-                Box(
-                    modifier = Modifier
-                        .padding(start = ((startRatio + (endRatio - startRatio) * 0.7f) * 100).dp)
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
+                val dotX = (startX + barW * 0.7f).coerceIn(h / 2f, w - h / 2f)
+                drawCircle(
+                    color = Color.White,
+                    radius = 3.5.dp.toPx(),
+                    center = Offset(dotX, h / 2f)
                 )
             }
         }
