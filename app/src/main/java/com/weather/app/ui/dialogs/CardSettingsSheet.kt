@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import com.weather.app.model.CardDisplayConfig
 import com.weather.app.model.KEY_AIR_QUALITY
 import com.weather.app.model.KEY_DAILY_FORECAST
+import com.weather.app.model.KEY_EARTH_DAYLIGHT
 import com.weather.app.model.KEY_FEELS_LIKE
 import com.weather.app.model.KEY_HOURLY_FORECAST
 import com.weather.app.model.KEY_HUMIDITY
@@ -172,6 +174,13 @@ fun CardSettingsSheet(
                     description = "太阳实时升降时刻、天文学弧形日光轨迹与倒计时",
                     icon = Icons.Default.WbSunny,
                     isEnabled = config.showSunriseSunset
+                ),
+                CardOptionItem(
+                    key = KEY_EARTH_DAYLIGHT,
+                    title = "昼夜晨昏线",
+                    description = "全球 3D 地球昼夜交界线、太阳直射点纬度与地轴模拟",
+                    icon = Icons.Default.Public,
+                    isEnabled = config.showEarthDaylight
                 ),
                 CardOptionItem(
                     key = KEY_MOON_PHASE,

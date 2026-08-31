@@ -80,6 +80,8 @@ data class WeatherUiState(
     val cardDisplayConfig: com.weather.app.model.CardDisplayConfig = com.weather.app.model.CardDisplayConfig(),
     val showCardSettingsDialog: Boolean = false,
     val showEarthDaylightScreen: Boolean = false,
+    val showSunriseSunsetScreen: Boolean = false,
+    val targetSunriseCity: CityInfo? = null,
     val showLocationMapScreen: Boolean = false,
     val targetMapCity: CityInfo? = null,
     val showMoonPhaseScreen: Boolean = false,
@@ -913,6 +915,21 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      */
     fun setShowEarthDaylightScreen(show: Boolean) {
         _uiState.update { it.copy(showEarthDaylightScreen = show) }
+    }
+
+    /**
+     * 设置是否展示日出日落详情全屏交互页面
+     *
+     * @param show 是否展示日出日落详情页面
+     * @param targetCity 指定聚焦查看的城市实体（为 null 时默认使用当前选中城市）
+     */
+    fun setShowSunriseSunsetScreen(show: Boolean, targetCity: CityInfo? = null) {
+        _uiState.update {
+            it.copy(
+                showSunriseSunsetScreen = show,
+                targetSunriseCity = if (show) (targetCity ?: it.getCurrentCity()) else null
+            )
+        }
     }
 
     /**

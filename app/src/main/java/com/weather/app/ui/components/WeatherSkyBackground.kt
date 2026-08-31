@@ -347,7 +347,7 @@ fun WeatherSkyBackground(
     val moonProgress = celestial.moonProgress
     val moonPhase = celestial.moonPhase
     val isSunVisible = celestial.isSunVisible && (weatherCategory == WeatherCategory.SUNNY || weatherCategory == WeatherCategory.CLOUDY)
-    val isMoonVisible = (weatherCategory.isNight || celestial.isMoonVisible) && (weatherCategory != WeatherCategory.OVERCAST_NIGHT)
+    val isMoonVisible = celestial.isMoonVisible && (weatherCategory != WeatherCategory.OVERCAST_NIGHT)
 
     val baseCloudAlpha = remember(weatherCategory) {
         when (weatherCategory) {
@@ -453,21 +453,23 @@ fun WeatherSkyBackground(
             val continuousRotation = continuousRotationState.value
             val lightningPhase = lightningPhaseState.value
 
-            // 夜间渲染群星、流星与明月（月亮出现时机由城市月出月落时间精确决定，月相由真实日期物理驱动）
-            if (isMoonVisible && weatherCategory.isNight) {
-                val moonCenter = calculateMoonCenter(width, height, moonProgress)
+            // 夜间渲染群星、流星与明月（群星流星常驻夜空，月亮出现时机严格由城市月出月落时间精确决定）
+            if (weatherCategory.isNight && weatherCategory != WeatherCategory.OVERCAST_NIGHT) {
                 drawNightStars(starParticles, mediumProgress)
                 drawShootingStars(width, height, mediumProgress)
-                drawGlowingMoon(
-                    width = width,
-                    height = height,
-                    moonCenter = moonCenter,
-                    pulseProgress = slowProgress,
-                    moonPhase = moonPhase,
-                    lunarRenderer = lunarRenderer,
-                    clipPath = moonClipPath,
-                    shadowReusablePath = lunarShadowReusablePath
-                )
+                if (isMoonVisible) {
+                    val moonCenter = calculateMoonCenter(width, height, moonProgress)
+                    drawGlowingMoon(
+                        width = width,
+                        height = height,
+                        moonCenter = moonCenter,
+                        pulseProgress = slowProgress,
+                        moonPhase = moonPhase,
+                        lunarRenderer = lunarRenderer,
+                        clipPath = moonClipPath,
+                        shadowReusablePath = lunarShadowReusablePath
+                    )
+                }
             }
 
             // 白昼渲染原生 Compose 硬件加速 3D 物理真实太阳、丁达尔圣光与浮游光尘（0 CPU 阻塞，0 掉帧）
@@ -903,14 +905,16 @@ data class CelestialTimes(
  * 月相详细数据模型
  *
  * @property phaseName 月相中文名称（如“渐盈凸月”、“满月”、“新月”等）
- * @property moonriseTimeStr 月出时间文本（如“18:10”）
- * @property nextFullMoonDateStr 下次满月公历日期文本（如“8月28日”）
+ * @property moonriseTimeStr 月出时间文本（如“20:02”）
+ * @property moonsetTimeStr 月落时间文本（如“08:44”）
+ * @property nextFullMoonDateStr 下次满月公历日期文本（如“9月26日”）
  * @property moonPhase 归一化月相周期值（0.0f ~ 1.0f）
  * @property moonAge 月龄天数（0.0 ~ 29.53）
  */
 data class MoonPhaseInfo(
     val phaseName: String,
     val moonriseTimeStr: String,
+    val moonsetTimeStr: String,
     val nextFullMoonDateStr: String,
     val moonPhase: Float,
     val moonAge: Double
@@ -1015,16 +1019,7 @@ object SunMoonCalculator {
             0.0f
         }
 
-        // 4. 城市夜间月亮运行轨迹计算 (基于日落至次日日出的夜幕全时段，保证夜间任何时刻位置准确自然)
-        val nightTotalMinutes = (sunriseMinutes + 1440 - sunsetMinutes).coerceAtLeast(600)
-        val nightElapsed = if (currentMinutes >= sunsetMinutes) {
-            (currentMinutes - sunsetMinutes).toFloat()
-        } else {
-            (currentMinutes + 1440 - sunsetMinutes).toFloat()
-        }
-        val moonProgress = (nightElapsed / nightTotalMinutes.toFloat()).coerceIn(0f, 1f)
-
-        // 5. 真实月相与月升月落时间 (基于标准 J2000 新月纪元与 Jean Meeus 高精度月球轨道摄动星历算法)
+        // 4. 真实月相与月升月落时间 (基于标准 J2000 新月纪元与 Jean Meeus 高精度月球轨道摄动星历算法)
         val epochNewMoonMillis = 947182440000L
         val diffMillis = calendar.timeInMillis - epochNewMoonMillis
         val diffDays = diffMillis.toDouble() / (1000.0 * 60.0 * 60.0 * 24.0)
@@ -1043,7 +1038,43 @@ object SunMoonCalculator {
         val moonriseMinutes = preciseEphemeris.moonriseMinutes
         val moonsetMinutes = preciseEphemeris.moonsetMinutes
 
-        val isMoonVisible = isNight
+        // 5. 严格依据月出与月落时间计算月球在地平线之上的状态与运行轨迹进度
+        val isMoonAboveHorizon: Boolean
+        val moonProgress: Float
+
+        val totalMoonDuration = if (moonsetMinutes >= moonriseMinutes) {
+            (moonsetMinutes - moonriseMinutes).coerceAtLeast(300)
+        } else {
+            (moonsetMinutes + 1440 - moonriseMinutes).coerceAtLeast(300)
+        }
+
+        if (moonsetMinutes >= moonriseMinutes) {
+            // 当天内月出月落（不跨午夜，如 06:30 ~ 19:45）
+            isMoonAboveHorizon = currentMinutes in moonriseMinutes..moonsetMinutes
+            val elapsed = (currentMinutes - moonriseMinutes).coerceAtLeast(0)
+            moonProgress = if (isMoonAboveHorizon) {
+                (elapsed.toFloat() / totalMoonDuration.toFloat()).coerceIn(0f, 1f)
+            } else if (currentMinutes < moonriseMinutes) {
+                0.0f
+            } else {
+                1.0f
+            }
+        } else {
+            // 跨午夜月出月落（如 20:15 ~ 次日 08:30）
+            isMoonAboveHorizon = currentMinutes >= moonriseMinutes || currentMinutes <= moonsetMinutes
+            val elapsed = if (currentMinutes >= moonriseMinutes) {
+                currentMinutes - moonriseMinutes
+            } else {
+                currentMinutes + 1440 - moonriseMinutes
+            }
+            moonProgress = if (isMoonAboveHorizon) {
+                (elapsed.toFloat() / totalMoonDuration.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0.0f
+            }
+        }
+
+        val isMoonVisible = isMoonAboveHorizon
 
         return CelestialTimes(
             sunriseMinutes = sunriseMinutes,
@@ -1102,13 +1133,18 @@ object SunMoonCalculator {
         val targetCal = Calendar.getInstance().apply { timeInMillis = targetFullMoonMillis }
         val nextFullMoonDateStr = "${targetCal.get(Calendar.MONTH) + 1}月${targetCal.get(Calendar.DAY_OF_MONTH)}日"
 
-        val h = (celestialTimes.moonriseMinutes / 60) % 24
-        val m = celestialTimes.moonriseMinutes % 60
-        val moonriseTimeStr = String.format(Locale.CHINA, "%02d:%02d", h, m)
+        val riseH = (celestialTimes.moonriseMinutes / 60) % 24
+        val riseM = celestialTimes.moonriseMinutes % 60
+        val moonriseTimeStr = String.format(Locale.CHINA, "%02d:%02d", riseH, riseM)
+
+        val setH = (celestialTimes.moonsetMinutes / 60) % 24
+        val setM = celestialTimes.moonsetMinutes % 60
+        val moonsetTimeStr = String.format(Locale.CHINA, "%02d:%02d", setH, setM)
 
         return MoonPhaseInfo(
             phaseName = phaseName,
             moonriseTimeStr = moonriseTimeStr,
+            moonsetTimeStr = moonsetTimeStr,
             nextFullMoonDateStr = nextFullMoonDateStr,
             moonPhase = phase,
             moonAge = moonAge

@@ -68,7 +68,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -266,18 +269,19 @@ private fun MoonDetailTopBar(
     onBackClick: () -> Unit,
     onResetTodayClick: () -> Unit
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        contentAlignment = Alignment.Center
     ) {
-        // 左侧返回按钮
+        // 左侧返回按钮（绝对靠左）
         Surface(
             shape = CircleShape,
             color = Color.White.copy(alpha = 0.15f),
-            modifier = Modifier.size(38.dp)
+            modifier = Modifier
+                .size(38.dp)
+                .align(Alignment.CenterStart)
         ) {
             IconButton(onClick = onBackClick) {
                 Icon(
@@ -289,8 +293,11 @@ private fun MoonDetailTopBar(
             }
         }
 
-        // 居中标题
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // 居中标题（始终锁定在屏幕物理水平绝对中心，不随两侧元素宽度变化而偏移）
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.align(Alignment.Center)
+        ) {
             Text(
                 text = "月相与天象",
                 color = Color.White,
@@ -305,13 +312,14 @@ private fun MoonDetailTopBar(
             )
         }
 
-        // 右侧“今天”快速重置按钮
+        // 右侧“今天”快速重置按钮（绝对靠右）
         if (!isToday) {
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = Color(0xFF2A5288).copy(alpha = 0.70f),
                 modifier = Modifier
                     .height(32.dp)
+                    .align(Alignment.CenterEnd)
                     .clickable(onClick = onResetTodayClick)
             ) {
                 Row(
@@ -333,8 +341,6 @@ private fun MoonDetailTopBar(
                     )
                 }
             }
-        } else {
-            Spacer(modifier = Modifier.size(38.dp))
         }
     }
 }
@@ -947,10 +953,40 @@ private fun StargazingGuideCard(
 }
 
 /**
+ * 天文科普知识条目数据模型
+ *
+ * @property title 知识点标题（如“朔望月周期”）
+ * @property content 知识点详情说明文本
+ */
+private data class AstronomyKnowledgeItem(
+    val title: String,
+    val content: String
+)
+
+/**
  * 月相与潮汐天文学科普卡片
+ *
+ * 采用结构化列表与悬挂缩进排版，确保多行换行文字与第一行内容严格垂直左对齐。
  */
 @Composable
 private fun MoonScienceGuideCard() {
+    val knowledgeItems = remember {
+        listOf(
+            AstronomyKnowledgeItem(
+                title = "朔望月周期",
+                content = "月球绕地球公转一个完整朔望周期平均为 29.53 天。新月（朔）日月同向，满月（望）日月相望。"
+            ),
+            AstronomyKnowledgeItem(
+                title = "潮汐效应",
+                content = "新月与满月时太阳与月球引潮力叠加产生「大潮」；上弦与下弦引力成直角相互削弱产生「小潮」。"
+            ),
+            AstronomyKnowledgeItem(
+                title = "晨昏线观测",
+                content = "月球明暗分界的晨昏线由于低角度太阳照射，是使用天文望远镜观测环形山与月海峡谷的最佳区域。"
+            )
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -975,16 +1011,36 @@ private fun MoonScienceGuideCard() {
             )
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            text = "• 朔望月周期：月球绕地球公转一个完整朔望周期平均为 29.53 天。新月（朔）日月同向，满月（望）日月相望。\n" +
-                   "• 潮汐效应：新月与满月时太阳与月球引潮力叠加产生「大潮」；上弦与下弦引力成直角相互削弱产生「小潮」。\n" +
-                   "• 晨昏线观测：月球明暗分界的晨昏线由于低角度太阳照射，是使用天文望远镜观测环形山与月海峡谷的最佳区域。",
-            color = Color.White.copy(alpha = 0.75f),
-            fontSize = 12.sp,
-            lineHeight = 18.sp
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            knowledgeItems.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text(
+                        text = "•",
+                        color = Color.White.copy(alpha = 0.60f),
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.90f))) {
+                                append("${item.title}：")
+                            }
+                            append(item.content)
+                        },
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1032,7 +1088,7 @@ private fun StarlightBackgroundCanvas(
 /**
  * 详情页高精度微型月相图标
  *
- * @param phase 归一化月相周期值（0.0f ~ 1.0f）
+ * @param phase 归一化月相周期值（0.0f ~ 1.0f，0.0 为新月，0.25 为上弦月，0.50 为满月，0.75 为下弦月）
  * @param modifier 外部修饰符
  */
 @Composable
@@ -1047,30 +1103,33 @@ private fun DetailMiniMoonIcon(
             val outerRect = Rect(c.x - r, c.y - r, c.x + r, c.y + r)
 
             val p = (phase % 1f + 1f) % 1f
-            val isWaxing = p < 0.50f
             val k = cos(2.0 * PI * p).toFloat()
 
             val brightPath = Path().apply {
-                if (isWaxing) {
-                    val termX = (k * r).coerceIn(-r, r)
-                    val rx = kotlin.math.abs(termX).coerceAtLeast(0.01f)
+                if (p in 0.02f..0.48f) {
+                    // 渐盈阶段（上弦、峨眉月、凸月）：右半侧亮
+                    val rx = (kotlin.math.abs(k) * r).coerceAtLeast(0.01f)
                     val termRect = Rect(c.x - rx, c.y - r, c.x + rx, c.y + r)
                     arcTo(outerRect, -90f, 180f, false)
-                    if (termX >= 0f) {
-                        arcTo(termRect, 90f, -180f, false)
-                    } else {
+                    if (k > 0f) {
+                        // 峨眉月（亮面小于半圆）：晨昏线向右鼓起
                         arcTo(termRect, 90f, 180f, false)
+                    } else {
+                        // 凸月（亮面大于半圆）：晨昏线向左凹入
+                        arcTo(termRect, 90f, -180f, false)
                     }
                     close()
-                } else {
-                    val termX = (-k * r).coerceIn(-r, r)
-                    val rx = kotlin.math.abs(termX).coerceAtLeast(0.01f)
+                } else if (p in 0.52f..0.98f) {
+                    // 渐亏阶段（下弦、亏凸月、残月）：左半侧亮
+                    val rx = (kotlin.math.abs(k) * r).coerceAtLeast(0.01f)
                     val termRect = Rect(c.x - rx, c.y - r, c.x + rx, c.y + r)
-                    arcTo(outerRect, 270f, -180f, false)
-                    if (termX <= 0f) {
-                        arcTo(termRect, 90f, -180f, false)
+                    arcTo(outerRect, 90f, 180f, false)
+                    if (k > 0f) {
+                        // 残月（亮面小于半圆）：晨昏线向左鼓起
+                        arcTo(termRect, 270f, 180f, false)
                     } else {
-                        arcTo(termRect, 90f, 180f, false)
+                        // 亏凸月（亮面大于半圆）：晨昏线向右凹入
+                        arcTo(termRect, 270f, -180f, false)
                     }
                     close()
                 }
@@ -1080,11 +1139,29 @@ private fun DetailMiniMoonIcon(
             val brightFillColor = Color.White.copy(alpha = 0.95f)
 
             onDrawBehind {
+                // 1. 暗面底色（灰色圆盘）
                 drawCircle(
                     color = baseDarkColor,
                     radius = r,
                     center = c
                 )
+
+                // 2. 满月极值处理（全亮）
+                if (p in 0.48f..0.52f) {
+                    drawCircle(
+                        color = brightFillColor,
+                        radius = r,
+                        center = c
+                    )
+                    return@onDrawBehind
+                }
+
+                // 3. 新月极值处理（全暗）
+                if (p < 0.02f || p > 0.98f) {
+                    return@onDrawBehind
+                }
+
+                // 4. 其他中间月相
                 drawPath(path = brightPath, color = brightFillColor)
             }
         }

@@ -185,31 +185,50 @@ fun MoonPhaseRealCard(
             Text(
                 text = moonInfo.phaseName,
                 color = Color.White,
-                fontSize = 24.sp,
+                fontSize = 21.sp,
                 fontWeight = FontWeight.Normal,
-                lineHeight = 26.sp
+                lineHeight = 23.sp
             )
 
-            // 3. 底部信息列表（月出时间 + 分割线 + 下次满月）
+            // 3. 底部信息列表（月出月落单行展示 + 分割线 + 下次满月）
             Column(modifier = Modifier.fillMaxWidth()) {
-                // 月出时刻行
+                // 月出月落单行展示
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "月出",
-                        color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                    Text(
-                        text = moonInfo.moonriseTimeStr,
-                        color = Color.White.copy(alpha = 0.90f),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Normal
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "月出",
+                            color = Color.White.copy(alpha = 0.75f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = moonInfo.moonriseTimeStr,
+                            color = Color.White.copy(alpha = 0.90f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "月落",
+                            color = Color.White.copy(alpha = 0.75f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = moonInfo.moonsetTimeStr,
+                            color = Color.White.copy(alpha = 0.90f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -218,8 +237,8 @@ fun MoonPhaseRealCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(0.6.dp)
-                        .background(Color.White.copy(alpha = 0.15f))
+                        .height(0.5.dp)
+                        .background(Color.White.copy(alpha = 0.12f))
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -233,13 +252,13 @@ fun MoonPhaseRealCard(
                     Text(
                         text = "下次满月",
                         color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Normal
                     )
                     Text(
                         text = moonInfo.nextFullMoonDateStr,
                         color = Color.White.copy(alpha = 0.90f),
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Normal
                     )
                 }
@@ -322,30 +341,33 @@ private fun MiniMoonPhaseIcon(
             val outerRect = Rect(c.x - r, c.y - r, c.x + r, c.y + r)
 
             val p = (phase % 1f + 1f) % 1f
-            val isWaxing = p < 0.50f
             val k = cos(2.0 * PI * p).toFloat()
 
             val brightPath = Path().apply {
-                if (isWaxing) {
-                    val termX = (k * r).coerceIn(-r, r)
-                    val rx = kotlin.math.abs(termX).coerceAtLeast(0.01f)
+                if (p in 0.02f..0.48f) {
+                    // 渐盈阶段（上弦、峨眉月、凸月）：右半侧亮
+                    val rx = (kotlin.math.abs(k) * r).coerceAtLeast(0.01f)
                     val termRect = Rect(c.x - rx, c.y - r, c.x + rx, c.y + r)
                     arcTo(outerRect, -90f, 180f, false)
-                    if (termX >= 0f) {
-                        arcTo(termRect, 90f, -180f, false)
-                    } else {
+                    if (k > 0f) {
+                        // 峨眉月（亮面小于半圆）：晨昏线向右鼓起
                         arcTo(termRect, 90f, 180f, false)
+                    } else {
+                        // 凸月（亮面大于半圆）：晨昏线向左凹入
+                        arcTo(termRect, 90f, -180f, false)
                     }
                     close()
-                } else {
-                    val termX = (-k * r).coerceIn(-r, r)
-                    val rx = kotlin.math.abs(termX).coerceAtLeast(0.01f)
+                } else if (p in 0.52f..0.98f) {
+                    // 渐亏阶段（下弦、亏凸月、残月）：左半侧亮
+                    val rx = (kotlin.math.abs(k) * r).coerceAtLeast(0.01f)
                     val termRect = Rect(c.x - rx, c.y - r, c.x + rx, c.y + r)
-                    arcTo(outerRect, 270f, -180f, false)
-                    if (termX <= 0f) {
-                        arcTo(termRect, 90f, 180f, false)
+                    arcTo(outerRect, 90f, 180f, false)
+                    if (k > 0f) {
+                        // 残月（亮面小于半圆）：晨昏线向左鼓起
+                        arcTo(termRect, 270f, 180f, false)
                     } else {
-                        arcTo(termRect, 90f, -180f, false)
+                        // 亏凸月（亮面大于半圆）：晨昏线向右凹入
+                        arcTo(termRect, 270f, -180f, false)
                     }
                     close()
                 }
@@ -355,11 +377,29 @@ private fun MiniMoonPhaseIcon(
             val brightFillColor = Color.White.copy(alpha = 0.90f)
 
             onDrawBehind {
+                // 1. 暗面底色（灰色圆盘）
                 drawCircle(
                     color = baseDarkColor,
                     radius = r,
                     center = c
                 )
+
+                // 2. 满月极值处理（全亮）
+                if (p in 0.48f..0.52f) {
+                    drawCircle(
+                        color = brightFillColor,
+                        radius = r,
+                        center = c
+                    )
+                    return@onDrawBehind
+                }
+
+                // 3. 新月极值处理（全暗）
+                if (p < 0.02f || p > 0.98f) {
+                    return@onDrawBehind
+                }
+
+                // 4. 其他中间月相
                 drawPath(path = brightPath, color = brightFillColor)
             }
         }

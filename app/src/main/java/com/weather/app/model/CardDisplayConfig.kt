@@ -14,6 +14,7 @@ import androidx.compose.runtime.Immutable
  * @property showDailyForecast 是否展示近日天气预报卡片（默认 true）
  * @property showAirQuality 是否展示空气质量卡片（默认 true）
  * @property showSunriseSunset 是否展示日出日落卡片（默认 true）
+ * @property showEarthDaylight 是否展示昼夜晨昏线卡片（默认 true）
  * @property showMoonPhase 是否展示 3D 月相卡片（默认 true）
  * @property showFeelsLike 是否展示体感温度卡片（默认 true）
  * @property showWind 是否展示风向风速卡片（默认 true）
@@ -30,6 +31,7 @@ data class CardDisplayConfig(
     val showDailyForecast: Boolean = true,
     val showAirQuality: Boolean = true,
     val showSunriseSunset: Boolean = true,
+    val showEarthDaylight: Boolean = true,
     val showMoonPhase: Boolean = true,
     val showFeelsLike: Boolean = true,
     val showWind: Boolean = true,
@@ -59,6 +61,7 @@ data class CardDisplayConfig(
             showDailyForecast = false,
             showAirQuality = false,
             showSunriseSunset = false,
+            showEarthDaylight = false,
             showMoonPhase = false,
             showFeelsLike = false,
             showWind = false,
@@ -84,6 +87,7 @@ data class CardDisplayConfig(
             KEY_DAILY_FORECAST -> copy(showDailyForecast = enabled)
             KEY_AIR_QUALITY -> copy(showAirQuality = enabled)
             KEY_SUNRISE_SUNSET -> copy(showSunriseSunset = enabled)
+            KEY_EARTH_DAYLIGHT -> copy(showEarthDaylight = enabled)
             KEY_MOON_PHASE -> copy(showMoonPhase = enabled)
             KEY_FEELS_LIKE -> copy(showFeelsLike = enabled)
             KEY_WIND -> copy(showWind = enabled)
@@ -108,6 +112,8 @@ const val KEY_DAILY_FORECAST = "daily_forecast"
 const val KEY_AIR_QUALITY = "air_quality"
 /** 日出日落卡片键名 */
 const val KEY_SUNRISE_SUNSET = "sunrise_sunset"
+/** 昼夜晨昏线卡片键名 */
+const val KEY_EARTH_DAYLIGHT = "earth_daylight"
 /** 3D 月相卡片键名 */
 const val KEY_MOON_PHASE = "moon_phase"
 /** 体感温度卡片键名 */

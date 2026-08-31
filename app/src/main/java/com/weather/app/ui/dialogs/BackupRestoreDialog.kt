@@ -260,30 +260,31 @@ fun RestoreConfirmationDialog(
                     border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.08f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Text(
-                            text = "• 备份时间: ${backupData.getFormattedDate()}",
-                            color = Color.White.copy(alpha = 0.90f),
-                            fontSize = 12.sp
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = "• 包含城市: ${backupData.savedCities.size} 个 (${backupData.savedCities.take(3).joinToString("、") { it.name }}${if (backupData.savedCities.size > 3) "等" else ""})",
-                            color = Color.White.copy(alpha = 0.90f),
-                            fontSize = 12.sp
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = "• 天气数据源: ${backupData.activeSourceId}",
-                            color = Color.White.copy(alpha = 0.90f),
-                            fontSize = 12.sp
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = "• 备份应用版本: ${backupData.appVersion}",
-                            color = Color.White.copy(alpha = 0.70f),
-                            fontSize = 11.5.sp
-                        )
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(text = "•", color = Color.White.copy(alpha = 0.70f), fontSize = 12.sp, modifier = Modifier.padding(end = 6.dp))
+                            Text(text = "备份时间: ${backupData.getFormattedDate()}", color = Color.White.copy(alpha = 0.90f), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        }
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(text = "•", color = Color.White.copy(alpha = 0.70f), fontSize = 12.sp, modifier = Modifier.padding(end = 6.dp))
+                            Text(
+                                text = "包含城市: ${backupData.savedCities.size} 个 (${backupData.savedCities.take(3).joinToString("、") { it.name }}${if (backupData.savedCities.size > 3) "等" else ""})",
+                                color = Color.White.copy(alpha = 0.90f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(text = "•", color = Color.White.copy(alpha = 0.70f), fontSize = 12.sp, modifier = Modifier.padding(end = 6.dp))
+                            Text(text = "天气数据源: ${backupData.activeSourceId}", color = Color.White.copy(alpha = 0.90f), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        }
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(text = "•", color = Color.White.copy(alpha = 0.70f), fontSize = 11.5.sp, modifier = Modifier.padding(end = 6.dp))
+                            Text(text = "备份应用版本: ${backupData.appVersion}", color = Color.White.copy(alpha = 0.70f), fontSize = 11.5.sp, modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }

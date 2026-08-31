@@ -70,6 +70,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -202,40 +203,41 @@ private fun EarthDaylightContent(
             }
         }
 
-        // 3. 顶部沉浸式导航栏（带状态栏安全边距、居中实时时钟胶囊与两侧对称操作按钮）
-        Row(
+        // 3. 顶部沉浸式导航栏（绝对居中排版）
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            contentAlignment = Alignment.Center
         ) {
-            IconButton(
-                onClick = onBackClick,
+            Surface(
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.15f),
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x660F172A))
-                    .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                    .size(38.dp)
+                    .align(Alignment.CenterStart)
             ) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "返回",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                IconButton(onClick = onBackClick) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "返回",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
 
-            // 中间居中主标题与实时时钟胶囊
+            // 中间居中主标题与实时时钟胶囊（始终绝对居中）
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.align(Alignment.Center)
             ) {
                 Text(
                     text = "地球实时日光",
                     color = Color.White,
-                    fontSize = 16.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(3.dp))
@@ -267,132 +269,127 @@ private fun EarthDaylightContent(
                 }
             }
 
-            // 右侧视角复位快捷按钮
-            IconButton(
-                onClick = {
-                    executeSimulatorJs(webViewRef, "window.earthSimulator.resetCamera()")
-                },
+            // 右侧视角复位快捷按钮（绝对靠右）
+            Surface(
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.15f),
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x660F172A))
-                    .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                    .size(38.dp)
+                    .align(Alignment.CenterEnd)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "重置视角",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        // 4. 底部现代化毛玻璃交互控制坞 (Dock)
-        Surface(
-            color = Color(0x990F172A),
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 14.dp, vertical = 34.dp)
-                .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
-        ) {
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 晨昏线切换（昼夜交界线）
-                EarthDockButton(
-                    icon = Icons.Default.WbSunny,
-                    label = "晨昏线",
-                    isActive = isTerminatorActive,
-                    onClick = {
-                        isTerminatorActive = !isTerminatorActive
-                        executeSimulatorJs(webViewRef, "window.earthSimulator.toggleTerminator()")
-                    }
-                )
-
-                // 午时线切换
-                EarthDockButton(
-                    icon = Icons.Default.Timeline,
-                    label = "午时线",
-                    isActive = isMeridianActive,
-                    onClick = {
-                        isMeridianActive = !isMeridianActive
-                        executeSimulatorJs(webViewRef, "window.earthSimulator.toggleMeridian()")
-                    }
-                )
-
-                // 地轴切换
-                EarthDockButton(
-                    icon = Icons.Default.VpnLock,
-                    label = "地轴",
-                    isActive = isAxisActive,
-                    onClick = {
-                        isAxisActive = !isAxisActive
-                        executeSimulatorJs(webViewRef, "window.earthSimulator.toggleAxis()")
-                    }
-                )
-
-                // 赤道对齐
-                EarthDockButton(
-                    icon = Icons.Default.Language,
-                    label = "赤道对齐",
-                    isActive = false,
-                    onClick = {
-                        executeSimulatorJs(webViewRef, "window.earthSimulator.alignEquator()")
-                    }
-                )
-
-                // 黄道对齐
-                EarthDockButton(
-                    icon = Icons.Default.WbSunny,
-                    label = "黄道对齐",
-                    isActive = false,
-                    onClick = {
-                        executeSimulatorJs(webViewRef, "window.earthSimulator.alignEcliptic()")
-                    }
-                )
-
-                // 视角放大
-                EarthDockButton(
-                    icon = Icons.Default.ZoomIn,
-                    label = "放大",
-                    isActive = false,
-                    onClick = {
-                        executeSimulatorJs(webViewRef, "window.earthSimulator.zoomIn()")
-                    }
-                )
-
-                // 视角缩小
-                EarthDockButton(
-                    icon = Icons.Default.ZoomOut,
-                    label = "缩小",
-                    isActive = false,
-                    onClick = {
-                        executeSimulatorJs(webViewRef, "window.earthSimulator.zoomOut()")
-                    }
-                )
-
-                // 视角复位
-                EarthDockButton(
-                    icon = Icons.Default.CenterFocusStrong,
-                    label = "复位",
-                    isActive = false,
+                IconButton(
                     onClick = {
                         executeSimulatorJs(webViewRef, "window.earthSimulator.resetCamera()")
                     }
-                )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CenterFocusStrong,
+                        contentDescription = "视角复位",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        // 4. 底部现代化毛玻璃交互控制坞与操作说明提示
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 12.dp, start = 14.dp, end = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 操作说明提示文本（始终居中显示在控制坞上方，永不被遮挡）
+            Text(
+                text = "单指拖动旋转视角 · 双指捏合自由缩放 · 实时模拟全球昼夜晨昏圈",
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Surface(
+                color = Color(0x990F172A),
+                shape = RoundedCornerShape(22.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 晨昏线切换（昼夜交界线）
+                    EarthDockButton(
+                        icon = Icons.Default.WbSunny,
+                        label = "晨昏线",
+                        isActive = isTerminatorActive,
+                        onClick = {
+                            isTerminatorActive = !isTerminatorActive
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.toggleTerminator()")
+                        }
+                    )
+
+                    // 午时线切换
+                    EarthDockButton(
+                        icon = Icons.Default.Timeline,
+                        label = "午时线",
+                        isActive = isMeridianActive,
+                        onClick = {
+                            isMeridianActive = !isMeridianActive
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.toggleMeridian()")
+                        }
+                    )
+
+                    // 地轴切换
+                    EarthDockButton(
+                        icon = Icons.Default.VpnLock,
+                        label = "地轴",
+                        isActive = isAxisActive,
+                        onClick = {
+                            isAxisActive = !isAxisActive
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.toggleAxis()")
+                        }
+                    )
+
+                    // 赤道对齐
+                    EarthDockButton(
+                        icon = Icons.Default.Language,
+                        label = "赤道对齐",
+                        isActive = false,
+                        onClick = {
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.alignEquator()")
+                        }
+                    )
+
+                    // 黄道对齐
+                    EarthDockButton(
+                        icon = Icons.Default.WbSunny,
+                        label = "黄道对齐",
+                        isActive = false,
+                        onClick = {
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.alignEcliptic()")
+                        }
+                    )
+
+                    // 视角复位
+                    EarthDockButton(
+                        icon = Icons.Default.CenterFocusStrong,
+                        label = "复位",
+                        isActive = false,
+                        onClick = {
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.resetCamera()")
+                        }
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * 底部控制栏单个交互胶囊按钮
+ * 底部控制栏单个交互胶囊按钮（统一固定高度、逐字竖排文字与无边框扁平设计）
  *
  * @param icon 按钮矢量图标 [ImageVector]
  * @param label 按钮文字描述
@@ -407,41 +404,44 @@ private fun EarthDockButton(
     onClick: () -> Unit
 ) {
     val backgroundBrush = if (isActive) {
-        Brush.horizontalGradient(
+        Brush.verticalGradient(
             listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
         )
     } else {
-        Brush.horizontalGradient(
+        Brush.verticalGradient(
             listOf(Color(0x33FFFFFF), Color(0x1AFFFFFF))
         )
     }
 
-    Row(
+    val verticalLabel = remember(label) {
+        label.map { it.toString() }.joinToString("\n")
+    }
+
+    Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .height(88.dp)
+            .width(36.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(backgroundBrush)
-            .border(
-                1.dp,
-                if (isActive) Color(0xFF60A5FA) else Color.White.copy(alpha = 0.1f),
-                RoundedCornerShape(16.dp)
-            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
+            .padding(vertical = 6.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
             tint = if (isActive) Color.White else Color.White.copy(alpha = 0.85f),
-            modifier = Modifier.size(15.dp)
+            modifier = Modifier.size(16.dp)
         )
-        Spacer(modifier = Modifier.width(5.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = label,
+            text = verticalLabel,
             color = if (isActive) Color.White else Color.White.copy(alpha = 0.85f),
-            fontSize = 12.sp,
-            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal
+            fontSize = 11.sp,
+            lineHeight = 13.5.sp,
+            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+            textAlign = TextAlign.Center
         )
     }
 }

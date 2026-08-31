@@ -318,6 +318,63 @@ class WeatherDataSourceTest {
         // 验证中午日照进度在 0.4 ~ 0.6 之间
         assertTrue("Sun progress ${celestial.sunProgress} should be around 0.5", celestial.sunProgress in 0.4f..0.6f)
     }
+
+    /**
+     * 测试月亮出现时间严格按照月出与月落时间判定
+     *
+     * 验证在月出前、月亮升起期间、月落后的可见性与运行进度。
+     */
+    @Test
+    fun testMoonriseMoonsetStrictVisibility() {
+        val beijing = CityInfo(
+            code = "Wqsps",
+            name = "北京",
+            province = "北京市",
+            latitude = 39.9042,
+            longitude = 116.4074
+        )
+
+        // 构造固定公历日期：2026年8月27日
+        val baseCalendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.YEAR, 2026)
+            set(java.util.Calendar.MONTH, java.util.Calendar.AUGUST)
+            set(java.util.Calendar.DAY_OF_MONTH, 27)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+        }
+
+        val baseCelestial = com.weather.app.ui.components.SunMoonCalculator.calculateCelestialTimes(beijing, baseCalendar)
+        val moonrise = baseCelestial.moonriseMinutes
+        val moonset = baseCelestial.moonsetMinutes
+
+        // 1. 测试在月亮升起正中间时刻（月出与月落中点），月亮必定可见且进度在合理范围内
+        val midMinutes = if (moonset >= moonrise) {
+            (moonrise + moonset) / 2
+        } else {
+            (moonrise + (moonset + 1440 - moonrise) / 2) % 1440
+        }
+
+        val midCalendar = (baseCalendar.clone() as java.util.Calendar).apply {
+            set(java.util.Calendar.HOUR_OF_DAY, midMinutes / 60)
+            set(java.util.Calendar.MINUTE, midMinutes % 60)
+        }
+        val midCelestial = com.weather.app.ui.components.SunMoonCalculator.calculateCelestialTimes(beijing, midCalendar)
+        assertTrue("At mid transit, moon should be visible", midCelestial.isMoonVisible)
+        assertTrue("At mid transit, moonProgress should be around 0.5", midCelestial.moonProgress in 0.3f..0.7f)
+
+        // 2. 测试在月出前1小时（若不跨天）或月落后1小时，月亮处于地平线下不可见
+        val outsideMinutes = if (moonset >= moonrise) {
+            (moonset + 60) % 1440
+        } else {
+            (moonset + (moonrise - moonset) / 2) % 1440
+        }
+        val outsideCalendar = (baseCalendar.clone() as java.util.Calendar).apply {
+            set(java.util.Calendar.HOUR_OF_DAY, outsideMinutes / 60)
+            set(java.util.Calendar.MINUTE, outsideMinutes % 60)
+        }
+        val outsideCelestial = com.weather.app.ui.components.SunMoonCalculator.calculateCelestialTimes(beijing, outsideCalendar)
+        assertTrue("When moon is below horizon, isMoonVisible should be false", !outsideCelestial.isMoonVisible)
+    }
 }
 
 

@@ -294,7 +294,12 @@ fun WeatherScreen(
                     isVerticalScrollEnabled = true,
                     onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
                     onRefresh = { viewModel.refreshCityAtIndex(page) },
-                    onSunriseSunsetClick = { viewModel.setShowEarthDaylightScreen(true) },
+                    onSunriseSunsetClick = { targetCity ->
+                        viewModel.setShowSunriseSunsetScreen(true, targetCity)
+                    },
+                    onEarthDaylightClick = {
+                        viewModel.setShowEarthDaylightScreen(true)
+                    },
                     onLocationMapClick = { targetCity ->
                         viewModel.setShowLocationMapScreen(true, targetCity)
                     },
@@ -305,7 +310,15 @@ fun WeatherScreen(
             }
         }
 
-        // 地球实时日光 3D 拟真全屏页面 (点击日出日落卡片触发)
+        // 日出日落与天体运行摄影级 3D 拟真全屏页面 (点击日出日落卡片触发)
+        val targetSunriseCity = uiState.targetSunriseCity ?: activeCity
+        SunriseSunsetDetailScreen(
+            visible = uiState.showSunriseSunsetScreen,
+            city = targetSunriseCity,
+            onBackClick = { viewModel.setShowSunriseSunsetScreen(false) }
+        )
+
+        // 地球实时日光与昼夜晨昏线 3D 拟真全屏页面 (点击昼夜晨昏线卡片触发)
         EarthDaylightScreen(
             visible = uiState.showEarthDaylightScreen,
             onBackClick = { viewModel.setShowEarthDaylightScreen(false) }
@@ -775,7 +788,8 @@ private fun TopImmersiveWeatherBar(
  * @param isVerticalScrollEnabled 是否允许垂直滚动与下拉刷新（用于手势冲突防抖与方向锁定联动）
  * @param onDailyChartModeChange 切换近日天气模式回调
  * @param onRefresh 下拉刷新触发回调
- * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
+ * @param onSunriseSunsetClick 点击日出日落卡片跳转日出日落全屏详情页面回调
+ * @param onEarthDaylightClick 点击昼夜晨昏线卡片跳转地球实时日光模拟器回调
  * @param onLocationMapClick 点击定位地图卡片跳转全屏气象大地图回调
  * @param onMoonPhaseClick 点击月相卡片跳转月相全屏详情页面回调
  */
@@ -792,7 +806,8 @@ private fun CityWeatherPageContent(
     isVerticalScrollEnabled: Boolean = true,
     onDailyChartModeChange: (Boolean) -> Unit,
     onRefresh: () -> Unit,
-    onSunriseSunsetClick: () -> Unit = {},
+    onSunriseSunsetClick: (CityInfo) -> Unit = {},
+    onEarthDaylightClick: () -> Unit = {},
     onLocationMapClick: (CityInfo) -> Unit = {},
     onMoonPhaseClick: (CityInfo) -> Unit = {}
 ) {
@@ -933,7 +948,8 @@ private fun CityWeatherPageContent(
                     weatherData = weatherData,
                     cardConfig = cardConfig,
                     lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText,
-                    onSunriseSunsetClick = onSunriseSunsetClick,
+                    onSunriseSunsetClick = { onSunriseSunsetClick(city) },
+                    onEarthDaylightClick = onEarthDaylightClick,
                     onMoonPhaseClick = { onMoonPhaseClick(city) }
                 )
 

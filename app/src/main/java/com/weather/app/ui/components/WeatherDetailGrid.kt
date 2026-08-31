@@ -84,6 +84,8 @@ enum class MetricCardType {
     AIR_QUALITY,
     /** 真实日出日落天体轨迹卡片 */
     SUNRISE_SUNSET,
+    /** 真实昼夜晨昏线卡片 */
+    EARTH_DAYLIGHT,
     /** 真实体感温度卡片 */
     FEELS_LIKE,
     /** 真实风向风速罗盘卡片 */
@@ -108,7 +110,8 @@ enum class MetricCardType {
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param cardConfig 卡片自定义显隐配置实体 [CardDisplayConfig]
  * @param lastUpdatedText 上次刷新时间说明文本（如 "上次刷新 15:53"）
- * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
+ * @param onSunriseSunsetClick 点击日出日落卡片跳转日出日落详情页回调
+ * @param onEarthDaylightClick 点击昼夜晨昏线卡片跳转地球实时日光模拟器回调
  * @param onMoonPhaseClick 点击月相卡片跳转月相全屏详情页面回调
  * @param modifier 外部修饰符
  */
@@ -118,6 +121,7 @@ fun WeatherDetailGrid(
     cardConfig: CardDisplayConfig = CardDisplayConfig(),
     lastUpdatedText: String = "",
     onSunriseSunsetClick: () -> Unit = {},
+    onEarthDaylightClick: () -> Unit = {},
     onMoonPhaseClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -132,6 +136,9 @@ fun WeatherDetailGrid(
         }
         if (cardConfig.showSunriseSunset) {
             types.add(MetricCardType.SUNRISE_SUNSET)
+        }
+        if (cardConfig.showEarthDaylight) {
+            types.add(MetricCardType.EARTH_DAYLIGHT)
         }
         if (cardConfig.showFeelsLike && current.feelsLike != null && current.feelsLike != 9999.0) {
             types.add(MetricCardType.FEELS_LIKE)
@@ -169,6 +176,7 @@ fun WeatherDetailGrid(
                         type = firstBatch[0],
                         weatherData = weatherData,
                         onSunriseSunsetClick = onSunriseSunsetClick,
+                        onEarthDaylightClick = onEarthDaylightClick,
                         modifier = Modifier.weight(1f)
                     )
 
@@ -177,6 +185,7 @@ fun WeatherDetailGrid(
                             type = firstBatch[1],
                             weatherData = weatherData,
                             onSunriseSunsetClick = onSunriseSunsetClick,
+                            onEarthDaylightClick = onEarthDaylightClick,
                             modifier = Modifier.weight(1f)
                         )
                     } else {
@@ -207,6 +216,7 @@ fun WeatherDetailGrid(
                         type = remainingCards[firstIdx],
                         weatherData = weatherData,
                         onSunriseSunsetClick = onSunriseSunsetClick,
+                        onEarthDaylightClick = onEarthDaylightClick,
                         modifier = Modifier.weight(1f)
                     )
 
@@ -215,6 +225,7 @@ fun WeatherDetailGrid(
                             type = remainingCards[secondIdx],
                             weatherData = weatherData,
                             onSunriseSunsetClick = onSunriseSunsetClick,
+                            onEarthDaylightClick = onEarthDaylightClick,
                             modifier = Modifier.weight(1f)
                         )
                     } else {
@@ -237,6 +248,7 @@ fun WeatherDetailGrid(
                         type = validCardTypes[firstIdx],
                         weatherData = weatherData,
                         onSunriseSunsetClick = onSunriseSunsetClick,
+                        onEarthDaylightClick = onEarthDaylightClick,
                         modifier = Modifier.weight(1f)
                     )
 
@@ -245,6 +257,7 @@ fun WeatherDetailGrid(
                             type = validCardTypes[secondIdx],
                             weatherData = weatherData,
                             onSunriseSunsetClick = onSunriseSunsetClick,
+                            onEarthDaylightClick = onEarthDaylightClick,
                             modifier = Modifier.weight(1f)
                         )
                     } else {
@@ -316,7 +329,8 @@ fun WeatherDetailGrid(
  *
  * @param type 指标卡片类型枚举 [MetricCardType]
  * @param weatherData 聚合天气数据模型 [WeatherData]
- * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
+ * @param onSunriseSunsetClick 点击日出日落卡片跳转日出日落详情页回调
+ * @param onEarthDaylightClick 点击昼夜晨昏线卡片跳转地球实时日光模拟器回调
  * @param modifier 外部修饰符
  */
 @Composable
@@ -324,6 +338,7 @@ private fun MetricCardSlot(
     type: MetricCardType,
     weatherData: WeatherData,
     onSunriseSunsetClick: () -> Unit,
+    onEarthDaylightClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val current = weatherData.current
@@ -341,6 +356,13 @@ private fun MetricCardSlot(
             SunriseSunsetRealCard(
                 city = weatherData.city,
                 onClick = onSunriseSunsetClick,
+                modifier = modifier
+            )
+        }
+        MetricCardType.EARTH_DAYLIGHT -> {
+            EarthDaylightRealCard(
+                city = weatherData.city,
+                onClick = onEarthDaylightClick,
                 modifier = modifier
             )
         }
