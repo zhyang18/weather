@@ -1024,7 +1024,7 @@ object SunMoonCalculator {
         }
         val moonProgress = (nightElapsed / nightTotalMinutes.toFloat()).coerceIn(0f, 1f)
 
-        // 5. 真实月相与月升月落参考时间 (基于标准 J2000 新月纪元 2000-01-06 18:14 UTC 精确推算)
+        // 5. 真实月相与月升月落时间 (基于标准 J2000 新月纪元与 Jean Meeus 高精度月球轨道摄动星历算法)
         val epochNewMoonMillis = 947182440000L
         val diffMillis = calendar.timeInMillis - epochNewMoonMillis
         val diffDays = diffMillis.toDouble() / (1000.0 * 60.0 * 60.0 * 24.0)
@@ -1032,10 +1032,16 @@ object SunMoonCalculator {
         val moonAge = (diffDays % synodicMonth + synodicMonth) % synodicMonth
         val moonPhase = ((moonAge / synodicMonth).toFloat()).coerceIn(0f, 1f)
 
-        // 月球每天相对太阳滞后约 50.47 分钟升起
-        val moonLagMinutes = (moonAge * 50.47).toInt()
-        val moonriseMinutes = ((sunriseMinutes + moonLagMinutes) % 1440 + 1440) % 1440
-        val moonsetMinutes = ((sunsetMinutes + moonLagMinutes) % 1440 + 1440) % 1440
+        // 采用 Jean Meeus 天文算法高精度求解当地精确月升月落时刻（分钟级精度）
+        val preciseEphemeris = com.weather.app.util.LunarAstroCalculator.calculatePreciseMoonTimes(
+            year = calendar.get(Calendar.YEAR),
+            month = calendar.get(Calendar.MONTH) + 1,
+            day = calendar.get(Calendar.DAY_OF_MONTH),
+            lat = lat,
+            lng = lng
+        )
+        val moonriseMinutes = preciseEphemeris.moonriseMinutes
+        val moonsetMinutes = preciseEphemeris.moonsetMinutes
 
         val isMoonVisible = isNight
 
@@ -1056,7 +1062,7 @@ object SunMoonCalculator {
     /**
      * 计算当前城市与日期的月相详细信息（包含月相名称、月出时间、下次满月日期）
      *
-     * 依据标准 J2000 朔望周期（29.530588853天）与当地月升月落时间滞后推算，
+     * 依据标准 J2000 朔望周期（29.530588853天）与 Jean Meeus 高精度月出时间算法，
      * 生成包含当前月相名称（如“渐盈凸月”）、月出时间（如“18:10”）与下次满月公历日期（如“8月28日”）的完整模型。
      *
      * @param city 待计算的城市信息对象 [CityInfo]

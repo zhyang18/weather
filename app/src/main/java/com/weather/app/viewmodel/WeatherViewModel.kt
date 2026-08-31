@@ -82,6 +82,8 @@ data class WeatherUiState(
     val showEarthDaylightScreen: Boolean = false,
     val showLocationMapScreen: Boolean = false,
     val targetMapCity: CityInfo? = null,
+    val showMoonPhaseScreen: Boolean = false,
+    val targetMoonCity: CityInfo? = null,
     val mapLayerType: String = "dark",
     val isMapRadarEnabled: Boolean = false,
     val showQWeatherConfigDialog: Boolean = false,
@@ -925,6 +927,21 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 showLocationMapScreen = show,
                 targetMapCity = if (show) (targetCity ?: it.getCurrentCity()) else null
             ) 
+        }
+    }
+
+    /**
+     * 设置是否展示月相详情全屏交互页面
+     *
+     * @param show 是否展示月相详情页面
+     * @param targetCity 指定聚焦查看的城市实体（为 null 时默认使用当前选中城市）
+     */
+    fun setShowMoonPhaseScreen(show: Boolean, targetCity: CityInfo? = null) {
+        _uiState.update {
+            it.copy(
+                showMoonPhaseScreen = show,
+                targetMoonCity = if (show) (targetCity ?: it.getCurrentCity()) else null
+            )
         }
     }
 

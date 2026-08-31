@@ -297,6 +297,9 @@ fun WeatherScreen(
                     onSunriseSunsetClick = { viewModel.setShowEarthDaylightScreen(true) },
                     onLocationMapClick = { targetCity ->
                         viewModel.setShowLocationMapScreen(true, targetCity)
+                    },
+                    onMoonPhaseClick = { targetCity ->
+                        viewModel.setShowMoonPhaseScreen(true, targetCity)
                     }
                 )
             }
@@ -306,6 +309,14 @@ fun WeatherScreen(
         EarthDaylightScreen(
             visible = uiState.showEarthDaylightScreen,
             onBackClick = { viewModel.setShowEarthDaylightScreen(false) }
+        )
+
+        // 月相与天象 3D 拟真全屏交互页面 (点击月相卡片触发)
+        val targetMoonCity = uiState.targetMoonCity ?: activeCity
+        MoonPhaseDetailScreen(
+            visible = uiState.showMoonPhaseScreen,
+            city = targetMoonCity,
+            onBackClick = { viewModel.setShowMoonPhaseScreen(false) }
         )
 
         // 定位气象大地图全屏交互页面 (点击定位小地图卡片触发)
@@ -766,6 +777,7 @@ private fun TopImmersiveWeatherBar(
  * @param onRefresh 下拉刷新触发回调
  * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
  * @param onLocationMapClick 点击定位地图卡片跳转全屏气象大地图回调
+ * @param onMoonPhaseClick 点击月相卡片跳转月相全屏详情页面回调
  */
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
@@ -781,7 +793,8 @@ private fun CityWeatherPageContent(
     onDailyChartModeChange: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onSunriseSunsetClick: () -> Unit = {},
-    onLocationMapClick: (CityInfo) -> Unit = {}
+    onLocationMapClick: (CityInfo) -> Unit = {},
+    onMoonPhaseClick: (CityInfo) -> Unit = {}
 ) {
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isRefreshing,
@@ -920,7 +933,8 @@ private fun CityWeatherPageContent(
                     weatherData = weatherData,
                     cardConfig = cardConfig,
                     lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText,
-                    onSunriseSunsetClick = onSunriseSunsetClick
+                    onSunriseSunsetClick = onSunriseSunsetClick,
+                    onMoonPhaseClick = { onMoonPhaseClick(city) }
                 )
 
                 Spacer(modifier = Modifier.height(36.dp))

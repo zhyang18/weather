@@ -47,6 +47,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.graphicsLayer
 import kotlin.math.PI
 import kotlin.math.cos
 
@@ -61,15 +66,18 @@ import kotlin.math.cos
  *    并依据 J2000 朔望周期结合晨昏线曲面阴影算法动态呈现真实月相盈亏形态；
  * 5. 全面使用 [Modifier.drawWithCache] 与离屏预计算数据模型 [LunarCardShadowData]，
  *    在主页上下滑动期间实现 0 内存分配与极速 60fps/120fps 满帧流畅体验；
- * 6. 统一为 152.dp 标准高度与深灰蓝毛玻璃质感，与气象指标宫格其他卡片完美等高对齐。
+ * 6. 统一为 152.dp 标准高度与深灰蓝毛玻璃质感，与气象指标宫格其他卡片完美等高对齐；
+ * 7. 支持点击跳转月相全屏详情页面。
  *
  * @param city 当前城市信息对象 [CityInfo]
  * @param modifier 外部修饰符 [Modifier]
+ * @param onClick 点击月相卡片跳转全屏详情回调函数
  */
 @Composable
 fun MoonPhaseRealCard(
     city: CityInfo,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
     // 系统时钟状态：仅在进入前台 (ON_RESUME) 或每隔 15 分钟温和更新一次，彻底杜绝无意义的秒级高频重组
     var currentSystemTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -112,13 +120,33 @@ fun MoonPhaseRealCard(
         }
     }
 
-    Box(
-        modifier = modifier
+    val boxModifier = if (onClick != null) {
+        modifier
             .fillMaxWidth()
             .height(152.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0x7514263A))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .height(152.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .padding(horizontal = 16.dp, vertical = 14.dp)
+    }
+
+    Box(
+        modifier = boxModifier
     ) {
         // 左侧主要信息区域（占左半侧空间）
         Column(
@@ -127,8 +155,10 @@ fun MoonPhaseRealCard(
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 1. 左上角：微型月相图标与标题
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 1. 左上角：微型月相图标与标题及跳转箭头
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 MiniMoonPhaseIcon(
                     phase = moonInfo.moonPhase,
                     modifier = Modifier.size(15.dp)
@@ -140,6 +170,15 @@ fun MoonPhaseRealCard(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Normal
                 )
+                if (onClick != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "查看月相详情",
+                        tint = Color.White.copy(alpha = 0.45f),
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
             }
 
             // 2. 主标题：月相名称（如“渐盈凸月”）

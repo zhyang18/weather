@@ -109,6 +109,7 @@ enum class MetricCardType {
  * @param cardConfig 卡片自定义显隐配置实体 [CardDisplayConfig]
  * @param lastUpdatedText 上次刷新时间说明文本（如 "上次刷新 15:53"）
  * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
+ * @param onMoonPhaseClick 点击月相卡片跳转月相全屏详情页面回调
  * @param modifier 外部修饰符
  */
 @Composable
@@ -117,6 +118,7 @@ fun WeatherDetailGrid(
     cardConfig: CardDisplayConfig = CardDisplayConfig(),
     lastUpdatedText: String = "",
     onSunriseSunsetClick: () -> Unit = {},
+    onMoonPhaseClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val current = weatherData.current
@@ -186,7 +188,8 @@ fun WeatherDetailGrid(
             // 月相卡片：水平空间独占一整行全宽展示
             MoonPhaseRealCard(
                 city = weatherData.city,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onMoonPhaseClick
             )
 
             // 其余双列指标卡片
