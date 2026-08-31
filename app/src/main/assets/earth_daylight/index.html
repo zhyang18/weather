@@ -65,9 +65,9 @@
         const Ep = TWO_PI / 1440;
         const LIGHT_DIST = 5;
         
-        // 严格同步 EarthDaylightSim 经典光学参数：平行直射光 4.0，漫反射环境光 0.3
-        const LIGHT_INTENSITY = 4.0;
-        const AMBIENT_INTENSITY = 0.3;
+        // 优化舒适度光学参数：平行直射光 1.85 (清晰通透不刺眼)，漫反射环境光 0.10 (夜幕深沉纯净)
+        const LIGHT_INTENSITY = 1.85;
+        const AMBIENT_INTENSITY = 0.10;
         
         // 正交相机保持在离球心 10.0 的安全固定距离，缩放纯靠正交视界 ot 调节，永不发生近裁剪面穿模变黑
         const CAMERA_DIST = 10.0;
