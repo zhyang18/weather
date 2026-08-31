@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,8 +40,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.VpnLock
 import androidx.compose.material.icons.filled.WbSunny
@@ -49,12 +52,15 @@ import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,12 +68,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -108,6 +116,28 @@ fun EarthDaylightScreen(
 }
 
 /**
+ * 计算当天指定分钟数对应的毫秒时间戳
+ *
+ * @param baseTimeMillis 基准时间戳（获取当天年月日）
+ * @param minuteOfDay 当天第几分钟（0f ~ 1440f）
+ * @return 目标时刻对应的毫秒时间戳
+ */
+private fun calculateTimestampForMinuteOfDay(baseTimeMillis: Long, minuteOfDay: Float): Long {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = baseTimeMillis
+        val totalSecs = (minuteOfDay * 60f).toInt()
+        val hour = (totalSecs / 3600) % 24
+        val minute = (totalSecs % 3600) / 60
+        val second = totalSecs % 60
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, second)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}
+
+/**
  * 地球实时日光核心内容与控制器组合视图
  *
  * @param onBackClick 返回事件回调
@@ -127,6 +157,29 @@ private fun EarthDaylightContent(
     var isMeridianActive by remember { mutableStateOf(false) }
     var isAxisActive by remember { mutableStateOf(false) }
 
+    // 24小时时间模拟与动态演变状态
+    var isTimeCardVisible by remember { mutableStateOf(false) }
+    var isCustomTimeActive by remember { mutableStateOf(false) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var playSpeed by remember { mutableFloatStateOf(1f) }
+
+    val initialCal = remember { Calendar.getInstance() }
+    var selectedMinuteOfDay by remember {
+        mutableFloatStateOf(initialCal.get(Calendar.HOUR_OF_DAY) * 60f + initialCal.get(Calendar.MINUTE) + initialCal.get(Calendar.SECOND) / 60f)
+    }
+
+    // 动态演变播放协程 (循环向前演进 24 小时)
+    LaunchedEffect(isPlaying, playSpeed) {
+        if (isPlaying) {
+            while (true) {
+                delay(40L)
+                selectedMinuteOfDay = (selectedMinuteOfDay + 1.8f * playSpeed) % 1440f
+                val targetTimeMillis = calculateTimestampForMinuteOfDay(System.currentTimeMillis(), selectedMinuteOfDay)
+                executeSimulatorJs(webViewRef, "window.earthSimulator.setTime($targetTimeMillis)")
+            }
+        }
+    }
+
     // 实时系统时钟（每秒自动校准刷新）
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -136,8 +189,15 @@ private fun EarthDaylightContent(
         }
     }
 
-    val (dateStr, timeStr, timeZoneStr) = remember(currentTimeMillis / 1000L) {
-        val date = Date(currentTimeMillis)
+    // 顶栏时钟展示（支持实时与模拟时间联动）
+    val displayMillis = if (isCustomTimeActive) {
+        calculateTimestampForMinuteOfDay(currentTimeMillis, selectedMinuteOfDay)
+    } else {
+        currentTimeMillis
+    }
+
+    val (dateStr, timeStr, timeZoneStr) = remember(displayMillis / 1000L, isCustomTimeActive) {
+        val date = Date(displayMillis)
         val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
         val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.CHINA)
         val tzFmt = SimpleDateFormat("Z", Locale.CHINA)
@@ -246,8 +306,12 @@ private fun EarthDaylightContent(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0x660F172A))
-                        .border(0.6.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .background(if (isCustomTimeActive) Color(0x991E293B) else Color(0x660F172A))
+                        .border(
+                            0.6.dp,
+                            if (isCustomTimeActive) Color(0xFF38BDF8).copy(alpha = 0.45f) else Color.White.copy(alpha = 0.15f),
+                            RoundedCornerShape(12.dp)
+                        )
                         .padding(horizontal = 10.dp, vertical = 3.dp)
                 ) {
                     Text(
@@ -258,13 +322,13 @@ private fun EarthDaylightContent(
                     )
                     Text(
                         text = timeStr,
-                        color = Color(0xFF60A5FA),
+                        color = if (isCustomTimeActive) Color(0xFF38BDF8) else Color(0xFF60A5FA),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = " · $timeZoneStr",
-                        color = Color.White.copy(alpha = 0.65f),
+                        text = if (isCustomTimeActive) " (动态演变)" else " · $timeZoneStr",
+                        color = if (isCustomTimeActive) Color(0xFFFDE047) else Color.White.copy(alpha = 0.65f),
                         fontSize = 10.sp
                     )
                 }
@@ -293,35 +357,202 @@ private fun EarthDaylightContent(
             }
         }
 
-        // 4. 底部现代化毛玻璃交互控制坞与操作说明提示
+        // 4. 底部 24 小时动态演变面板与控制坞（水平全宽全透明贴底，上移 10dp）
         Column(
             modifier = Modifier
+                .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 12.dp, start = 14.dp, end = 14.dp),
+                .padding(bottom = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 操作说明提示文本（始终居中显示在控制坞上方，永不被遮挡）
+            // 24小时手动时间调节与动态图播放控制面板（支持点击底部按钮展开/收起）
+            AnimatedVisibility(
+                visible = isTimeCardVisible,
+                enter = fadeIn() + slideInVertically { it / 2 },
+                exit = fadeOut() + slideOutVertically { it / 2 },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 14.dp, end = 14.dp, bottom = 8.dp)
+            ) {
+                Surface(
+                    color = Color(0x800B132B), // 50% 透明度毛玻璃背景
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.15f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        // 顶栏：播放控制、时间指示与恢复实时
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // 动态播放/暂停圆形按钮
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (isPlaying) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.20f),
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .clickable {
+                                            isCustomTimeActive = true
+                                            isPlaying = !isPlaying
+                                        }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                            contentDescription = if (isPlaying) "暂停" else "播放",
+                                            tint = if (isPlaying) Color(0xFF0F172A) else Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                // 24小时当前时刻
+                                val displayHour = (selectedMinuteOfDay.toInt() / 60) % 24
+                                val displayMin = selectedMinuteOfDay.toInt() % 60
+                                val formattedTime = String.format(Locale.CHINA, "%02d:%02d", displayHour, displayMin)
+
+                                Text(
+                                    text = formattedTime,
+                                    color = if (isCustomTimeActive) Color(0xFF38BDF8) else Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Text(
+                                    text = if (isPlaying) "24小时动态演变中" else if (isCustomTimeActive) "手动选择时间" else "实时光照",
+                                    color = Color.White.copy(alpha = 0.60f),
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            // 右侧倍速与恢复实时按钮
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                // 倍速切换 (1x -> 2x -> 4x)
+                                if (isPlaying) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color.White.copy(alpha = 0.15f),
+                                        modifier = Modifier
+                                            .clickable {
+                                                playSpeed = when (playSpeed) {
+                                                    1f -> 2f
+                                                    2f -> 4f
+                                                    else -> 1f
+                                                }
+                                            }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "${playSpeed.toInt()}x",
+                                            color = Color(0xFFFDE047),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                // 恢复实时按钮
+                                if (isCustomTimeActive) {
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = Color(0x3338BDF8),
+                                        border = BorderStroke(0.6.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                                        modifier = Modifier
+                                            .clickable {
+                                                isPlaying = false
+                                                isCustomTimeActive = false
+                                                val now = Calendar.getInstance()
+                                                selectedMinuteOfDay = now.get(Calendar.HOUR_OF_DAY) * 60f + now.get(Calendar.MINUTE) + now.get(Calendar.SECOND) / 60f
+                                                executeSimulatorJs(webViewRef, "window.earthSimulator.resetToLiveTime()")
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "恢复实时",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 24小时平滑滑动轴
+                        Slider(
+                            value = selectedMinuteOfDay,
+                            onValueChange = { min ->
+                                isCustomTimeActive = true
+                                selectedMinuteOfDay = min
+                                val targetMillis = calculateTimestampForMinuteOfDay(System.currentTimeMillis(), min)
+                                executeSimulatorJs(webViewRef, "window.earthSimulator.setTime($targetMillis)")
+                            },
+                            valueRange = 0f..1440f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF38BDF8),
+                                activeTrackColor = Color(0xFF38BDF8),
+                                inactiveTrackColor = Color.White.copy(alpha = 0.20f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(26.dp)
+                        )
+
+                        // 24小时刻度标尺
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            listOf("00:00", "06:00", "12:00", "18:00", "24:00").forEach { label ->
+                                Text(
+                                    text = label,
+                                    color = Color.White.copy(alpha = 0.40f),
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 操作说明提示文本
             Text(
                 text = "单指拖动旋转视角 · 双指捏合自由缩放 · 实时模拟全球昼夜晨昏圈",
                 color = Color.White.copy(alpha = 0.55f),
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 6.dp)
             )
 
+            // 底部控制坞（水平全屏占满、全透明现代悬浮容器）
             Surface(
-                color = Color(0x990F172A),
-                shape = RoundedCornerShape(22.dp)
+                color = Color.Transparent,
+                shape = RectangleShape,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 晨昏线切换（昼夜交界线）
+                    // 1. 晨昏线切换（昼夜交界线）
                     EarthDockButton(
                         icon = Icons.Default.WbSunny,
                         label = "晨昏线",
@@ -332,7 +563,7 @@ private fun EarthDaylightContent(
                         }
                     )
 
-                    // 太阳直射点切换
+                    // 2. 太阳直射点切换
                     EarthDockButton(
                         icon = Icons.Default.WbSunny,
                         label = "直射点",
@@ -343,20 +574,9 @@ private fun EarthDaylightContent(
                         }
                     )
 
-                    // 经纬线网格切换
+                    // 3. 午时线切换（图标使用指南针 Explore）
                     EarthDockButton(
-                        icon = Icons.Default.Language,
-                        label = "经纬线",
-                        isActive = isGraticuleActive,
-                        onClick = {
-                            isGraticuleActive = !isGraticuleActive
-                            executeSimulatorJs(webViewRef, "window.earthSimulator.toggleGraticule()")
-                        }
-                    )
-
-                    // 午时线切换
-                    EarthDockButton(
-                        icon = Icons.Default.Timeline,
+                        icon = Icons.Default.Explore,
                         label = "午时线",
                         isActive = isMeridianActive,
                         onClick = {
@@ -365,7 +585,7 @@ private fun EarthDaylightContent(
                         }
                     )
 
-                    // 地轴切换
+                    // 4. 地轴切换
                     EarthDockButton(
                         icon = Icons.Default.VpnLock,
                         label = "地轴",
@@ -376,7 +596,7 @@ private fun EarthDaylightContent(
                         }
                     )
 
-                    // 赤道对齐
+                    // 5. 赤道对齐
                     EarthDockButton(
                         icon = Icons.Default.Language,
                         label = "赤道对齐",
@@ -386,13 +606,34 @@ private fun EarthDaylightContent(
                         }
                     )
 
-                    // 黄道对齐
+                    // 6. 黄道对齐
                     EarthDockButton(
                         icon = Icons.Default.WbSunny,
                         label = "黄道对齐",
                         isActive = false,
                         onClick = {
                             executeSimulatorJs(webViewRef, "window.earthSimulator.alignEcliptic()")
+                        }
+                    )
+
+                    // 7. 经纬线网格切换（已移动到最后）
+                    EarthDockButton(
+                        icon = Icons.Default.Language,
+                        label = "经纬线",
+                        isActive = isGraticuleActive,
+                        onClick = {
+                            isGraticuleActive = !isGraticuleActive
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.toggleGraticule()")
+                        }
+                    )
+
+                    // 8. 24小时时间轴面板开关（已移动到最后）
+                    EarthDockButton(
+                        icon = Icons.Default.Timeline,
+                        label = "时间轴",
+                        isActive = isTimeCardVisible,
+                        onClick = {
+                            isTimeCardVisible = !isTimeCardVisible
                         }
                     )
                 }
@@ -418,7 +659,7 @@ private fun EarthDockButton(
 ) {
     val backgroundBrush = if (isActive) {
         Brush.verticalGradient(
-            listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
+            listOf(Color(0x802563EB), Color(0x803B82F6))
         )
     } else {
         Brush.verticalGradient(
@@ -436,6 +677,11 @@ private fun EarthDockButton(
             .width(36.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(backgroundBrush)
+            .border(
+                0.6.dp,
+                if (isActive) Color(0xFF60A5FA).copy(alpha = 0.6f) else Color.Transparent,
+                RoundedCornerShape(14.dp)
+            )
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

@@ -163,7 +163,7 @@
             filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
         }
 
-        /* 小地图卡片紧凑模式下的比例尺位置与尺寸微调 */
+        /* 小地图卡片紧凑模式下的比例尺位置与尺寸微调，并禁用定位标记的所有鼠标/触摸交互 */
         .compact-mode .leaflet-bottom.leaflet-left {
             margin-bottom: 6px;
             margin-left: 8px;
@@ -180,6 +180,18 @@
             border-bottom-width: 1px;
             border-left-width: 1px;
             border-right-width: 1px;
+        }
+        .compact-mode,
+        .compact-mode #map,
+        .compact-mode .leaflet-pane,
+        .compact-mode .leaflet-marker-pane,
+        .compact-mode .leaflet-marker-icon,
+        .compact-mode .pulse-marker-wrapper,
+        .compact-mode .pulse-marker,
+        .compact-mode .pulse-core,
+        .compact-mode .pulse-ring {
+            pointer-events: none !important;
+            cursor: default !important;
         }
     </style>
 </head>
@@ -283,7 +295,7 @@
                     document.body.classList.remove('compact-mode');
                 }
 
-                updateMarker(currentLat, currentLng, currentTitle, currentSubtitle);
+                updateMarker(currentLat, currentLng, currentTitle, currentSubtitle, isInteractive);
 
                 // 周期性与延时触发 invalidateSize
                 setTimeout(triggerResize, 50);
@@ -298,6 +310,9 @@
             if (map) {
                 try {
                     map.invalidateSize();
+                    if (document.body.classList.contains('compact-mode')) {
+                        map.setView([currentLat, currentLng], map.getZoom(), { animate: false });
+                    }
                 } catch(e) {}
             }
         }
@@ -323,7 +338,7 @@
             }
         }
 
-        function updateMarker(lat, lng, title, subtitle) {
+        function updateMarker(lat, lng, title, subtitle, isInteractive) {
             if (!map) return;
             currentLat = lat;
             currentLng = lng;
@@ -332,6 +347,7 @@
 
             if (currentMarker) {
                 map.removeLayer(currentMarker);
+                currentMarker = null;
             }
 
             var pulseIcon = L.divIcon({
@@ -341,9 +357,13 @@
                 iconAnchor: [14, 14]
             });
 
-            currentMarker = L.marker([lat, lng], { icon: pulseIcon }).addTo(map);
+            var canInteract = (isInteractive === true);
+            currentMarker = L.marker([lat, lng], { 
+                icon: pulseIcon,
+                interactive: canInteract
+            }).addTo(map);
 
-            if (currentTitle) {
+            if (canInteract && currentTitle) {
                 var popupContent = '<div class="popup-title">' + currentTitle + '</div>' +
                     (currentSubtitle ? '<div class="popup-desc">' + currentSubtitle + '</div>' : '');
                 currentMarker.bindPopup(popupContent, {
@@ -360,35 +380,48 @@
             currentTitle = title || currentTitle;
             currentSubtitle = subtitle || currentSubtitle;
 
-            if (isInteractive === false) {
+            var interactive = (isInteractive !== false);
+            if (!interactive) {
                 document.body.classList.add('compact-mode');
-            } else if (isInteractive === true) {
+            } else {
                 document.body.classList.remove('compact-mode');
             }
 
             if (!map) {
-                safeInit(currentLat, currentLng, zoom, isInteractive !== false, layerType, isRadar);
+                safeInit(currentLat, currentLng, zoom, interactive, layerType, isRadar);
             } else {
                 map.invalidateSize();
-                map.setView([currentLat, currentLng], zoom || map.getZoom(), { animate: false });
-                updateMarker(currentLat, currentLng, currentTitle, currentSubtitle);
+                var targetZoom = zoom || map.getZoom();
+                map.setView([currentLat, currentLng], targetZoom, { animate: false });
+                updateMarker(currentLat, currentLng, currentTitle, currentSubtitle, interactive);
                 if (layerType) setLayer(layerType);
                 if (isRadar !== undefined && isRadar !== null) toggleRadarLayer(isRadar);
-                setTimeout(triggerResize, 100);
+                setTimeout(function() {
+                    if (map) {
+                        map.invalidateSize();
+                        map.setView([currentLat, currentLng], targetZoom, { animate: false });
+                    }
+                }, 80);
             }
         }
 
         function zoomIn() {
-            if (map) map.zoomIn();
+            if (map) {
+                var nextZoom = Math.min(map.getMaxZoom(), map.getZoom() + 1);
+                map.setView([currentLat, currentLng], nextZoom, { animate: true });
+            }
         }
 
         function zoomOut() {
-            if (map) map.zoomOut();
+            if (map) {
+                var prevZoom = Math.max(map.getMinZoom(), map.getZoom() - 1);
+                map.setView([currentLat, currentLng], prevZoom, { animate: true });
+            }
         }
 
         function centerCurrent() {
             if (map) {
-                map.setView([currentLat, currentLng], 12, { animate: true, duration: 0.5 });
+                map.setView([currentLat, currentLng], map.getZoom(), { animate: true, duration: 0.5 });
             }
         }
 

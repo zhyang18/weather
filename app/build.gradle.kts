@@ -20,8 +20,8 @@ android {
         applicationId = "com.weather.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 31
-        versionName = "1.5.9"
+        versionCode = 33
+        versionName = "1.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

@@ -1280,12 +1280,12 @@ private fun SolarSkyArcCanvas(
             )
         }
 
-        // 4. 地平线日出/日落两端点高亮锚点
-        drawCircle(color = Color(0xFFFFB300).copy(alpha = 0.5f), radius = 4.dp.toPx(), center = Offset(startX, horizonY))
-        drawCircle(color = Color.White, radius = 2.dp.toPx(), center = Offset(startX, horizonY))
+        // 4. 地平线日出/日落两端点高亮锚点（日出晨金白点，日落浓郁晚霞赤橙）
+        drawCircle(color = Color(0xFFFFCA28).copy(alpha = 0.6f), radius = 4.5.dp.toPx(), center = Offset(startX, horizonY))
+        drawCircle(color = Color.White, radius = 2.2.dp.toPx(), center = Offset(startX, horizonY))
 
-        drawCircle(color = Color(0xFFFF7043).copy(alpha = 0.5f), radius = 4.dp.toPx(), center = Offset(endX, horizonY))
-        drawCircle(color = Color.White, radius = 2.dp.toPx(), center = Offset(endX, horizonY))
+        drawCircle(color = Color(0xFFFF5722).copy(alpha = 0.65f), radius = 4.5.dp.toPx(), center = Offset(endX, horizonY))
+        drawCircle(color = Color.White, radius = 2.2.dp.toPx(), center = Offset(endX, horizonY))
 
         // 5. 渲染发光太阳实体
         val renderCenter = if (isToday) {

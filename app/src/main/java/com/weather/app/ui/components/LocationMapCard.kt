@@ -12,18 +12,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +46,12 @@ import com.weather.app.model.WeatherData
 
 /**
  * 首页定位气象微缩地图卡片组件
+ *
+ * 1. 统一 152.dp 标准高度与深灰蓝毛玻璃质感，与其他卡片保持严格一致的视觉层级与排版规范；
+ * 2. 采用左右分栏的精简布局：
+ *    - 左侧区域：顶部微型定位图标与标题及跳转指示、主标题展示当前聚焦城市/区县大字、实时天气与温度、底部经纬度坐标；
+ *    - 右侧区域：嵌入圆角微缩地图视窗，直观呈现当前地理位置；
+ * 3. 点击卡片触发 [onClick] 回调跳转至全屏定位地图详情页面。
  *
  * @param city 当前聚焦的城市实体 [CityInfo]
  * @param weatherData 当前城市聚合气象数据 [WeatherData]
@@ -85,119 +90,116 @@ fun LocationMapCard(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
+            .height(152.dp)
             .graphicsLayer {
                 shadowElevation = 0f
                 shape = RoundedCornerShape(20.dp)
                 clip = true
             }
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0x331C2433))
+            .background(Color(0x7514263A))
             .clickable { onClick() }
-            .padding(16.dp)
+            .padding(14.dp)
     ) {
-        // 1. 卡片顶部标题栏
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .background(Color(0x3064B5F6)),
-                    contentAlignment = Alignment.Center
+            // 左侧信息展示区
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // 1. 顶部栏：微型定位图标 + 标题 + 提示小箭头
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.LocationOn,
                         contentDescription = "定位地图",
-                        tint = Color(0xFF64B5F6),
+                        tint = Color.White.copy(alpha = 0.85f),
                         modifier = Modifier.size(15.dp)
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "定位地图",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "查看大图",
+                        tint = Color.White.copy(alpha = 0.45f),
+                        modifier = Modifier.size(13.dp)
+                    )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "定位地图",
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "查看大图",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 12.sp
-                )
-                Spacer(modifier = Modifier.width(3.dp))
-                Icon(
-                    imageVector = Icons.Default.ArrowForward,
-                    contentDescription = "查看大图",
-                    tint = Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // 2. 微缩地图视窗容器 (使用禁用手势的 AndroidView WebView)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(130.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF141923))
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    createCardWebView(ctx, lat, lng, displayName, mapLayerType) { view ->
-                        webViewRef = view
+                // 2. 中间主要内容：城市/区域大字名称与气温天气概要
+                Column {
+                    Text(
+                        text = displayName,
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1
+                    )
+                    if (weatherData != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${weatherData.current.temperature.toInt()}° · ${weatherData.getDisplayWeatherText()}",
+                            color = Color(0xFF90CAF9),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
                     }
-                },
-                update = { webView ->
-                    webViewRef = webView
-                    updateCardMapLocation(webView, lat, lng, displayName, mapLayerType)
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+                }
 
-            // 覆盖一层全透明点击层，防止 WebView 内部消费滚动事件影响外部 Column 滑动
+                // 3. 底部地理坐标说明
+                Text(
+                    text = formatCoordinates(lat, lng),
+                    color = Color.White.copy(alpha = 0.55f),
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // 右侧微缩地图视窗容器 (使用禁用手势的 AndroidView WebView)
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Transparent)
-            )
-        }
+                    .width(135.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF141923))
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        createCardWebView(ctx, lat, lng, displayName, mapLayerType) { view ->
+                            webViewRef = view
+                        }
+                    },
+                    update = { webView ->
+                        webViewRef = webView
+                        updateCardMapLocation(webView, lat, lng, displayName, mapLayerType)
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // 3. 底部地理坐标与天气概要
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "${city.name} · ${formatCoordinates(lat, lng)}",
-                color = Color.White.copy(alpha = 0.65f),
-                fontSize = 12.sp
-            )
-
-            if (weatherData != null) {
-                Text(
-                    text = "${weatherData.current.temperature.toInt()}° · ${weatherData.getDisplayWeatherText()}",
-                    color = Color(0xFF90CAF9),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
+                // 覆盖一层全透明点击层，防止 WebView 内部消费滚动事件影响外部 Column 滑动
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Transparent)
                 )
             }
         }
@@ -284,7 +286,7 @@ private fun updateCardMapLocation(
     mapLayerType: String = "dark"
 ) {
     if (webView == null) return
-    val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 10, '$name', '', false, '$mapLayerType'); window.dispatchEvent(new Event('resize')); } })()"
+    val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 13, '$name', '', false, '$mapLayerType'); window.dispatchEvent(new Event('resize')); } })()"
     webView.evaluateJavascript(js, null)
 }
 

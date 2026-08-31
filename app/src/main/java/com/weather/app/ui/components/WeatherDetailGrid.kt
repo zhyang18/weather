@@ -1049,21 +1049,21 @@ private fun calculateCardSolarVisualState(
 
     val p = progress.coerceIn(0f, 1f)
     return when {
-        // 1. 清晨日出 (0.00 ~ 0.15)：肉眼实景一轮温润朝霞金橙色太阳（不刺眼、无生硬芒刺、通透静谧）
+        // 1. 清晨日出 (0.00 ~ 0.15)：肉眼实景一轮初升朝阳，提高太阳光强度白点值（纯白极炽光核、通透纯净）
         p < 0.15f -> {
             val t = p / 0.15f
             SolarCardVisualState(
-                photosphereCenterColor = Color(0xFFFFF8E1),
-                photosphereEdgeColor = Color(0xFFFFA000),
-                innerCoronaColor = Color(0xFFFFB300).copy(alpha = 0.70f),
-                outerHaloColor = Color(0xFFFF8F00).copy(alpha = 0.28f),
-                diffractionRayColor = Color(0xFFFFD54F).copy(alpha = 0.40f),
+                photosphereCenterColor = Color.White,
+                photosphereEdgeColor = Color(0xFFFFB300),
+                innerCoronaColor = Color(0xFFFFF59D).copy(alpha = 0.80f),
+                outerHaloColor = Color(0xFFFFCA28).copy(alpha = 0.38f),
+                diffractionRayColor = Color(0xFFFFF9C4).copy(alpha = 0.50f),
                 skyGlowGradientColors = listOf(
-                    Color(0xFFFFA000).copy(alpha = 0.35f),
-                    Color(0xFFFFB300).copy(alpha = 0.12f),
-                    Color(0xFFFFA000).copy(alpha = 0.01f)
+                    Color(0xFFFFCA28).copy(alpha = 0.45f),
+                    Color(0xFFFFB300).copy(alpha = 0.18f),
+                    Color(0xFFFFA000).copy(alpha = 0.02f)
                 ),
-                rayIntensity = 0.0f, // 实景日出不刺眼，纯粹圆润金橙日盘
+                rayIntensity = 0.0f, // 实景日出不刺眼，纯粹圆润金橙高亮日盘
                 diskScale = 1.15f - 0.05f * t
             )
         }
@@ -1120,22 +1120,23 @@ private fun calculateCardSolarVisualState(
                 diskScale = 1.00f + 0.08f * t
             )
         }
-        // 5. 晚霞落日 (0.85 ~ 1.00)：肉眼实景一轮沉静壮丽、落日熔金暖琥珀橙日盘（不刺眼、无生硬芒刺、沉稳温润）
+        // 5. 晚霞落日 (0.85 ~ 1.00)：显著增加晚霞值，呈现落日熔金晚霞赤橙与晚霞紫红深赤霞光
         else -> {
             val t = (p - 0.85f) / 0.15f
             SolarCardVisualState(
                 photosphereCenterColor = Color(0xFFFFF3E0),
-                photosphereEdgeColor = Color(0xFFFF8F00),
-                innerCoronaColor = Color(0xFFFF6F00).copy(alpha = 0.65f),
-                outerHaloColor = Color(0xFFE65100).copy(alpha = 0.25f),
-                diffractionRayColor = Color(0xFFFFB74D).copy(alpha = 0.30f),
+                photosphereEdgeColor = Color(0xFFFF5722),
+                innerCoronaColor = Color(0xFFFF5722).copy(alpha = 0.78f),
+                outerHaloColor = Color(0xFFE64A19).copy(alpha = 0.38f),
+                diffractionRayColor = Color(0xFFFF7043).copy(alpha = 0.35f),
                 skyGlowGradientColors = listOf(
-                    Color(0xFFFF8F00).copy(alpha = 0.36f),
-                    Color(0xFFFFA000).copy(alpha = 0.14f),
-                    Color(0xFFFF8F00).copy(alpha = 0.01f)
+                    Color(0xFFFF5722).copy(alpha = 0.55f),
+                    Color(0xFFF4511E).copy(alpha = 0.32f),
+                    Color(0xFFE91E63).copy(alpha = 0.16f),
+                    Color(0xFF880E4F).copy(alpha = 0.04f)
                 ),
-                rayIntensity = 0.0f, // 实景落日不刺眼，纯粹沉静暖金橙日盘
-                diskScale = 1.08f + 0.08f * t
+                rayIntensity = 0.0f, // 实景落日不刺眼，纯粹沉静壮丽晚霞日盘
+                diskScale = 1.10f + 0.10f * t
             )
         }
     }
