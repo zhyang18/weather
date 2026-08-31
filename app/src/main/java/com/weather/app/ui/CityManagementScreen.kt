@@ -14,8 +14,10 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Snackbar
@@ -61,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -70,26 +74,103 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.weather.app.model.CityInfo
 import com.weather.app.model.WeatherData
-import com.weather.app.ui.components.WeatherSkyBackground
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+/**
+ * 城市列表拖拽排序状态管理类
+ *
+ * 负责管理拖拽过程中的当前选中项索引、Y 轴实时位移累加以及跨项位置交换判定。
+ *
+ * @property onMove 发生跨项调换时的回调函数，参数分别为原位置索引和目标位置索引
+ */
+class DragDropListState(
+    private val onMove: (Int, Int) -> Unit
+) {
+    /**
+     * 当前正在被拖拽的卡片索引，未拖拽时为 null
+     */
+    var draggingItemIndex by mutableStateOf<Int?>(null)
+        private set
+
+    /**
+     * 被拖拽项相对于初始位置的 Y 轴实时像素偏移量
+     */
+    var draggingItemOffset by mutableStateOf(0f)
+        private set
+
+    /**
+     * 单个列表项步长高度（卡片高度 + 间距）像素值
+     */
+    var itemHeightPx by mutableStateOf(0f)
+
+    /**
+     * 拖拽手势开始时的初始化处理
+     *
+     * @param index 当前被按住拖拽的城市卡片索引
+     */
+    fun onDragStart(index: Int) {
+        draggingItemIndex = index
+        draggingItemOffset = 0f
+    }
+
+    /**
+     * 拖拽过程中的手势位移累加与跨项交换判定
+     *
+     * @param dragAmount 本次手势的 Y 轴移动增量像素值
+     * @param itemCount 城市列表总数量
+     */
+    fun onDrag(dragAmount: Float, itemCount: Int) {
+        val currentIndex = draggingItemIndex ?: return
+        draggingItemOffset += dragAmount
+
+        val stepHeight = if (itemHeightPx > 0f) itemHeightPx else 1f
+        val deltaIndex = (draggingItemOffset / stepHeight).roundToInt()
+        if (deltaIndex != 0) {
+            val targetIndex = (currentIndex + deltaIndex).coerceIn(0, itemCount - 1)
+            if (targetIndex != currentIndex) {
+                onMove(currentIndex, targetIndex)
+                draggingItemIndex = targetIndex
+                // 扣除已交换项对应的步长位移，确保被拖拽卡片紧随手指不发生跳动
+                draggingItemOffset -= (targetIndex - currentIndex) * stepHeight
+            }
+        }
+    }
+
+    /**
+     * 拖拽结束或取消时的重置清理逻辑
+     */
+    fun onDragInterrupted() {
+        draggingItemIndex = null
+        draggingItemOffset = 0f
+    }
+}
+
+/**
+ * 创建并记住城市列表拖拽排序状态实例
+ *
+ * @param onMove 跨项移动回调
+ * @return 记忆的 [DragDropListState] 状态实例
+ */
+@Composable
+fun rememberDragDropListState(onMove: (Int, Int) -> Unit): DragDropListState {
+    return remember { DragDropListState(onMove) }
+}
 
 /**
  * 城市管理全屏沉浸式界面组件
  *
  * 严格对齐设计要求：
  * 1. 背景色由当前天气主页色动态驱动、全屏沉浸式展示；
- * 2. 顶部提供“排序 / 完成”切换入口，支持直观的城市顺序上下调整；
- * 3. 移除卡片表面删除按钮，普通模式下向左滑动卡片露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
- * 4. 点击该方块切换为深红棕色“✓”对勾图标（代表确定删除状态）；
- * 5. 再次点击“✓”对勾执行删除，并弹出底部“撤销”按钮；
- * 6. 底部提供“+ 添加城市”操作入口。
+ * 2. 顶部提供“排序 / 完成”切换入口，支持直观的城市顺序拖拽排序；
+ * 3. 在排序模式下，每张城市卡片右侧展示拖动排序小图标，按住即可上下拖拽实时调整城市位置；
+ * 4. 普通模式下向左滑动卡片露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
+ * 5. 点击该方块切换为深红棕色“✓”对勾图标（代表确定删除状态）；
+ * 6. 再次点击“✓”对勾执行删除，并弹出底部“撤销”按钮；
+ * 7. 底部提供“+ 添加城市”操作入口。
  *
  * @param visible 是否展开显示
  * @param weatherText 当前主页天气现象文本（用于动态驱动背景色）
@@ -119,6 +200,13 @@ fun CityManagementFullScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var isReorderMode by remember { mutableStateOf(false) }
+
+    // 拖拽排序状态管理
+    val density = LocalDensity.current
+    val itemHeightWithSpacingPx = with(density) { (86.dp + 12.dp).toPx() }
+    val dragDropState = rememberDragDropListState(onMove = onMoveCity).apply {
+        itemHeightPx = itemHeightWithSpacingPx
+    }
 
     // 拦截物理返回键与侧滑返回手势，按下时优先退出排序模式或收回抽屉
     BackHandler(enabled = visible) {
@@ -240,7 +328,7 @@ fun CityManagementFullScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 城市卡片列表 (支持排序模式上下调整与普通模式向左滑动删除)
+                // 城市卡片列表 (支持排序模式拖动排序与普通模式向左滑动删除)
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
@@ -255,16 +343,19 @@ fun CityManagementFullScreen(
                             ?: weatherCache[city.code.ifEmpty { city.name }]
                             ?: weatherCache[city.name]
                         val canDelete = savedCities.size > 1 && !city.isAutoLocated
+                        val isDragging = dragDropState.draggingItemIndex == index
 
                         SwipeableCityCard(
                             city = city,
                             weather = weather,
                             canDelete = canDelete,
                             isReorderMode = isReorderMode,
-                            isFirst = index == 0,
-                            isLast = index == savedCities.size - 1,
-                            onMoveUp = { onMoveCity(index, index - 1) },
-                            onMoveDown = { onMoveCity(index, index + 1) },
+                            isDragging = isDragging,
+                            dragOffsetY = if (isDragging) dragDropState.draggingItemOffset else 0f,
+                            onDragStart = { dragDropState.onDragStart(index) },
+                            onDrag = { amount -> dragDropState.onDrag(amount, savedCities.size) },
+                            onDragEnd = { dragDropState.onDragInterrupted() },
+                            onDragCancel = { dragDropState.onDragInterrupted() },
                             onClick = {
                                 if (!isReorderMode) {
                                     onCityClick(index)
@@ -286,7 +377,13 @@ fun CityManagementFullScreen(
                                     }
                                 }
                             },
-                            modifier = Modifier.animateItemPlacement()
+                            modifier = if (isDragging) {
+                                Modifier.zIndex(1f)
+                            } else {
+                                Modifier
+                                    .zIndex(0f)
+                                    .animateItemPlacement()
+                            }
                         )
                     }
                 }
@@ -347,10 +444,10 @@ fun CityManagementFullScreen(
 }
 
 /**
- * 支持两段式滑动确认删除与排序上下调整的城市卡片组件
+ * 支持两段式滑动确认删除与右侧手势拖拽排序的城市卡片组件
  *
  * 严格对齐设计与交互要求：
- * 1. 在排序模式下：右侧展示清晰优雅的上下移动操作区，点击箭头即可与相邻城市平滑交换位置；
+ * 1. 排序模式下：右侧展示拖动排序小图标，按住图标即可上下实时拖拽卡片调整位置；
  * 2. 默认模式下：卡片完全闭合，向左滑动露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
  * 3. 首次点击该方块切换为“✓”对勾图标（代表确定删除状态）；
  * 4. 再次点击“✓”对勾执行删除，并弹出底部撤销 Snackbar。
@@ -359,10 +456,12 @@ fun CityManagementFullScreen(
  * @param weather 城市天气数据 [WeatherData]
  * @param canDelete 是否允许删除
  * @param isReorderMode 是否处于城市排序调整模式
- * @param isFirst 是否为列表首个城市（首个城市不可上移）
- * @param isLast 是否为列表末尾城市（末尾城市不可下移）
- * @param onMoveUp 点击上移回调
- * @param onMoveDown 点击下移回调
+ * @param isDragging 是否当前正在被拖拽
+ * @param dragOffsetY 当前拖拽时的 Y 轴像素偏移量
+ * @param onDragStart 拖拽手势开始回调
+ * @param onDrag 拖拽手势位移回调
+ * @param onDragEnd 拖拽手势正常结束回调
+ * @param onDragCancel 拖拽手势取消回调
  * @param onClick 点击查看城市天气回调
  * @param onDelete 确认删除回调
  * @param modifier 外部修饰符
@@ -373,10 +472,12 @@ private fun SwipeableCityCard(
     weather: WeatherData?,
     canDelete: Boolean,
     isReorderMode: Boolean = false,
-    isFirst: Boolean = false,
-    isLast: Boolean = false,
-    onMoveUp: () -> Unit = {},
-    onMoveDown: () -> Unit = {},
+    isDragging: Boolean = false,
+    dragOffsetY: Float = 0f,
+    onDragStart: () -> Unit = {},
+    onDrag: (Float) -> Unit = {},
+    onDragEnd: () -> Unit = {},
+    onDragCancel: () -> Unit = {},
     onClick: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
@@ -423,6 +524,13 @@ private fun SwipeableCityCard(
         modifier = modifier
             .fillMaxWidth()
             .height(86.dp)
+            .graphicsLayer {
+                if (isDragging) {
+                    translationY = dragOffsetY
+                    scaleX = 1.02f
+                    scaleY = 1.02f
+                }
+            }
     ) {
         // 普通模式下：右侧独立浅珊瑚粉色操作方块
         if (!isReorderMode && canDelete && revealProgress > 0.005f) {
@@ -514,6 +622,12 @@ private fun SwipeableCityCard(
             SavedCitySkyCard(
                 city = city,
                 weather = weather,
+                isReorderMode = isReorderMode,
+                isDragging = isDragging,
+                onDragStart = onDragStart,
+                onDrag = onDrag,
+                onDragEnd = onDragEnd,
+                onDragCancel = onDragCancel,
                 onClick = {
                     if (!isReorderMode && (revealState != 0 || offsetX.value < -1f)) {
                         settleTo(0)
@@ -522,55 +636,6 @@ private fun SwipeableCityCard(
                     }
                 }
             )
-
-            // 排序模式：卡片内部右侧展示上移与下移操作按钮
-            if (isReorderMode) {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // 上移按钮
-                    Surface(
-                        shape = CircleShape,
-                        color = if (!isFirst) Color.White.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable(enabled = !isFirst) { onMoveUp() }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowUp,
-                                contentDescription = "上移",
-                                tint = if (!isFirst) Color.White else Color.White.copy(alpha = 0.30f),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-
-                    // 下移按钮
-                    Surface(
-                        shape = CircleShape,
-                        color = if (!isLast) Color.White.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable(enabled = !isLast) { onMoveDown() }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "下移",
-                                tint = if (!isLast) Color.White else Color.White.copy(alpha = 0.30f),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -580,12 +645,24 @@ private fun SwipeableCityCard(
  *
  * @param city 城市信息 [CityInfo]
  * @param weather 城市关联的实时天气数据 [WeatherData]
+ * @param isReorderMode 是否处于排序模式
+ * @param isDragging 是否正在被拖拽
+ * @param onDragStart 拖拽手势开始回调
+ * @param onDrag 拖拽手势移动回调
+ * @param onDragEnd 拖拽手势正常结束回调
+ * @param onDragCancel 拖拽手势取消回调
  * @param onClick 点击事件回调
  */
 @Composable
 private fun SavedCitySkyCard(
     city: CityInfo,
     weather: WeatherData?,
+    isReorderMode: Boolean = false,
+    isDragging: Boolean = false,
+    onDragStart: () -> Unit = {},
+    onDrag: (Float) -> Unit = {},
+    onDragEnd: () -> Unit = {},
+    onDragCancel: () -> Unit = {},
     onClick: () -> Unit
 ) {
     val tempText = if (weather != null) "${weather.current.temperature.toInt()}°C" else "--°C"
@@ -595,18 +672,22 @@ private fun SavedCitySkyCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(86.dp)
+            .shadow(
+                elevation = if (isDragging) 8.dp else 0.dp,
+                shape = RoundedCornerShape(16.dp)
+            )
             .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.horizontalGradient(
                     listOf(
-                        Color(0xFF2C6EA8).copy(alpha = 0.85f),
-                        Color(0xFF4C8DC4).copy(alpha = 0.85f),
-                        Color(0xFF75AEE0).copy(alpha = 0.85f)
+                        Color(0xFF2C6EA8).copy(alpha = if (isDragging) 0.95f else 0.85f),
+                        Color(0xFF4C8DC4).copy(alpha = if (isDragging) 0.95f else 0.85f),
+                        Color(0xFF75AEE0).copy(alpha = if (isDragging) 0.95f else 0.85f)
                     )
                 )
             )
-            .clickable { onClick() }
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .clickable(enabled = !isReorderMode) { onClick() }
+            .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
@@ -633,19 +714,54 @@ private fun SavedCitySkyCard(
                 }
             }
 
-            // 右侧：气温与现象 (大字号温度与现象说明，干净整洁)
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = tempText,
-                    color = Color.White,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Normal
-                )
-                Text(
-                    text = condText,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp
-                )
+            // 右侧：气温与现象 + 排序小图标
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = tempText,
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                    Text(
+                        text = condText,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp
+                    )
+                }
+
+                // 排序模式下展示右侧可拖拽排序小图标
+                if (isReorderMode) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isDragging) Color.White.copy(alpha = 0.38f) else Color.White.copy(alpha = 0.20f),
+                        modifier = Modifier
+                            .size(38.dp)
+                            .pointerInput(Unit) {
+                                detectDragGestures(
+                                    onDragStart = { onDragStart() },
+                                    onDragEnd = { onDragEnd() },
+                                    onDragCancel = { onDragCancel() },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        onDrag(dragAmount.y)
+                                    }
+                                )
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Reorder,
+                                contentDescription = "拖动排序",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
