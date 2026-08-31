@@ -41,8 +41,9 @@ class SafeObjectTypeAdapterFactory : TypeAdapterFactory {
     override fun <T : Any?> create(gson: Gson, type: TypeToken<T>): TypeAdapter<T>? {
         val rawType = type.rawType
 
-        // 仅对数据模型类进行容错拦截（排除基本类型、字符串、数字、集合等）
+        // 仅对数据模型类进行容错拦截（排除基本类型、数组、字符串、数字、集合、Map 等）
         if (!rawType.isPrimitive &&
+            !rawType.isArray &&
             rawType != String::class.java &&
             !Number::class.java.isAssignableFrom(rawType) &&
             !Boolean::class.java.isAssignableFrom(rawType) &&
@@ -362,14 +363,16 @@ class CmaWeatherDataSource : WeatherDataSource {
     /**
      * 带有全方位容错的泛型 JSON 安全反序列化辅助方法
      *
-     * @param jsonString 原始响应字符串
-     * @param typeToken 目标类型 [TypeToken]
+     * 直接采用 [Class] 类型解析，避免匿名 [TypeToken] 子类在 Release 模式混淆时泛型签名被擦除导致 ParameterizedType 转型异常。
+     *
+     * @param jsonString 原始响应 JSON 字符串
+     * @param clazz 目标数据模型的 Class 类型 [Class]
      * @return 反序列化出的对象实例，失败时返回 null
      */
-    private fun <T> safeFromJson(jsonString: String, typeToken: TypeToken<T>): T? {
+    private fun <T> safeFromJson(jsonString: String, clazz: Class<T>): T? {
         return try {
             val clean = extractJsonText(jsonString)
-            customGson.fromJson<T>(clean, typeToken.type)
+            customGson.fromJson(clean, clazz)
         } catch (_: Exception) {
             null
         }
@@ -402,12 +405,13 @@ class CmaWeatherDataSource : WeatherDataSource {
         try {
             var targetCity = city.sanitize()
 
-            // 1. 若城市缺少编码，尝试自动检索补全 (支持 地标/街道 -> 区县 -> 地级市 -> 省份 逐级智能匹配站点编码)
+            // 1. 若城市缺少编码，尝试自动检索补全 (支持 地标/街道 -> 区县 -> 地级市 -> 省份逐级智能匹配，终极回退至省会/主站)
             if (targetCity.code.isEmpty()) {
                 val resolved = resolveCityByName(targetCity.name, targetCity.province)
                     ?: (if (targetCity.district.isNotEmpty()) resolveCityByName(targetCity.district, targetCity.province) else null)
                     ?: (if (targetCity.parentCity.isNotEmpty()) resolveCityByName(targetCity.parentCity, targetCity.province) else null)
-                    ?: resolveCityByName(targetCity.province, targetCity.province)
+                    ?: resolveCityByName(targetCity.province, targetCity.province, fallbackToProvinceCapital = true)
+                    ?: resolveCityByName(targetCity.name, fallbackToProvinceCapital = false)
 
                 if (resolved != null) {
                     targetCity = targetCity.copy(
@@ -421,7 +425,7 @@ class CmaWeatherDataSource : WeatherDataSource {
 
             // 2. 发起请求并读取原始报文
             val rawBody = apiService.getWeather(targetCity.code).string()
-            var response = safeFromJson(rawBody, object : TypeToken<CmaWeatherResponse>() {})
+            var response = safeFromJson(rawBody, CmaWeatherResponse::class.java)
             var data = response?.data
 
             // 3. 若当前编码返回空，尝试降级到所属地级市/区县/省会主站重新请求
@@ -436,7 +440,7 @@ class CmaWeatherDataSource : WeatherDataSource {
                     val fallbackResolved = resolveCityByName(fallbackName, targetCity.province)
                     if (fallbackResolved != null && fallbackResolved.code.isNotEmpty() && fallbackResolved.code != targetCity.code) {
                         val retryBody = apiService.getWeather(fallbackResolved.code).string()
-                        val retryResp = safeFromJson(retryBody, object : TypeToken<CmaWeatherResponse>() {})
+                        val retryResp = safeFromJson(retryBody, CmaWeatherResponse::class.java)
                         if (retryResp?.data != null) {
                             targetCity = targetCity.copy(code = fallbackResolved.code, province = fallbackResolved.province)
                             data = retryResp.data
@@ -628,19 +632,25 @@ class CmaWeatherDataSource : WeatherDataSource {
     }
 
     /**
-     * 根据城市名称与所属省份精确定位城市实体，防止跨省重名误判
+     * 根据城市名称与所属省份智能解析并匹配对应的中央气象台城市实体与站点编码
      *
      * 极速多级查找机制：
      * 1. 优先在内存已加载缓存中查找（0 网络开销，0ms 瞬间命中）；
      * 2. 若未命中且指定了所属省份，精准按需加载该省的真实站点列表（仅 1 个网络请求，~50ms 响应，绝不并发加载其它 33 省）；
-     * 3. 严格按城市名或纯净名匹配，未匹配时返回 null 以允许外层区县/地级市多级逐层兜底。
+     * 3. 拉取失败时安全撤销标记支持后续重试；
+     * 4. 严格按城市名或纯净名匹配；若启用 [fallbackToProvinceCapital] 且未匹配到具体站点，安全回退到该省份省会/首府主站（列表第 1 项）。
      *
-     * @param cityName 目标城市名称（如 "南京", "西安", "深圳", "武侯"）
-     * @param provinceName 目标省份名称（可选，如 "广东省", "四川省"）
+     * @param cityName 目标城市名称（如 "南京", "西安", "深圳", "武侯", "浦仪公路"）
+     * @param provinceName 目标省份名称（可选，如 "广东省", "四川省", "江苏省"）
+     * @param fallbackToProvinceCapital 当在指定省份内未匹配到具体站点时是否安全回退至省会/主站（默认 false）
      * @return 匹配到的城市信息 [CityInfo]，未找到则返回 null
      */
-    private suspend fun resolveCityByName(cityName: String, provinceName: String? = null): CityInfo? {
-        val cleanName = cityName.trim().removeSuffix("市").removeSuffix("区").removeSuffix("县")
+    private suspend fun resolveCityByName(
+        cityName: String,
+        provinceName: String? = null,
+        fallbackToProvinceCapital: Boolean = false
+    ): CityInfo? {
+        val cleanName = cityName.trim().removeSuffix("省").removeSuffix("市").removeSuffix("区").removeSuffix("县")
 
         // 1. 优先在已加载的内存缓存中匹配
         synchronized(cachedCities) {
@@ -658,11 +668,25 @@ class CmaWeatherDataSource : WeatherDataSource {
                 } else false
             }
             if (shouldLoad) {
-                getCitiesInProvince(targetProvinceCode)
+                val loadResult = getCitiesInProvince(targetProvinceCode)
+                if (loadResult.isFailure || loadResult.getOrNull().isNullOrEmpty()) {
+                    synchronized(loadedProvinces) {
+                        loadedProvinces.remove(targetProvinceCode)
+                    }
+                }
             }
             synchronized(cachedCities) {
                 val match = findCityInList(cachedCities, cityName, cleanName, provinceName)
                 if (match != null) return match
+
+                // 3. 省会/首府站点安全保底（如道路/园区未能匹配到独立站时，回退到所属省份主站，如南京站）
+                if (fallbackToProvinceCapital) {
+                    val cleanProv = (provinceName ?: "").removeSuffix("省").removeSuffix("市").removeSuffix("自治区").removeSuffix("特别行政区")
+                    val inProvince = cachedCities.filter { it.province.contains(cleanProv) || cleanProv.contains(it.province) }
+                    if (inProvince.isNotEmpty()) {
+                        return inProvince.first()
+                    }
+                }
             }
         }
 
@@ -731,10 +755,19 @@ class CmaWeatherDataSource : WeatherDataSource {
      * @param provinceCode 省份代码
      * @return 下辖城市列表 [Result]
      */
+    suspend fun getRawProvinceCities(provinceCode: String): String = withContext(Dispatchers.IO) {
+        apiService.getCitiesInProvince(provinceCode).string()
+    }
+
     override suspend fun getCitiesInProvince(provinceCode: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
             val raw = apiService.getCitiesInProvince(provinceCode).string()
-            val response = safeFromJson(raw, object : TypeToken<List<CmaCityResponse>>() {}) ?: emptyList()
+            val clean = extractJsonText(raw)
+            val response = try {
+                customGson.fromJson(clean, Array<CmaCityResponse>::class.java)?.toList() ?: emptyList()
+            } catch (_: Throwable) {
+                emptyList()
+            }
             val list = response.map {
                 CityInfo(
                     code = it.code,
@@ -764,7 +797,7 @@ class CmaWeatherDataSource : WeatherDataSource {
     override suspend fun autoLocate(): Result<CityInfo> = withContext(Dispatchers.IO) {
         try {
             val raw = apiService.getPosition().string()
-            val response = safeFromJson(raw, object : TypeToken<CmaPositionResponse>() {})
+            val response = safeFromJson(raw, CmaPositionResponse::class.java)
             if (response != null && response.code.isNotEmpty()) {
                 val city = CityInfo(
                     code = response.code,
@@ -792,7 +825,7 @@ class CmaWeatherDataSource : WeatherDataSource {
             async(Dispatchers.IO) {
                 try {
                     val raw = apiService.getCitiesInProvince(province.code).string()
-                    val cities = safeFromJson(raw, object : TypeToken<List<CmaCityResponse>>() {}) ?: emptyList()
+                    val cities = safeFromJson(raw, Array<CmaCityResponse>::class.java)?.toList() ?: emptyList()
                     cities.map { CityInfo(code = it.code, name = it.city, province = it.province) }
                 } catch (_: Exception) {
                     emptyList()

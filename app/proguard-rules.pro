@@ -57,9 +57,11 @@
 -dontwarn androidx.work.**
 
 # ------------------------------------------------------------------------------
-# 5. Gson 数据实体序列化与反序列化保护（重要：严禁混淆数据模型字段）
+# 5. Gson 数据实体序列化与反序列化保护（重要：严禁混淆数据模型字段与泛型签名）
 # ------------------------------------------------------------------------------
--keepattributes *Annotation*
+# 保留泛型签名、注解与反射必要元数据（必须保留 Signature 防止 TypeToken 泛型擦除）
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+
 -keepclassmembers class * {
     @com.google.gson.annotations.SerializedName <fields>;
     @com.google.gson.annotations.Expose <fields>;
@@ -73,18 +75,57 @@
 -keep class com.weather.app.datasource.** { *; }
 -keepclassmembers class com.weather.app.datasource.** { *; }
 
+# TypeToken 匿名子类保护（防止泛型 Signature 在 release 模式下被 R8 优化/擦除）
+-keep class * extends com.google.gson.reflect.TypeToken
+-keepclassmembers class * extends com.google.gson.reflect.TypeToken {
+    <init>(...);
+    *;
+}
+
+# TypeAdapter / TypeAdapterFactory / JsonSerializer / JsonDeserializer 保护
+-keep class * extends com.google.gson.TypeAdapter
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+
 # Gson 自身通用规则
 -keep class com.google.gson.** { *; }
 -dontwarn com.google.gson.**
 
 # ------------------------------------------------------------------------------
-# 6. Retrofit2 & OkHttp3 网络库
+# 6. 安全加密库 (Google Tink)
 # ------------------------------------------------------------------------------
+-keep class com.google.crypto.tink.** { *; }
+-dontwarn com.google.crypto.tink.**
+
+# ------------------------------------------------------------------------------
+# 7. Retrofit2 & OkHttp3 网络库与协程支持（重点：保留接口及其参数泛型 Signature）
+# ------------------------------------------------------------------------------
+-keepattributes Signature, Exceptions, InnerClasses, EnclosingMethod, Deprecated
+-keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
+-keepattributes AnnotationDefault
+
 -dontwarn retrofit2.**
 -keep class retrofit2.** { *; }
--keepattributes Signature
--keepattributes Exceptions
+-keep interface retrofit2.** { *; }
+
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+
+# 关键：保留协程 Continuation 签名以支持 Retrofit 挂起函数反射解析
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+-keep,allowobfuscation,allowshrinking class * extends kotlin.coroutines.jvm.internal.ContinuationImpl
+
+-keep class * extends retrofit2.Converter$Factory { *; }
+-keep class * extends retrofit2.CallAdapter$Factory { *; }
+
+# 保持所有 Retrofit ApiService 接口及其方法、参数签名完整，杜绝挂起函数 Continuation 泛型擦除导致 ClassCastException
+-keep interface com.weather.app.datasource.**.*ApiService { *; }
+-keep interface com.weather.app.datasource.**.*Service { *; }
 -keepclasseswithmembers interface * {
+    @retrofit2.http.* <methods>;
+}
+-keepclassmembers,allowshrinking,allowobfuscation interface * {
     @retrofit2.http.* <methods>;
 }
 

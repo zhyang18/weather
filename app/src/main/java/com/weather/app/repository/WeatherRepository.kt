@@ -303,10 +303,9 @@ class WeatherRepository(
         val json = prefs.getString(KEY_SAVED_CITIES, null)
         if (!json.isNullOrEmpty()) {
             try {
-                val type = object : TypeToken<List<CityInfo>>() {}.type
-                val list: List<CityInfo>? = gson.fromJson(json, type)
-                if (!list.isNullOrEmpty()) {
-                    return list.map { it.sanitize() }
+                val array = gson.fromJson(json, Array<CityInfo>::class.java)
+                if (!array.isNullOrEmpty()) {
+                    return array.map { it.sanitize() }
                 }
             } catch (_: Exception) {}
         }

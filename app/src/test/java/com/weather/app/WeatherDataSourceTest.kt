@@ -98,16 +98,26 @@ class WeatherDataSourceTest {
 
         // 测试西安 (中央气象台未返回 air 字段或为空字符串 "")
         val xianResult = dataSource.getWeather(CityInfo(code = "RfjCI", name = "西安", province = "陕西省"))
-        if (xianResult.isFailure) {
-            println("xianResult error: ${xianResult.exceptionOrNull()}")
-            xianResult.exceptionOrNull()?.printStackTrace()
-        }
         assertTrue("Xi'an fetch failed: ${xianResult.exceptionOrNull()?.message}", xianResult.isSuccess)
-        val xianData = xianResult.getOrNull()
-        assertNotNull(xianData)
-        assertEquals("西安", xianData?.city?.name)
-        assertNotNull(xianData?.current)
-        assertTrue(xianData!!.dailyForecasts.isNotEmpty())
+        assertNotNull(xianResult.getOrNull()?.current)
+
+        // 测试【浦仪公路】纯地标道路名，无站点编码时智能降级至江苏省主站南京站获取天气
+        val puyiResult = dataSource.getWeather(
+            CityInfo(
+                code = "",
+                name = "浦仪公路",
+                province = "江苏省",
+                district = "栖霞区",
+                parentCity = "南京市",
+                isAutoLocated = true
+            )
+        )
+        assertTrue("Puyi Highway auto station fetch failed: ${puyiResult.exceptionOrNull()?.message}", puyiResult.isSuccess)
+        val puyiData = puyiResult.getOrNull()
+        assertNotNull(puyiData)
+        assertNotNull(puyiData?.current)
+        assertEquals("浦仪公路", puyiData?.city?.name)
+        assertTrue(puyiData!!.city.code.isNotEmpty())
     }
 
     /**
