@@ -185,11 +185,13 @@
                     float twilight = 1.0 - smoothstep(0.0, 0.07, abs(dotNL));
                     vec3 twilightGlow = vec3(0.96, 0.58, 0.20) * twilight * 0.35;
 
-                    // 3. 白昼色彩 (1.35 舒适日光强度)
-                    vec3 dayColor = tex.rgb * (1.10 + 0.25 * max(0.0, dotNL));
+                    // 3. 白昼色彩 (白点值柔和化：采用非线性温润高光压缩，峰值限制在 1.08，温和通透不刺眼)
+                    float sunLambert = max(0.0, dotNL);
+                    float softHighlight = 0.98 + 0.12 * pow(sunLambert, 1.4);
+                    vec3 dayColor = tex.rgb * softHighlight;
 
                     // 4. 夜半球色彩 (环境光 0.6，清晰明朗且具有清晰暗夜层次)
-                    vec3 nightColor = tex.rgb * 0.60 + vec3(0.012, 0.018, 0.035);
+                    vec3 nightColor = tex.rgb * 0.58 + vec3(0.010, 0.015, 0.030);
 
                     // 5. 昼夜阴影合成
                     vec3 finalColor = mix(nightColor, dayColor, dayFactor) + twilightGlow;
@@ -257,7 +259,7 @@
         earthAxis.visible = false;
         earthGroup.add(earthAxis);
 
-        // 背景星空微粒
+        // 背景星空微粒（调柔和：更小尺寸与更低不透明度）
         const starsGeom = new THREE.BufferGeometry();
         const starsCount = 200;
         const starsPositions = new Float32Array(starsCount * 3);
@@ -267,7 +269,7 @@
             starsPositions[i+2] = -10 - Math.random() * 20;
         }
         starsGeom.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
-        const starsMat = new THREE.PointsMaterial({ color: 0x94a3b8, size: 0.06, transparent: true, opacity: 0.6 });
+        const starsMat = new THREE.PointsMaterial({ color: 0x64748b, size: 0.035, transparent: true, opacity: 0.35 });
         const starField = new THREE.Points(starsGeom, starsMat);
         scene.add(starField);
 

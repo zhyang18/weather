@@ -235,7 +235,7 @@ private fun EarthDaylightContent(
                 modifier = Modifier.align(Alignment.Center)
             ) {
                 Text(
-                    text = "地球实时日光",
+                    text = "全球昼夜光照",
                     color = Color.White,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold
