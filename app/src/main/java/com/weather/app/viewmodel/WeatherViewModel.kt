@@ -80,6 +80,10 @@ data class WeatherUiState(
     val cardDisplayConfig: com.weather.app.model.CardDisplayConfig = com.weather.app.model.CardDisplayConfig(),
     val showCardSettingsDialog: Boolean = false,
     val showEarthDaylightScreen: Boolean = false,
+    val showLocationMapScreen: Boolean = false,
+    val targetMapCity: CityInfo? = null,
+    val mapLayerType: String = "dark",
+    val isMapRadarEnabled: Boolean = false,
     val showQWeatherConfigDialog: Boolean = false,
     val qWeatherConfig: com.weather.app.datasource.qweather.QWeatherConfig = com.weather.app.datasource.qweather.QWeatherConfig(),
     val showCaiyunConfigDialog: Boolean = false,
@@ -148,6 +152,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val locationMode = repository.getLocationDisplayMode()
         val intervalMinutes = repository.getAutoUpdateIntervalMinutes()
         val cardConfig = repository.getCardDisplayConfig()
+        val mapLayerType = repository.getMapLayerType()
+        val isMapRadarEnabled = repository.isMapRadarEnabled()
         val qWeatherConfig = repository.getQWeatherConfig()
         val caiyunConfig = repository.getCaiyunConfig()
 
@@ -175,6 +181,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 autoUpdateIntervalMinutes = intervalMinutes,
                 autoUpdateIntervalHours = (intervalMinutes / 60).coerceAtLeast(0),
                 cardDisplayConfig = cardConfig,
+                mapLayerType = mapLayerType,
+                isMapRadarEnabled = isMapRadarEnabled,
                 qWeatherConfig = qWeatherConfig,
                 caiyunConfig = caiyunConfig,
                 weatherCache = initialCache,
@@ -901,6 +909,41 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      */
     fun setShowEarthDaylightScreen(show: Boolean) {
         _uiState.update { it.copy(showEarthDaylightScreen = show) }
+    }
+
+    /**
+     * 设置是否展示定位气象大地图全屏页面
+     *
+     * @param show 是否展示大地图页面
+     * @param targetCity 指定聚焦查看的城市实体（为 null 时默认使用当前选中城市）
+     */
+    fun setShowLocationMapScreen(show: Boolean, targetCity: CityInfo? = null) {
+        _uiState.update { 
+            it.copy(
+                showLocationMapScreen = show,
+                targetMapCity = if (show) (targetCity ?: it.getCurrentCity()) else null
+            ) 
+        }
+    }
+
+    /**
+     * 切换并持久化保存地图底图图层类型
+     *
+     * @param layerType 底图图层键名（如 "dark", "standard", "satellite"）
+     */
+    fun setMapLayerType(layerType: String) {
+        repository.setMapLayerType(layerType)
+        _uiState.update { it.copy(mapLayerType = layerType) }
+    }
+
+    /**
+     * 切换并持久化保存气象降水雷达图层开关状态
+     *
+     * @param enabled 是否开启降水雷达
+     */
+    fun setMapRadarEnabled(enabled: Boolean) {
+        repository.setMapRadarEnabled(enabled)
+        _uiState.update { it.copy(isMapRadarEnabled = enabled) }
     }
 
     /**

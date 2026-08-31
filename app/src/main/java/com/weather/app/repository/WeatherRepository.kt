@@ -101,6 +101,8 @@ class WeatherRepository(
         private const val KEY_UPDATE_INTERVAL_MINUTES = "update_interval_minutes"
         private const val KEY_PRIVACY_AGREED = "privacy_agreed"
         private const val KEY_CARD_DISPLAY_CONFIG = "card_display_config_json"
+        private const val KEY_MAP_LAYER_TYPE = "map_layer_type"
+        private const val KEY_IS_MAP_RADAR_ENABLED = "is_map_radar_enabled"
     }
 
     /**
@@ -227,6 +229,42 @@ class WeatherRepository(
      */
     fun setLocationDisplayMode(mode: com.weather.app.model.LocationDisplayMode) {
         prefs.edit().putString(KEY_LOCATION_DISPLAY_MODE, mode.name).apply()
+    }
+
+    /**
+     * 获取用户选择的地图底图图层类型（如 "dark", "standard", "satellite"）
+     *
+     * @return 当前持久化的地图图层键名，默认 "dark"
+     */
+    fun getMapLayerType(): String {
+        return prefs.getString(KEY_MAP_LAYER_TYPE, "dark") ?: "dark"
+    }
+
+    /**
+     * 持久化保存用户选择的地图底图图层类型
+     *
+     * @param layerType 地图图层键名 [String]
+     */
+    fun setMapLayerType(layerType: String) {
+        prefs.edit().putString(KEY_MAP_LAYER_TYPE, layerType).apply()
+    }
+
+    /**
+     * 获取是否开启气象降水雷达图层
+     *
+     * @return true 为开启，false 为关闭，默认 false
+     */
+    fun isMapRadarEnabled(): Boolean {
+        return prefs.getBoolean(KEY_IS_MAP_RADAR_ENABLED, false)
+    }
+
+    /**
+     * 持久化保存气象降水雷达图层开启状态
+     *
+     * @param enabled true 为开启，false 为关闭
+     */
+    fun setMapRadarEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_IS_MAP_RADAR_ENABLED, enabled).apply()
     }
 
     /**

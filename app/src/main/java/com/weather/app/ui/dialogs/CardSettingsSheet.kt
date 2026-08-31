@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
@@ -55,6 +56,7 @@ import com.weather.app.model.KEY_DAILY_FORECAST
 import com.weather.app.model.KEY_FEELS_LIKE
 import com.weather.app.model.KEY_HOURLY_FORECAST
 import com.weather.app.model.KEY_HUMIDITY
+import com.weather.app.model.KEY_LOCATION_MAP
 import com.weather.app.model.KEY_MINUTELY_PRECIPITATION
 import com.weather.app.model.KEY_MOON_PHASE
 import com.weather.app.model.KEY_PRECIPITATION
@@ -144,6 +146,13 @@ fun CardSettingsSheet(
                     description = "未来 7 天天气趋势、气温折线图与逐日列表",
                     icon = Icons.Default.CalendarMonth,
                     isEnabled = config.showDailyForecast
+                ),
+                CardOptionItem(
+                    key = KEY_LOCATION_MAP,
+                    title = "定位气象地图",
+                    description = "当前城市经纬度定位、开源瓦片小地图与气象雷达入口",
+                    icon = Icons.Default.Map,
+                    isEnabled = config.showLocationMap
                 )
             )
         ),

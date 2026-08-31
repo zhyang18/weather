@@ -60,6 +60,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,7 +84,7 @@ import kotlin.math.roundToInt
 /**
  * 城市列表拖拽排序状态管理类
  *
- * 负责管理拖拽过程中的当前选中项索引、Y 轴实时位移累加以及跨项位置交换判定。
+ * 负责管理拖拽过程中的当前选中项标识与索引、Y 轴实时位移累加以及跨项位置交换判定。
  *
  * @property onMove 发生跨项调换时的回调函数，参数分别为原位置索引和目标位置索引
  */
@@ -91,7 +92,13 @@ class DragDropListState(
     private val onMove: (Int, Int) -> Unit
 ) {
     /**
-     * 当前正在被拖拽的卡片索引，未拖拽时为 null
+     * 当前正在被拖拽的卡片唯一标识键，未拖拽时为 null
+     */
+    var draggingItemKey by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * 当前正在被拖拽的卡片在列表中的实时索引，未拖拽时为 null
      */
     var draggingItemIndex by mutableStateOf<Int?>(null)
         private set
@@ -108,11 +115,23 @@ class DragDropListState(
     var itemHeightPx by mutableStateOf(0f)
 
     /**
+     * 判断指定标识键的卡片是否正处于拖拽状态
+     *
+     * @param key 卡片唯一标识键
+     * @return 若当前卡片正处于拖拽中则返回 true，否则返回 false
+     */
+    fun isDragging(key: String): Boolean {
+        return draggingItemKey == key
+    }
+
+    /**
      * 拖拽手势开始时的初始化处理
      *
+     * @param key 当前被按住拖拽的城市卡片唯一标识键
      * @param index 当前被按住拖拽的城市卡片索引
      */
-    fun onDragStart(index: Int) {
+    fun onDragStart(key: String, index: Int) {
+        draggingItemKey = key
         draggingItemIndex = index
         draggingItemOffset = 0f
     }
@@ -144,6 +163,7 @@ class DragDropListState(
      * 拖拽结束或取消时的重置清理逻辑
      */
     fun onDragInterrupted() {
+        draggingItemKey = null
         draggingItemIndex = null
         draggingItemOffset = 0f
     }
@@ -343,7 +363,7 @@ fun CityManagementFullScreen(
                             ?: weatherCache[city.code.ifEmpty { city.name }]
                             ?: weatherCache[city.name]
                         val canDelete = savedCities.size > 1 && !city.isAutoLocated
-                        val isDragging = dragDropState.draggingItemIndex == index
+                        val isDragging = dragDropState.isDragging(city.getCacheKey())
 
                         SwipeableCityCard(
                             city = city,
@@ -352,7 +372,7 @@ fun CityManagementFullScreen(
                             isReorderMode = isReorderMode,
                             isDragging = isDragging,
                             dragOffsetY = if (isDragging) dragDropState.draggingItemOffset else 0f,
-                            onDragStart = { dragDropState.onDragStart(index) },
+                            onDragStart = { dragDropState.onDragStart(city.getCacheKey(), index) },
                             onDrag = { amount -> dragDropState.onDrag(amount, savedCities.size) },
                             onDragEnd = { dragDropState.onDragInterrupted() },
                             onDragCancel = { dragDropState.onDragInterrupted() },
@@ -378,7 +398,7 @@ fun CityManagementFullScreen(
                                 }
                             },
                             modifier = if (isDragging) {
-                                Modifier.zIndex(1f)
+                                Modifier.zIndex(10f)
                             } else {
                                 Modifier
                                     .zIndex(0f)
@@ -665,6 +685,11 @@ private fun SavedCitySkyCard(
     onDragCancel: () -> Unit = {},
     onClick: () -> Unit
 ) {
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnDrag by rememberUpdatedState(onDrag)
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
+    val currentOnDragCancel by rememberUpdatedState(onDragCancel)
+
     val tempText = if (weather != null) "${weather.current.temperature.toInt()}°C" else "--°C"
     val condText = weather?.current?.weatherText ?: "多云"
 
@@ -733,21 +758,21 @@ private fun SavedCitySkyCard(
                     )
                 }
 
-                // 排序模式下展示右侧可拖拽排序小图标
+                // 排序模式下展示右侧可拖拽排序小图标 (扩大触控热区并提供灵敏的手势响应与视觉反馈)
                 if (isReorderMode) {
                     Surface(
                         shape = CircleShape,
-                        color = if (isDragging) Color.White.copy(alpha = 0.38f) else Color.White.copy(alpha = 0.20f),
+                        color = if (isDragging) Color(0xFF64B5F6).copy(alpha = 0.45f) else Color.White.copy(alpha = 0.22f),
                         modifier = Modifier
-                            .size(38.dp)
-                            .pointerInput(Unit) {
+                            .size(42.dp)
+                            .pointerInput(city.getCacheKey()) {
                                 detectDragGestures(
-                                    onDragStart = { onDragStart() },
-                                    onDragEnd = { onDragEnd() },
-                                    onDragCancel = { onDragCancel() },
+                                    onDragStart = { currentOnDragStart() },
+                                    onDragEnd = { currentOnDragEnd() },
+                                    onDragCancel = { currentOnDragCancel() },
                                     onDrag = { change, dragAmount ->
                                         change.consume()
-                                        onDrag(dragAmount.y)
+                                        currentOnDrag(dragAmount.y)
                                     }
                                 )
                             }
@@ -756,8 +781,8 @@ private fun SavedCitySkyCard(
                             Icon(
                                 imageVector = Icons.Default.Reorder,
                                 contentDescription = "拖动排序",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                tint = if (isDragging) Color(0xFFE3F2FD) else Color.White,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }

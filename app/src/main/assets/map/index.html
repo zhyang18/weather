@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Weather Map</title>
+    <link rel="stylesheet" href="leaflet.css">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #151c28;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #151c28;
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(33, 150, 243, 0.15) 0%, transparent 70%),
+                linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 100% 100%, 20px 20px, 20px 20px;
+        }
+        .leaflet-container {
+            background-color: transparent !important;
+        }
+
+        /* 暗色主题图层滤镜：将国内高速瓦片优雅反相为气象深色主题 */
+        .dark-tiles {
+            filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(110%) saturate(80%);
+        }
+
+        /* 定位脉冲标记样式 */
+        .pulse-marker {
+            position: relative;
+            width: 28px;
+            height: 28px;
+        }
+        .pulse-core {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 13px;
+            height: 13px;
+            background: #2196F3;
+            border: 2.5px solid #FFFFFF;
+            border-radius: 50%;
+            box-shadow: 0 0 12px rgba(33, 150, 243, 0.9), 0 2px 6px rgba(0,0,0,0.5);
+            z-index: 2;
+        }
+        .pulse-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 28px;
+            height: 28px;
+            background: rgba(33, 150, 243, 0.45);
+            border-radius: 50%;
+            animation: pulse-anim 2s infinite ease-out;
+            z-index: 1;
+        }
+        @keyframes pulse-anim {
+            0% {
+                transform: translate(-50%, -50%) scale(0.4);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1.6);
+                opacity: 0;
+            }
+        }
+
+        /* 自定义气泡弹窗 */
+        .custom-popup .leaflet-popup-content-wrapper {
+            background: rgba(22, 28, 40, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: #FFFFFF;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            padding: 2px 4px;
+        }
+        .custom-popup .leaflet-popup-tip {
+            background: rgba(22, 28, 40, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .popup-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 2px;
+            color: #FFFFFF;
+        }
+        .popup-desc {
+            font-size: 11.5px;
+            color: rgba(255, 255, 255, 0.75);
+        }
+        .leaflet-control-attribution {
+            display: none !important;
+        }
+
+        /* 现代化比例刻度尺：完全透明背景与高精度端点标尺 */
+        .leaflet-bottom.leaflet-left {
+            margin-bottom: 96px;
+            margin-left: 16px;
+            pointer-events: none;
+        }
+
+        .leaflet-control-scale {
+            margin: 0 !important;
+        }
+
+        .leaflet-control-scale-line {
+            position: relative;
+            background: transparent !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border: none !important;
+            color: #FFFFFF !important;
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            letter-spacing: 0.5px !important;
+            text-align: center !important;
+            line-height: 1.1 !important;
+            padding: 0 4px 5px 4px !important;
+            box-shadow: none !important;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 5px rgba(0, 0, 0, 0.8) !important;
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+        }
+
+        /* 底部高精度标尺线与左右两侧端点小竖线 */
+        .leaflet-control-scale-line::after {
+            content: '';
+            position: absolute;
+            bottom: 0px;
+            left: 0px;
+            right: 0px;
+            height: 4px;
+            border-bottom: 1.5px solid #FFFFFF;
+            border-left: 1.5px solid #FFFFFF;
+            border-right: 1.5px solid #FFFFFF;
+            pointer-events: none;
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+        }
+
+        /* 小地图卡片紧凑模式下的比例尺位置与尺寸微调 */
+        .compact-mode .leaflet-bottom.leaflet-left {
+            margin-bottom: 6px;
+            margin-left: 8px;
+        }
+        .compact-mode .leaflet-control-scale-line {
+            font-size: 9.5px !important;
+            padding: 0 2px 4px 2px !important;
+        }
+        .compact-mode .leaflet-control-scale-line::after {
+            bottom: 0px;
+            left: 0px;
+            right: 0px;
+            height: 3px;
+            border-bottom-width: 1px;
+            border-left-width: 1px;
+            border-right-width: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script src="leaflet.js"></script>
+    <script>
+        var map = null;
+        var currentMarker = null;
+        var baseLayers = {};
+        var currentBaseLayer = null;
+        var satelliteLabelLayer = null;
+        var radarLayer = null;
+        var isRadarActive = false;
+        var currentLat = 32.17;
+        var currentLng = 118.76;
+        var currentTitle = "当前位置";
+        var currentSubtitle = "";
+
+        function safeInit(lat, lng, zoom, isInteractive, initialLayer, initialRadar) {
+            var container = document.getElementById('map');
+            if (!container) return;
+
+            currentLat = lat || currentLat;
+            currentLng = lng || currentLng;
+            var initialZoom = zoom || 11;
+
+            if (map) {
+                map.remove();
+                map = null;
+            }
+
+            try {
+                map = L.map('map', {
+                    center: [currentLat, currentLng],
+                    zoom: initialZoom,
+                    zoomControl: false,
+                    attributionControl: false,
+                    dragging: isInteractive,
+                    touchZoom: isInteractive,
+                    doubleClickZoom: isInteractive,
+                    scrollWheelZoom: isInteractive,
+                    boxZoom: false
+                });
+
+                // 1. 暗色夜景底图 (高德瓦片 + 深色滤镜)
+                baseLayers.dark = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+                    subdomains: '1234',
+                    maxZoom: 18,
+                    minZoom: 3,
+                    className: 'dark-tiles'
+                });
+
+                // 2. 标准中文街景底图
+                baseLayers.standard = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+                    subdomains: '1234',
+                    maxZoom: 18,
+                    minZoom: 3
+                });
+
+                // 3. 卫星影像底图
+                baseLayers.satellite = L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', {
+                    subdomains: '1234',
+                    maxZoom: 18,
+                    minZoom: 3
+                });
+
+                // 卫星路网路名覆盖层
+                satelliteLabelLayer = L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=8&x={x}&y={y}&z={z}', {
+                    subdomains: '1234',
+                    maxZoom: 18,
+                    minZoom: 3
+                });
+
+                // 依据记忆图层类型初始化底图
+                var layerKey = initialLayer || 'dark';
+                currentBaseLayer = baseLayers[layerKey] || baseLayers.dark;
+                currentBaseLayer.addTo(map);
+
+                if (layerKey === 'satellite' && satelliteLabelLayer) {
+                    satelliteLabelLayer.addTo(map);
+                }
+
+                if (initialRadar) {
+                    toggleRadarLayer(true);
+                }
+
+                // 添加比例刻度尺控件 (公制单位：米/千米)
+                L.control.scale({
+                    position: 'bottomleft',
+                    metric: true,
+                    imperial: false,
+                    maxWidth: 80
+                }).addTo(map);
+
+                // 小卡片非交互模式自动适配紧凑边距
+                if (!isInteractive) {
+                    document.body.classList.add('compact-mode');
+                } else {
+                    document.body.classList.remove('compact-mode');
+                }
+
+                updateMarker(currentLat, currentLng, currentTitle, currentSubtitle);
+
+                // 周期性与延时触发 invalidateSize
+                setTimeout(triggerResize, 50);
+                setTimeout(triggerResize, 200);
+                setTimeout(triggerResize, 600);
+            } catch (e) {
+                console.error("地图初始化异常", e);
+            }
+        }
+
+        function triggerResize() {
+            if (map) {
+                try {
+                    map.invalidateSize();
+                } catch(e) {}
+            }
+        }
+
+        function setLayer(type) {
+            if (!map || !baseLayers[type]) return;
+            if (currentBaseLayer) {
+                map.removeLayer(currentBaseLayer);
+            }
+            if (satelliteLabelLayer && map.hasLayer(satelliteLabelLayer)) {
+                map.removeLayer(satelliteLabelLayer);
+            }
+
+            currentBaseLayer = baseLayers[type];
+            currentBaseLayer.addTo(map);
+
+            if (type === 'satellite' && satelliteLabelLayer) {
+                satelliteLabelLayer.addTo(map);
+            }
+
+            if (radarLayer && isRadarActive) {
+                radarLayer.bringToFront();
+            }
+        }
+
+        function updateMarker(lat, lng, title, subtitle) {
+            if (!map) return;
+            currentLat = lat;
+            currentLng = lng;
+            currentTitle = title || currentTitle;
+            currentSubtitle = subtitle || currentSubtitle;
+
+            if (currentMarker) {
+                map.removeLayer(currentMarker);
+            }
+
+            var pulseIcon = L.divIcon({
+                className: 'pulse-marker-wrapper',
+                html: '<div class="pulse-marker"><div class="pulse-ring"></div><div class="pulse-core"></div></div>',
+                iconSize: [28, 28],
+                iconAnchor: [14, 14]
+            });
+
+            currentMarker = L.marker([lat, lng], { icon: pulseIcon }).addTo(map);
+
+            if (currentTitle) {
+                var popupContent = '<div class="popup-title">' + currentTitle + '</div>' +
+                    (currentSubtitle ? '<div class="popup-desc">' + currentSubtitle + '</div>' : '');
+                currentMarker.bindPopup(popupContent, {
+                    className: 'custom-popup',
+                    offset: [0, -10],
+                    closeButton: false
+                });
+            }
+        }
+
+        function setLocation(lat, lng, zoom, title, subtitle, isInteractive, layerType, isRadar) {
+            currentLat = lat || currentLat;
+            currentLng = lng || currentLng;
+            currentTitle = title || currentTitle;
+            currentSubtitle = subtitle || currentSubtitle;
+
+            if (isInteractive === false) {
+                document.body.classList.add('compact-mode');
+            } else if (isInteractive === true) {
+                document.body.classList.remove('compact-mode');
+            }
+
+            if (!map) {
+                safeInit(currentLat, currentLng, zoom, isInteractive !== false, layerType, isRadar);
+            } else {
+                map.invalidateSize();
+                map.setView([currentLat, currentLng], zoom || map.getZoom(), { animate: false });
+                updateMarker(currentLat, currentLng, currentTitle, currentSubtitle);
+                if (layerType) setLayer(layerType);
+                if (isRadar !== undefined && isRadar !== null) toggleRadarLayer(isRadar);
+                setTimeout(triggerResize, 100);
+            }
+        }
+
+        function zoomIn() {
+            if (map) map.zoomIn();
+        }
+
+        function zoomOut() {
+            if (map) map.zoomOut();
+        }
+
+        function centerCurrent() {
+            if (map) {
+                map.setView([currentLat, currentLng], 12, { animate: true, duration: 0.5 });
+            }
+        }
+
+        function toggleRadarLayer(enable) {
+            if (!map) return;
+            isRadarActive = enable;
+            if (enable) {
+                fetch('https://api.rainviewer.com/public/weather-maps.json')
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
+                        if (data && data.radar && data.radar.past && data.radar.past.length > 0) {
+                            var latest = data.radar.past[data.radar.past.length - 1];
+                            var host = data.host || "https://tilecache.rainviewer.com";
+                            var radarUrl = host + latest.path + '/256/{z}/{x}/{y}/2/1_1.png';
+
+                            if (radarLayer) {
+                                map.removeLayer(radarLayer);
+                            }
+                            radarLayer = L.tileLayer(radarUrl, {
+                                opacity: 0.75,
+                                maxZoom: 18,
+                                zIndex: 100
+                            }).addTo(map);
+                        }
+                    })
+                    .catch(function(e) {
+                        console.log('加载雷达图层失败', e);
+                    });
+            } else {
+                if (radarLayer) {
+                    map.removeLayer(radarLayer);
+                    radarLayer = null;
+                }
+            }
+        }
+
+        window.addEventListener('resize', triggerResize);
+        document.addEventListener('DOMContentLoaded', function() {
+            safeInit(32.17, 118.76, 10, true);
+        });
+    </script>
+</body>
+</html>

@@ -767,6 +767,21 @@ object ChinaCityCoordinates {
     }
 
     /**
+     * 根据 CityInfo 实体在全国行政区划数据库中检索匹配经纬度坐标
+     *
+     * @param city 城市信息实体 [CityInfo]
+     * @return 经纬度键值对 (Latitude, Longitude)，若完全无匹配则返回 null
+     */
+    fun findCoordinates(city: CityInfo): Pair<Double, Double>? {
+        return findCoordinates(
+            name = city.name,
+            province = city.province,
+            district = city.district,
+            parentCity = city.parentCity
+        )
+    }
+
+    /**
      * 在本地全国城市经纬度数据库中查找经纬度坐标
      *
      * 采用“区县/地名精确匹配 -> 省市联合匹配 -> 包含模糊匹配 -> 上级地级市匹配 -> 所属省份省会兜底”多层级策略。

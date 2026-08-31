@@ -20,6 +20,7 @@ import androidx.compose.runtime.Immutable
  * @property showHumidity 是否展示相对湿度卡片（默认 true）
  * @property showPressure 是否展示大气压强卡片（默认 true）
  * @property showPrecipitation 是否展示实时降水量卡片（默认 true）
+ * @property showLocationMap 是否展示定位小地图卡片（默认 true）
  */
 @Immutable
 data class CardDisplayConfig(
@@ -34,7 +35,8 @@ data class CardDisplayConfig(
     val showWind: Boolean = true,
     val showHumidity: Boolean = true,
     val showPressure: Boolean = true,
-    val showPrecipitation: Boolean = true
+    val showPrecipitation: Boolean = true,
+    val showLocationMap: Boolean = true
 ) {
 
     companion object {
@@ -62,7 +64,8 @@ data class CardDisplayConfig(
             showWind = false,
             showHumidity = false,
             showPressure = false,
-            showPrecipitation = false
+            showPrecipitation = false,
+            showLocationMap = false
         )
     }
 
@@ -87,6 +90,7 @@ data class CardDisplayConfig(
             KEY_HUMIDITY -> copy(showHumidity = enabled)
             KEY_PRESSURE -> copy(showPressure = enabled)
             KEY_PRECIPITATION -> copy(showPrecipitation = enabled)
+            KEY_LOCATION_MAP -> copy(showLocationMap = enabled)
             else -> this
         }
     }
@@ -116,3 +120,5 @@ const val KEY_HUMIDITY = "humidity"
 const val KEY_PRESSURE = "pressure"
 /** 实时降水量卡片键名 */
 const val KEY_PRECIPITATION = "precipitation"
+/** 定位地图卡片键名 */
+const val KEY_LOCATION_MAP = "location_map"

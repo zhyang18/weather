@@ -73,6 +73,7 @@ import com.weather.app.ui.components.DailyForecastCard
 import com.weather.app.ui.components.HeroWeatherView
 import kotlinx.coroutines.launch
 import com.weather.app.ui.components.HourlyForecastCard
+import com.weather.app.ui.components.LocationMapCard
 import com.weather.app.ui.components.MinutelyPrecipitationCard
 import com.weather.app.ui.components.WeatherAlertCard
 import com.weather.app.ui.components.WeatherDetailGrid
@@ -288,11 +289,15 @@ fun WeatherScreen(
                     cardConfig = uiState.cardDisplayConfig,
                     isRefreshing = uiState.isRefreshing,
                     isDailyChartMode = uiState.isDailyChartMode,
+                    mapLayerType = uiState.mapLayerType,
                     scrollState = pageScrollState,
                     isVerticalScrollEnabled = true,
                     onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
                     onRefresh = { viewModel.refreshCityAtIndex(page) },
-                    onSunriseSunsetClick = { viewModel.setShowEarthDaylightScreen(true) }
+                    onSunriseSunsetClick = { viewModel.setShowEarthDaylightScreen(true) },
+                    onLocationMapClick = { targetCity ->
+                        viewModel.setShowLocationMapScreen(true, targetCity)
+                    }
                 )
             }
         }
@@ -301,6 +306,20 @@ fun WeatherScreen(
         EarthDaylightScreen(
             visible = uiState.showEarthDaylightScreen,
             onBackClick = { viewModel.setShowEarthDaylightScreen(false) }
+        )
+
+        // 定位气象大地图全屏交互页面 (点击定位小地图卡片触发)
+        val targetMapCity = uiState.targetMapCity ?: activeCity
+        val targetMapWeather = uiState.getWeatherForCity(targetMapCity)
+        LocationMapScreen(
+            visible = uiState.showLocationMapScreen,
+            city = targetMapCity,
+            weatherData = targetMapWeather,
+            mapLayerType = uiState.mapLayerType,
+            isMapRadarEnabled = uiState.isMapRadarEnabled,
+            onMapLayerChange = { layerType -> viewModel.setMapLayerType(layerType) },
+            onMapRadarToggle = { enabled -> viewModel.setMapRadarEnabled(enabled) },
+            onBackClick = { viewModel.setShowLocationMapScreen(false) }
         )
 
         // 全屏城市管理弹窗 (背景色由当前天气主页色动态决定，占满整个屏幕)
@@ -740,11 +759,13 @@ private fun TopImmersiveWeatherBar(
  * @param cardConfig 卡片显隐自定义配置 [com.weather.app.model.CardDisplayConfig]
  * @param isRefreshing 是否处于刷新中
  * @param isDailyChartMode 近日天气是否为趋势折线图表模式
+ * @param mapLayerType 持久化记忆的底图图层类型键名
  * @param scrollState 垂直滚动状态 [ScrollState]
  * @param isVerticalScrollEnabled 是否允许垂直滚动与下拉刷新（用于手势冲突防抖与方向锁定联动）
  * @param onDailyChartModeChange 切换近日天气模式回调
  * @param onRefresh 下拉刷新触发回调
  * @param onSunriseSunsetClick 点击日出日落卡片跳转地球实时日光模拟器回调
+ * @param onLocationMapClick 点击定位地图卡片跳转全屏气象大地图回调
  */
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
@@ -754,11 +775,13 @@ private fun CityWeatherPageContent(
     cardConfig: com.weather.app.model.CardDisplayConfig = com.weather.app.model.CardDisplayConfig(),
     isRefreshing: Boolean,
     isDailyChartMode: Boolean,
+    mapLayerType: String = "dark",
     scrollState: ScrollState,
     isVerticalScrollEnabled: Boolean = true,
     onDailyChartModeChange: (Boolean) -> Unit,
     onRefresh: () -> Unit,
-    onSunriseSunsetClick: () -> Unit = {}
+    onSunriseSunsetClick: () -> Unit = {},
+    onLocationMapClick: (CityInfo) -> Unit = {}
 ) {
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isRefreshing,
@@ -881,7 +904,18 @@ private fun CityWeatherPageContent(
                     Spacer(modifier = Modifier.height(2.dp))
                 }
 
-                // 6. 详细气象指标指标宫格 (由内部 cardConfig 进一步过滤各项详细指标卡片与月相卡片)
+                // 6. 定位气象小地图卡片 (用户开启时展示)
+                if (cardConfig.showLocationMap) {
+                    LocationMapCard(
+                        city = city,
+                        weatherData = weatherData,
+                        mapLayerType = mapLayerType,
+                        onClick = { onLocationMapClick(city) }
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
+
+                // 7. 详细气象指标指标宫格 (由内部 cardConfig 进一步过滤各项详细指标卡片与月相卡片)
                 WeatherDetailGrid(
                     weatherData = weatherData,
                     cardConfig = cardConfig,
