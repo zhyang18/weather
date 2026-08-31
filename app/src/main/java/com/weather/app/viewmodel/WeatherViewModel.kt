@@ -203,14 +203,16 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 自动定位并加载所有保存城市的天气
+     * 应用启动时自动触发实时定位并预加载保存城市的天气数据
+     *
+     * 禁用陈旧缓存，强制向系统请求最新的实时 GPS 与网络定位。
      */
     fun autoLocateAndPreload() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLocating = true, isLoading = it.weatherCache.isEmpty()) }
 
-            // 1. 先定位获取当前城市
-            val locateResult = repository.autoLocateAndFetchWeather()
+            // 1. 强制向硬件/系统请求实时定位获取当前城市
+            val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
             locateResult.onSuccess { data ->
                 val updatedList = repository.getSavedCities()
                 val cache = _uiState.value.weatherCache.toMutableMap()

@@ -441,16 +441,17 @@ class WeatherRepository(
     /**
      * 执行自动定位并加载定位所在城市天气
      *
-     * 遵循当前定位设置展示模式（地标/街道 或 区县），优先尝试设备原生 GPS/基站网络定位与逆地理编码匹配。
+     * 遵循当前定位设置展示模式（地标/街道 或 区县），优先尝试设备原生高精度 GPS/基站网络实时定位与逆地理编码匹配。
+     * 当系统原生 Geocoder 逆地理服务不可用时，依托内置全国城市坐标库精确就近匹配，杜绝经纬度丢失与粗糙 IP 漂移。
      *
-     * @param forceRefresh 是否强制触发实时定位更新
+     * @param forceRefresh 是否强制触发实时定位更新（为 true 时禁用旧缓存直接向硬件请求最新定位）
      * @return 包含聚合天气数据 [WeatherData] 的结果 [Result]
      */
     suspend fun autoLocateAndFetchWeather(forceRefresh: Boolean = true): Result<WeatherData> = withContext(Dispatchers.IO) {
         val currentSource = getActiveDataSource()
         val displayMode = getLocationDisplayMode()
 
-        // 1. 尝试使用设备 GPS / 网络定位
+        // 1. 尝试使用设备 GPS / 网络实时高精度定位
         var locatedCity: CityInfo? = null
         if (locationManager.hasLocationPermission()) {
             val location = locationManager.getCurrentLocation(forceRefresh = forceRefresh)
@@ -458,11 +459,22 @@ class WeatherRepository(
                 val geocodedCity = locationManager.reverseGeocode(location.latitude, location.longitude, displayMode)
                 if (geocodedCity != null) {
                     locatedCity = geocodedCity
+                } else {
+                    // 若原生 Geocoder 逆地理服务不可用，优先使用真实 GPS 坐标在全国城市库中查找就近城市，杜绝丢弃真实坐标
+                    val closest = com.weather.app.datasource.openmeteo.ChinaCityCoordinates.findClosestCity(location.latitude, location.longitude)
+                    locatedCity = closest ?: CityInfo(
+                        code = "${String.format(java.util.Locale.US, "%.2f", location.latitude)},${String.format(java.util.Locale.US, "%.2f", location.longitude)}",
+                        name = "当前位置",
+                        province = "",
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        isAutoLocated = true
+                    )
                 }
             }
         }
 
-        // 2. 若 GPS 未能成功匹配，调用数据源的 IP 定位能力
+        // 2. 仅在完全无法获取设备硬件 GPS/网络定位时，才调用数据源的外网 IP 兜底定位
         if (locatedCity == null) {
             val ipLocateResult = currentSource.autoLocate()
             locatedCity = ipLocateResult.getOrNull()
@@ -477,6 +489,7 @@ class WeatherRepository(
         weatherResult.onSuccess { data ->
             val finalAutoCity = targetCity.copy(
                 code = data.city.code.ifEmpty { targetCity.code },
+                name = if (targetCity.name == "当前位置" && data.city.name.isNotEmpty()) data.city.name else targetCity.name,
                 province = data.city.province.ifEmpty { targetCity.province }
             )
             updateAutoLocatedCity(finalAutoCity)

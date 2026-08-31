@@ -52,37 +52,57 @@ class AppLocationManager(private val context: Context) {
     /**
      * 异步获取设备当前地理位置经纬度
      *
-     * @param forceRefresh 是否强制触发实时定位更新（为 true 时跳过短期缓存优先请求最新位置更新）
-     * @return 包含系统位置对象的 [Location] 或 null（超时/未授权/无法获取）
+     * 当 [forceRefresh] 为 true（默认）时，严格禁用任何系统历史陈旧缓存，直接向系统发起实时定位请求；
+     * 并发监听 GPS 与基站网络定位提供商，优先获取高精度卫星定位坐标。
+     *
+     * @param forceRefresh 是否强制触发实时定位更新（为 true 时跳过历史旧缓存，直接请求最新位置）
+     * @return 包含系统最新位置对象的 [Location] 或 null（超时/未授权/硬件不可用）
      */
     @SuppressLint("MissingPermission")
-    suspend fun getCurrentLocation(forceRefresh: Boolean = false): Location? = withContext(Dispatchers.Main) {
+    suspend fun getCurrentLocation(forceRefresh: Boolean = true): Location? = withContext(Dispatchers.Main) {
         if (!hasLocationPermission() || locationManager == null) {
             return@withContext null
         }
 
-        // 优先使用最后一次已知的精确位置
-        val lastGps = try { locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: Exception) { null }
-        val lastNetwork = try { locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: Exception) { null }
-        val lastPassive = try { locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (_: Exception) { null }
+        // 非强制刷新模式下，仅当最后已知位置在 30 秒内（极新鲜）时才予以复用
+        if (!forceRefresh) {
+            val lastGps = try { locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: Exception) { null }
+            val lastNetwork = try { locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: Exception) { null }
+            val lastPassive = try { locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (_: Exception) { null }
 
-        val bestLastKnown = listOfNotNull(lastGps, lastNetwork, lastPassive)
-            .maxByOrNull { it.time }
-
-        // 非强制刷新模式下，如果最后已知位置在 5 分钟内，则直接使用
-        if (!forceRefresh && bestLastKnown != null && System.currentTimeMillis() - bestLastKnown.time < 5 * 60 * 1000) {
-            return@withContext bestLastKnown
+            val bestLastKnown = listOfNotNull(lastGps, lastNetwork, lastPassive).maxByOrNull { it.time }
+            if (bestLastKnown != null && System.currentTimeMillis() - bestLastKnown.time < 30 * 1000) {
+                return@withContext bestLastKnown
+            }
         }
 
-        // 尝试单次请求实时定位更新 (5 秒超时)
-        @Suppress("DEPRECATION")
-        withTimeoutOrNull(5000) {
+        // 实时请求最新高精度定位（8 秒超时，给 GPS 充分搜星与网络定位并发响应时间）
+        withTimeoutOrNull(8000) {
             suspendCancellableCoroutine { continuation ->
+                var isResumed = false
+                var bestCandidate: Location? = null
+
                 val listener = object : LocationListener {
                     override fun onLocationChanged(location: Location) {
-                        locationManager.removeUpdates(this)
-                        if (continuation.isActive) {
-                            continuation.resume(location)
+                        synchronized(this) {
+                            if (isResumed) return
+
+                            // 若定位来自 GPS 且精度优于 100 米，或任意提供商精度优于 30 米，判定为高精度实时定位直接采纳
+                            val isHighAccuracy = location.accuracy in 0.0f..100.0f
+                            val isGps = location.provider == LocationManager.GPS_PROVIDER
+
+                            if (isGps && isHighAccuracy) {
+                                isResumed = true
+                                locationManager.removeUpdates(this)
+                                if (continuation.isActive) {
+                                    continuation.resume(location)
+                                }
+                            } else {
+                                // 暂存当前最新候选位置，若后续没有更高精度定位则在超时/结束时兜底
+                                if (bestCandidate == null || location.accuracy < (bestCandidate?.accuracy ?: Float.MAX_VALUE)) {
+                                    bestCandidate = location
+                                }
+                            }
                         }
                     }
 
@@ -92,26 +112,41 @@ class AppLocationManager(private val context: Context) {
                     override fun onProviderDisabled(provider: String) {}
                 }
 
-                val provider = when {
-                    locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-                    locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-                    else -> null
+                // 收集当前设备所有可用的定位提供商（GPS 和基站/Wi-Fi 网络）
+                val availableProviders = mutableListOf<String>()
+                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    availableProviders.add(LocationManager.GPS_PROVIDER)
+                }
+                if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    availableProviders.add(LocationManager.NETWORK_PROVIDER)
                 }
 
-                if (provider != null) {
-                    try {
-                        locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-                        continuation.invokeOnCancellation {
-                            locationManager.removeUpdates(listener)
-                        }
-                    } catch (e: Exception) {
-                        if (continuation.isActive) continuation.resume(bestLastKnown)
+                if (availableProviders.isEmpty()) {
+                    if (continuation.isActive) continuation.resume(null)
+                    return@suspendCancellableCoroutine
+                }
+
+                try {
+                    // 并发向所有可用提供商请求单次或高频定位更新
+                    for (provider in availableProviders) {
+                        locationManager.requestLocationUpdates(
+                            provider,
+                            0L,
+                            0f,
+                            listener,
+                            Looper.getMainLooper()
+                        )
                     }
-                } else {
-                    continuation.resume(bestLastKnown)
+
+                    continuation.invokeOnCancellation {
+                        locationManager.removeUpdates(listener)
+                    }
+                } catch (e: Exception) {
+                    locationManager.removeUpdates(listener)
+                    if (continuation.isActive) continuation.resume(null)
                 }
             }
-        } ?: bestLastKnown
+        }
     }
 
     /**

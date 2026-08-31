@@ -916,4 +916,34 @@ object ChinaCityCoordinates {
             )
         }
     }
+
+    /**
+     * 根据 GPS 经纬度坐标在内置全国城市库中查找物理距离最近的城市或区县
+     *
+     * 用于当设备缺乏原生 Geocoder 逆地理编码服务时，直接依据真实 GPS 坐标就近匹配行政区划，避免降级为粗糙的 IP 定位。
+     *
+     * @param lat 目标纬度坐标
+     * @param lon 目标经度坐标
+     * @return 距离最近的城市信息实体 [CityInfo]，若城市库为空则返回 null
+     */
+    fun findClosestCity(lat: Double, lon: Double): CityInfo? {
+        if (ALL_CITIES.isEmpty()) return null
+        val closest = ALL_CITIES.minByOrNull { city ->
+            val dLat = city.latitude - lat
+            val dLon = city.longitude - lon
+            dLat * dLat + dLon * dLon
+        } ?: return null
+
+        return CityInfo(
+            code = "${String.format(Locale.US, "%.2f", closest.latitude)},${String.format(Locale.US, "%.2f", closest.longitude)}",
+            name = closest.name,
+            province = closest.province,
+            latitude = lat,
+            longitude = lon,
+            isAutoLocated = true,
+            district = if (closest.name != closest.parentCity) closest.name else "",
+            parentCity = closest.parentCity
+        )
+    }
 }
+
