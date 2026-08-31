@@ -236,6 +236,60 @@
         terminatorRing.visible = false; // 默认不开启晨昏线圈
         earthGroup.add(terminatorRing);
 
+        // 高清大字号文字标注 Sprite 生成函数 (Canvas 384x96, 32px 粗体, 描边清晰醒目)
+        function createTextSprite(text, color, scaleW = 0.22, scaleH = 0.055) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 384;
+            canvas.height = 96;
+            const ctx = canvas.getContext('2d');
+            ctx.font = 'bold 32px "PingFang SC", "Microsoft YaHei", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+            ctx.lineWidth = 6;
+            ctx.strokeText(text, 192, 48);
+            ctx.fillStyle = color || '#ffffff';
+            ctx.fillText(text, 192, 48);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearFilter;
+            const mat = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true,
+                depthTest: true,
+                depthWrite: false
+            });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(scaleW, scaleH, 1.0);
+            return sprite;
+        }
+
+        // 精确地理经纬度坐标转换 (对齐 Three.js 球体 UV 映射：u=0.5 对应英国格林尼治本初子午线 0°，位于 +X 轴；东经为正 -Z 轴，西经为负 +Z 轴)
+        function addLatLabel(group, latDeg, text, color, lngDeg = 0) {
+            const phi = (latDeg * Math.PI) / 180;
+            const lam = (lngDeg * Math.PI) / 180;
+            const R = 1.028;
+            const x = R * Math.cos(phi) * Math.cos(lam);
+            const y = R * Math.sin(phi);
+            const z = -R * Math.cos(phi) * Math.sin(lam);
+            const sprite = createTextSprite(text, color, 0.24, 0.06);
+            sprite.position.set(x, y, z);
+            group.add(sprite);
+        }
+
+        function addLngLabel(group, lngDeg, text, color) {
+            // 标注在赤道偏北 5°
+            const phi = (5 * Math.PI) / 180;
+            const lam = (lngDeg * Math.PI) / 180;
+            const R = 1.028;
+            const x = R * Math.cos(phi) * Math.cos(lam);
+            const y = R * Math.sin(phi);
+            const z = -R * Math.cos(phi) * Math.sin(lam);
+            const sprite = createTextSprite(text, color, 0.18, 0.046);
+            sprite.position.set(x, y, z);
+            group.add(sprite);
+        }
+
         // 午时线 (半圆环：红色与蓝色两段)
         const meridianRingGeom = new THREE.CylinderGeometry(1.003, 1.003, 0.004, 64, 1, true, 0, PI);
         const redMeridianMat = new THREE.MeshBasicMaterial({ color: 0xff3b30, side: THREE.DoubleSide });
@@ -246,10 +300,20 @@
         redMeridian.visible = false;
         earthGroup.add(redMeridian);
 
+        const noonLabel = createTextSprite('正午 12:00', '#ef4444', 0.22, 0.055);
+        noonLabel.position.set(0, 0, 1.06);
+        noonLabel.visible = false;
+        earthGroup.add(noonLabel);
+
         const blueMeridian = new THREE.Mesh(meridianRingGeom, blueMeridianMat);
         blueMeridian.rotation.set(PI / 2, 0, -PI / 2);
         blueMeridian.visible = false;
         earthGroup.add(blueMeridian);
+
+        const midnightLabel = createTextSprite('子夜 00:00', '#38bdf8', 0.22, 0.055);
+        midnightLabel.position.set(0, 0, -1.06);
+        midnightLabel.visible = false;
+        earthGroup.add(midnightLabel);
 
         // 地轴 (贯穿南北极的白光轴线)
         const axisGeom = new THREE.CylinderGeometry(0.0025, 0.0025, 2.6, 16, 1, true);
@@ -258,6 +322,137 @@
         earthAxis.position.set(0, 0, 0);
         earthAxis.visible = false;
         earthGroup.add(earthAxis);
+
+        const northPoleLabel = createTextSprite('北极点 (N)', '#ffffff', 0.20, 0.05);
+        northPoleLabel.position.set(0, 1.35, 0);
+        earthAxis.add(northPoleLabel);
+
+        const southPoleLabel = createTextSprite('南极点 (S)', '#ffffff', 0.20, 0.05);
+        southPoleLabel.position.set(0, -1.35, 0);
+        earthAxis.add(southPoleLabel);
+
+        // 太阳直射点组 (发光微球 + 光晕环 + 高清文字标注)
+        const subsolarGroup = new THREE.Group();
+        subsolarGroup.visible = false;
+
+        const subsolarCoreGeom = new THREE.SphereGeometry(0.018, 16, 16);
+        const subsolarCoreMat = new THREE.MeshBasicMaterial({ color: 0xfff066 });
+        const subsolarCore = new THREE.Mesh(subsolarCoreGeom, subsolarCoreMat);
+        subsolarGroup.add(subsolarCore);
+
+        const subsolarHaloGeom = new THREE.RingGeometry(0.024, 0.048, 32);
+        const subsolarHaloMat = new THREE.MeshBasicMaterial({
+            color: 0xf59e0b,
+            transparent: true,
+            opacity: 0.85,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        const subsolarHalo = new THREE.Mesh(subsolarHaloGeom, subsolarHaloMat);
+        subsolarGroup.add(subsolarHalo);
+
+        const subsolarLabel = createTextSprite('太阳直射点', '#fde047', 0.22, 0.055);
+        subsolarGroup.add(subsolarLabel);
+
+        earthGroup.add(subsolarGroup);
+
+        // 经纬网格线组 (赤道、南北回归线、南北极圈、每30度经纬度细线，随地球自转)
+        const graticuleGroup = new THREE.Group();
+        graticuleGroup.visible = false;
+
+        function createLatitudeCircle(latDeg, color, opacity) {
+            const phi = (latDeg * Math.PI) / 180;
+            const r = Math.cos(phi) * 1.002;
+            const y = Math.sin(phi) * 1.002;
+            const points = [];
+            const segments = 96;
+            for (let i = 0; i <= segments; i++) {
+                const theta = (i / segments) * Math.PI * 2;
+                points.push(new THREE.Vector3(r * Math.cos(theta), y, -r * Math.sin(theta)));
+            }
+            const geom = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({
+                color: color || 0x60a5fa,
+                transparent: true,
+                opacity: opacity || 0.35,
+                depthWrite: false
+            });
+            return new THREE.Line(geom, mat);
+        }
+
+        // 精确经线圈生成 (严格对齐本初子午线 0° 与全球经度大圆)
+        function createLongitudeCircle(lngDeg, color, opacity) {
+            const lam = (lngDeg * Math.PI) / 180;
+            const points = [];
+            const segments = 96;
+            for (let i = 0; i <= segments; i++) {
+                const theta = (i / segments) * Math.PI * 2;
+                const y = 1.002 * Math.sin(theta);
+                const r = 1.002 * Math.cos(theta);
+                const x = r * Math.cos(lam);
+                const z = -r * Math.sin(lam);
+                points.push(new THREE.Vector3(x, y, z));
+            }
+            const geom = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({
+                color: color || 0x60a5fa,
+                transparent: true,
+                opacity: opacity || 0.35,
+                depthWrite: false
+            });
+            return new THREE.Line(geom, mat);
+        }
+
+        // 赤道 (0° 纬线：青蓝色微亮)
+        graticuleGroup.add(createLatitudeCircle(0, 0x38bdf8, 0.70));
+        addLatLabel(graticuleGroup, 0, '赤道 0°', '#38bdf8', 0);
+        addLatLabel(graticuleGroup, 0, '赤道 0°', '#38bdf8', 120);
+        addLatLabel(graticuleGroup, 0, '赤道 0°', '#38bdf8', -120);
+
+        // 南北回归线 (±23.44°：温和淡黄)
+        graticuleGroup.add(createLatitudeCircle(23.44, 0xfde047, 0.50));
+        graticuleGroup.add(createLatitudeCircle(-23.44, 0xfde047, 0.50));
+        addLatLabel(graticuleGroup, 23.44, '北回归线 23.5°N', '#fde047', 0);
+        addLatLabel(graticuleGroup, 23.44, '北回归线 23.5°N', '#fde047', 120);
+        addLatLabel(graticuleGroup, -23.44, '南回归线 23.5°S', '#fde047', 0);
+        addLatLabel(graticuleGroup, -23.44, '南回归线 23.5°S', '#fde047', 120);
+
+        // 南北极圈 (±66.56°：淡蓝细线)
+        graticuleGroup.add(createLatitudeCircle(66.56, 0x93c5fd, 0.40));
+        graticuleGroup.add(createLatitudeCircle(-66.56, 0x93c5fd, 0.40));
+        addLatLabel(graticuleGroup, 66.56, '北极圈 66.5°N', '#93c5fd', 0);
+        addLatLabel(graticuleGroup, -66.56, '南极圈 66.5°S', '#93c5fd', 0);
+
+        // 中纬线 (±30°, ±60°)
+        graticuleGroup.add(createLatitudeCircle(30, 0x60a5fa, 0.30));
+        graticuleGroup.add(createLatitudeCircle(-30, 0x60a5fa, 0.30));
+        graticuleGroup.add(createLatitudeCircle(60, 0x60a5fa, 0.30));
+        graticuleGroup.add(createLatitudeCircle(-60, 0x60a5fa, 0.30));
+        addLatLabel(graticuleGroup, 30, '30°N', '#93c5fd', 0);
+        addLatLabel(graticuleGroup, -30, '30°S', '#93c5fd', 0);
+        addLatLabel(graticuleGroup, 60, '60°N', '#93c5fd', 0);
+        addLatLabel(graticuleGroup, -60, '60°S', '#93c5fd', 0);
+
+        // 经线大圆 (每 30° 一条，共 6 个大圆覆盖全球 12 个时区经线并标注)
+        for (let lng = 0; lng < 180; lng += 30) {
+            const isPrime = (lng === 0);
+            graticuleGroup.add(createLongitudeCircle(lng, isPrime ? 0x38bdf8 : 0x60a5fa, isPrime ? 0.65 : 0.30));
+        }
+
+        addLngLabel(graticuleGroup, 0, '本初子午线 0°', '#38bdf8');
+        addLngLabel(graticuleGroup, 30, '30°E', '#93c5fd');
+        addLngLabel(graticuleGroup, 60, '60°E', '#93c5fd');
+        addLngLabel(graticuleGroup, 90, '90°E', '#93c5fd');
+        addLngLabel(graticuleGroup, 120, '120°E', '#93c5fd');
+        addLngLabel(graticuleGroup, 150, '150°E', '#93c5fd');
+        addLngLabel(graticuleGroup, 180, '180°', '#38bdf8');
+        addLngLabel(graticuleGroup, -150, '150°W', '#93c5fd');
+        addLngLabel(graticuleGroup, -120, '120°W', '#93c5fd');
+        addLngLabel(graticuleGroup, -90, '90°W', '#93c5fd');
+        addLngLabel(graticuleGroup, -60, '60°W', '#93c5fd');
+        addLngLabel(graticuleGroup, -30, '30°W', '#93c5fd');
+
+        earthMesh.add(graticuleGroup);
 
         // 背景星空微粒（调柔和：更小尺寸与更低不透明度）
         const starsGeom = new THREE.BufferGeometry();
@@ -349,6 +544,14 @@
             // Cylinder 默认轴沿 Y 轴，需先旋转 PI/2 对齐 Z 轴（太阳光照方向），再根据赤纬角精确俯仰
             terminatorRing.rotation.set(PI / 2 - declination, 0, 0);
 
+            // 太阳直射点空间坐标动态更新 (位于面向太阳直射地表点 0, R*sin(δ), R*cos(δ))
+            const subsolarY = 1.018 * Math.sin(declination);
+            const subsolarZ = 1.018 * Math.cos(declination);
+            subsolarCore.position.set(0, subsolarY, subsolarZ);
+            subsolarHalo.position.set(0, subsolarY, subsolarZ);
+            subsolarHalo.rotation.set(-declination, 0, 0);
+            subsolarLabel.position.set(0, subsolarY + 0.055, subsolarZ + 0.02);
+
             if (typeof earthCustomMaterial !== 'undefined' && earthCustomMaterial.uniforms) {
                 sunLight.updateWorldMatrix(true, false);
                 const worldSunPos = new THREE.Vector3();
@@ -378,10 +581,22 @@
             updateSunPosition(now);
         }
 
+        // 切换太阳直射点
+        function toggleSubsolarPoint() {
+            subsolarGroup.visible = !subsolarGroup.visible;
+            return subsolarGroup.visible;
+        }
+
         // 切换晨昏线
         function toggleTerminatorLine() {
             terminatorRing.visible = !terminatorRing.visible;
             return terminatorRing.visible;
+        }
+
+        // 切换经纬线
+        function toggleGraticuleLine() {
+            graticuleGroup.visible = !graticuleGroup.visible;
+            return graticuleGroup.visible;
         }
 
         // 切换午时线
@@ -389,6 +604,8 @@
             const visible = !redMeridian.visible;
             redMeridian.visible = visible;
             blueMeridian.visible = visible;
+            noonLabel.visible = visible;
+            midnightLabel.visible = visible;
             return visible;
         }
 
@@ -507,6 +724,8 @@
         // 对外供 Android 原生层调用的 JS API
         window.earthSimulator = {
             toggleTerminator: function() { return toggleTerminatorLine(); },
+            toggleSubsolar: function() { return toggleSubsolarPoint(); },
+            toggleGraticule: function() { return toggleGraticuleLine(); },
             toggleMeridian: function() { return toggleMeridianLine(); },
             toggleAxis: function() { return toggleEarthAxis(); },
             alignEquator: function() { alignEquator(); },

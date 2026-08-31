@@ -121,8 +121,9 @@ private fun EarthDaylightContent(
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-
     var isTerminatorActive by remember { mutableStateOf(false) }
+    var isSubsolarActive by remember { mutableStateOf(false) }
+    var isGraticuleActive by remember { mutableStateOf(false) }
     var isMeridianActive by remember { mutableStateOf(false) }
     var isAxisActive by remember { mutableStateOf(false) }
 
@@ -331,6 +332,28 @@ private fun EarthDaylightContent(
                         }
                     )
 
+                    // 太阳直射点切换
+                    EarthDockButton(
+                        icon = Icons.Default.WbSunny,
+                        label = "直射点",
+                        isActive = isSubsolarActive,
+                        onClick = {
+                            isSubsolarActive = !isSubsolarActive
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.toggleSubsolar()")
+                        }
+                    )
+
+                    // 经纬线网格切换
+                    EarthDockButton(
+                        icon = Icons.Default.Language,
+                        label = "经纬线",
+                        isActive = isGraticuleActive,
+                        onClick = {
+                            isGraticuleActive = !isGraticuleActive
+                            executeSimulatorJs(webViewRef, "window.earthSimulator.toggleGraticule()")
+                        }
+                    )
+
                     // 午时线切换
                     EarthDockButton(
                         icon = Icons.Default.Timeline,
@@ -370,16 +393,6 @@ private fun EarthDaylightContent(
                         isActive = false,
                         onClick = {
                             executeSimulatorJs(webViewRef, "window.earthSimulator.alignEcliptic()")
-                        }
-                    )
-
-                    // 视角复位
-                    EarthDockButton(
-                        icon = Icons.Default.CenterFocusStrong,
-                        label = "复位",
-                        isActive = false,
-                        onClick = {
-                            executeSimulatorJs(webViewRef, "window.earthSimulator.resetCamera()")
                         }
                     )
                 }
