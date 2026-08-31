@@ -65,9 +65,9 @@
         const Ep = TWO_PI / 1440;
         const LIGHT_DIST = 5;
         
-        // 强化宇宙真实明暗对比度：降低背光环境光(0.05)，增强日光直射(1.45)，使昼夜晨昏分界极其清晰
-        const LIGHT_INTENSITY = 1.45;
-        const AMBIENT_INTENSITY = 0.05;
+        // 严格同步 EarthDaylightSim 经典光学参数：平行直射光 4.0，漫反射环境光 0.3
+        const LIGHT_INTENSITY = 4.0;
+        const AMBIENT_INTENSITY = 0.3;
         
         // 正交相机保持在离球心 10.0 的安全固定距离，缩放纯靠正交视界 ot 调节，永不发生近裁剪面穿模变黑
         const CAMERA_DIST = 10.0;
@@ -117,15 +117,15 @@
         }
         container.appendChild(renderer.domElement);
 
-        // 微弱宇宙漫反射冷光
-        const ambientLight = new THREE.AmbientLight(0xdbeafe, AMBIENT_INTENSITY);
+        // 漫反射环境光（严格同步 EarthDaylightSim 参数：0xffffff, 0.3）
+        const ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_INTENSITY);
         scene.add(ambientLight);
 
         // 地球与光源容器组 (支持整体倾斜)
         const earthGroup = new THREE.Group();
         scene.add(earthGroup);
 
-        // 太阳平行光
+        // 太阳平行光（严格同步 EarthDaylightSim 参数：0xffffff, 4.0）
         const sunLight = new THREE.DirectionalLight(0xffffff, LIGHT_INTENSITY);
         sunLight.position.set(0, 0, LIGHT_DIST);
         earthGroup.add(sunLight);
@@ -163,12 +163,15 @@
                     tex.encoding = THREE.sRGBEncoding;
                 }
                 tex.needsUpdate = true;
+                earthMaterial.map = tex;
+                earthMaterial.needsUpdate = true;
                 renderer.render(scene, camera);
             },
             undefined,
             function(err) {
                 console.warn('Texture load fallback:', err);
-                earthMaterial.map = createProceduralFallbackTexture();
+                const fallbackTex = createProceduralFallbackTexture();
+                earthMaterial.map = fallbackTex;
                 earthMaterial.needsUpdate = true;
             }
         );
@@ -176,6 +179,7 @@
             earthTexture.encoding = THREE.sRGBEncoding;
         }
 
+        // 严格同步 EarthDaylightSim 的标准 MeshLambertMaterial 材质
         const earthMaterial = new THREE.MeshLambertMaterial({
             map: earthTexture
         });
@@ -303,11 +307,12 @@
             earthMesh.rotation.y = utcMinutes * Ep + Sp - PI / 2;
         }
 
-        // 更新太阳光线倾斜角与晨昏线姿态
+        // 更新太阳光线倾斜角与晨昏线姿态（严格同步 EarthDaylightSim 光源位置并保持晨昏线精准对齐）
         function updateSunPosition(date) {
             const declination = calculateSolarDeclination(date);
-            sunLight.position.set(0, LIGHT_DIST * Math.tan(declination), LIGHT_DIST);
-            terminatorRing.rotation.x = declination;
+            sunLight.position.set(0, LIGHT_DIST * Math.sin(declination), LIGHT_DIST * Math.cos(declination));
+            // Cylinder 默认轴沿 Y 轴，需先旋转 PI/2 对齐 Z 轴（太阳光照方向），再根据赤纬角精确俯仰
+            terminatorRing.rotation.set(PI / 2 - declination, 0, 0);
         }
 
         // 调整整体倾斜角
