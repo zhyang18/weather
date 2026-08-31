@@ -122,7 +122,7 @@ private fun EarthDaylightContent(
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    var isTerminatorActive by remember { mutableStateOf(true) }
+    var isTerminatorActive by remember { mutableStateOf(false) }
     var isMeridianActive by remember { mutableStateOf(false) }
     var isAxisActive by remember { mutableStateOf(false) }
 

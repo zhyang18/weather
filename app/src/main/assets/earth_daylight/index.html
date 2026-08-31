@@ -65,9 +65,9 @@
         const Ep = TWO_PI / 1440;
         const LIGHT_DIST = 5;
         
-        // 优化舒适度光学参数：平行直射光 1.85 (清晰通透不刺眼)，漫反射环境光 0.10 (夜幕深沉纯净)
-        const LIGHT_INTENSITY = 1.85;
-        const AMBIENT_INTENSITY = 0.10;
+        // 舒适手机端光学参数：平行直射光 1.35，漫反射环境光 0.6 (夜半球亮度 0.6)
+        const LIGHT_INTENSITY = 1.35;
+        const AMBIENT_INTENSITY = 0.6;
         
         // 正交相机保持在离球心 10.0 的安全固定距离，缩放纯靠正交视界 ot 调节，永不发生近裁剪面穿模变黑
         const CAMERA_DIST = 10.0;
@@ -112,12 +112,9 @@
             powerPreference: "high-performance"
         });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
-        if (THREE.sRGBEncoding) {
-            renderer.outputEncoding = THREE.sRGBEncoding;
-        }
         container.appendChild(renderer.domElement);
 
-        // 漫反射环境光（严格同步 EarthDaylightSim 参数：0xffffff, 0.3）
+        // 2. 全局环境光 (AmbientLight: 0xffffff, 0.3)
         const ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_INTENSITY);
         scene.add(ambientLight);
 
@@ -125,7 +122,7 @@
         const earthGroup = new THREE.Group();
         scene.add(earthGroup);
 
-        // 太阳平行光（严格同步 EarthDaylightSim 参数：0xffffff, 4.0）
+        // 3. 太阳平行直射光 (DirectionalLight: 0xffffff, 4.0)
         const sunLight = new THREE.DirectionalLight(0xffffff, LIGHT_INTENSITY);
         sunLight.position.set(0, 0, LIGHT_DIST);
         earthGroup.add(sunLight);
@@ -146,44 +143,80 @@
             ctx.arc(150, 90, 40, 0, Math.PI * 2);
             ctx.arc(180, 180, 45, 0, Math.PI * 2);
             ctx.fill();
-            const tex = new THREE.CanvasTexture(canvas);
-            if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
-            return tex;
+            return new THREE.CanvasTexture(canvas);
         }
 
         const textureSource = (typeof window.EARTH_TEXTURE_BASE64 !== 'undefined' && window.EARTH_TEXTURE_BASE64)
             ? window.EARTH_TEXTURE_BASE64
             : '2k_earth_daymap.jpg';
 
+        // 层次分明的昼夜立体过渡阴影着色器 (向阳日光充足、晨昏阴影层次立体、夜半球 0.6 清晰可见)
+        const earthCustomMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                earthTexture: { value: null },
+                sunDirection: { value: new THREE.Vector3(0, 0, 1) }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vNormalWorld;
+                void main() {
+                    vUv = uv;
+                    vNormalWorld = normalize(mat3(modelMatrix) * normal);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D earthTexture;
+                uniform vec3 sunDirection;
+                varying vec2 vUv;
+                varying vec3 vNormalWorld;
+
+                void main() {
+                    vec4 tex = texture2D(earthTexture, vUv);
+                    vec3 N = normalize(vNormalWorld);
+                    vec3 L = normalize(sunDirection);
+
+                    float dotNL = dot(N, L);
+
+                    // 1. 严格以 dotNL = 0 为轴对称的 S 型立体阴影衰减（晨昏线大圆严格对应 dotNL = 0.0）
+                    float dayFactor = smoothstep(-0.06, 0.06, dotNL);
+
+                    // 2. 晨昏交界晚霞色温微晕（严格以 dotNL = 0.0 为中心对称分布）
+                    float twilight = 1.0 - smoothstep(0.0, 0.07, abs(dotNL));
+                    vec3 twilightGlow = vec3(0.96, 0.58, 0.20) * twilight * 0.35;
+
+                    // 3. 白昼色彩 (1.35 舒适日光强度)
+                    vec3 dayColor = tex.rgb * (1.10 + 0.25 * max(0.0, dotNL));
+
+                    // 4. 夜半球色彩 (环境光 0.6，清晰明朗且具有清晰暗夜层次)
+                    vec3 nightColor = tex.rgb * 0.60 + vec3(0.012, 0.018, 0.035);
+
+                    // 5. 昼夜阴影合成
+                    vec3 finalColor = mix(nightColor, dayColor, dayFactor) + twilightGlow;
+
+                    gl_FragColor = vec4(finalColor, 1.0);
+                }
+            `
+        });
+
+        // 贴图加载
         const textureLoader = new THREE.TextureLoader();
         const earthTexture = textureLoader.load(
             textureSource,
             function(tex) {
-                if (THREE.sRGBEncoding) {
-                    tex.encoding = THREE.sRGBEncoding;
-                }
                 tex.needsUpdate = true;
-                earthMaterial.map = tex;
-                earthMaterial.needsUpdate = true;
+                earthCustomMaterial.uniforms.earthTexture.value = tex;
                 renderer.render(scene, camera);
             },
             undefined,
             function(err) {
                 console.warn('Texture load fallback:', err);
                 const fallbackTex = createProceduralFallbackTexture();
-                earthMaterial.map = fallbackTex;
-                earthMaterial.needsUpdate = true;
+                earthCustomMaterial.uniforms.earthTexture.value = fallbackTex;
             }
         );
-        if (THREE.sRGBEncoding) {
-            earthTexture.encoding = THREE.sRGBEncoding;
-        }
 
-        // 严格同步 EarthDaylightSim 的标准 MeshLambertMaterial 材质
-        const earthMaterial = new THREE.MeshLambertMaterial({
-            map: earthTexture
-        });
-        const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
+        const earthMesh = new THREE.Mesh(earthGeometry, earthCustomMaterial);
         earthMesh.position.set(0, 0, 0);
         earthGroup.add(earthMesh);
         sunLight.target = earthMesh;
@@ -198,7 +231,7 @@
         });
         const terminatorRing = new THREE.Mesh(terminatorRingGeom, terminatorMat);
         terminatorRing.position.set(0, 0, 0);
-        terminatorRing.visible = true; // 默认清晰标出晨昏圈
+        terminatorRing.visible = false; // 默认不开启晨昏线圈
         earthGroup.add(terminatorRing);
 
         // 午时线 (半圆环：红色与蓝色两段)
@@ -307,12 +340,19 @@
             earthMesh.rotation.y = utcMinutes * Ep + Sp - PI / 2;
         }
 
-        // 更新太阳光线倾斜角与晨昏线姿态（严格同步 EarthDaylightSim 光源位置并保持晨昏线精准对齐）
+        // 更新太阳光线倾斜角与晨昏线姿态（世界坐标系绝对同步，晨昏圈与阴影 100% 吻合）
         function updateSunPosition(date) {
             const declination = calculateSolarDeclination(date);
             sunLight.position.set(0, LIGHT_DIST * Math.sin(declination), LIGHT_DIST * Math.cos(declination));
             // Cylinder 默认轴沿 Y 轴，需先旋转 PI/2 对齐 Z 轴（太阳光照方向），再根据赤纬角精确俯仰
             terminatorRing.rotation.set(PI / 2 - declination, 0, 0);
+
+            if (typeof earthCustomMaterial !== 'undefined' && earthCustomMaterial.uniforms) {
+                sunLight.updateWorldMatrix(true, false);
+                const worldSunPos = new THREE.Vector3();
+                sunLight.getWorldPosition(worldSunPos);
+                earthCustomMaterial.uniforms.sunDirection.value.copy(worldSunPos).normalize();
+            }
         }
 
         // 调整整体倾斜角
@@ -320,17 +360,20 @@
             let tilt = earthGroup.rotation.x + angleOffset;
             tilt = Math.max(Math.min(tilt, PI / 2), -PI / 2);
             earthGroup.rotation.x = tilt;
+            updateSunPosition(getCurrentDisplayDate());
         }
 
         // 赤道对齐
         function alignEquator() {
             earthGroup.rotation.x = 0;
+            updateSunPosition(getCurrentDisplayDate());
         }
 
         // 黄道对齐
         function alignEcliptic() {
             const now = getCurrentDisplayDate();
             earthGroup.rotation.x = calculateSolarDeclination(now);
+            updateSunPosition(now);
         }
 
         // 切换晨昏线
