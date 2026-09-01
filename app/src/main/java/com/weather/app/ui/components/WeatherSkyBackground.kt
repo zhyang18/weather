@@ -351,8 +351,8 @@ fun WeatherSkyBackground(
 
     val baseCloudAlpha = remember(weatherCategory) {
         when (weatherCategory) {
-            WeatherCategory.CLOUDY -> 0.9f
-            WeatherCategory.CLOUDY_NIGHT -> 0.26f
+            WeatherCategory.CLOUDY -> 0.6f
+            WeatherCategory.CLOUDY_NIGHT -> 0.6f
             WeatherCategory.OVERCAST -> 0.48f
             WeatherCategory.OVERCAST_NIGHT -> 0.42f
             else -> 0.35f
@@ -366,33 +366,6 @@ fun WeatherSkyBackground(
                 Brush.verticalGradient(listOf(animatedTop, animatedMid, animatedBottom))
             )
     ) {
-        // 1. 真实摄影级自然云海与天际底图 (全屏平滑自适应，舒缓大气呼吸流淌，0 重组)
-        if (skyTextureRes != null) {
-            Image(
-                painter = painterResource(id = skyTextureRes),
-                contentDescription = "天空云海真实背景",
-                contentScale = ContentScale.Crop,
-                colorFilter = cloudColorFilter,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val cloudProgress = cloudProgressState.value
-                        val baseDriftX = sin(cloudProgress * 2f * PI.toFloat()) * 1000f
-                        val baseDriftY = cos(cloudProgress * 2f * PI.toFloat()) * 12f
-                        val offset = parallaxOffsetProvider()
-                        val entranceProgress = entranceAnim.value
-                        val entranceZoom = 1.0f + (1f - entranceProgress) * 0.30f
-                        val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
-
-                        translationX = baseDriftX - offset * 60f
-                        translationY = baseDriftY
-                        scaleX = 2.95f * entranceZoom
-                        scaleY = 2.95f * entranceZoom
-                        alpha = baseCloudAlpha * entranceAlpha
-                    }
-            )
-        }
-
         // OpenGL ES 2.0 纯代码 3D 真实月球渲染器（单例全局静态缓存，0 阻塞）
         val lunarRenderer = remember { LunarOpenGlRenderer() }
         DisposableEffect(Unit) {
@@ -407,7 +380,7 @@ fun WeatherSkyBackground(
         val lightningMainPath = remember { Path() }
         val lightningBranchPath = remember { Path() }
 
-        // 2. 动态天气物理粒子与光影层 (全屏无缝渲染，伴随由近到远镜头加载展开)
+        // 1. 天体运行层（夜空群星、流星、月相球体、白昼太阳与日冕光芒，置于云海层后方）
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -424,14 +397,9 @@ fun WeatherSkyBackground(
         ) {
             val width = size.width
             val height = size.height
-
-            // 在 DrawScope 阶段直接消费动画当前值，彻底避免 Composable 函数体反复重组
-            val fastProgress = fastProgressState.value
             val mediumProgress = mediumProgressState.value
             val slowProgress = slowProgressState.value
-            val cloudProgress = cloudProgressState.value
             val continuousRotation = continuousRotationState.value
-            val lightningPhase = lightningPhaseState.value
 
             // 夜间渲染群星、流星与明月（群星流星常驻夜空，月亮出现时机严格由城市月出月落时间精确决定）
             if (weatherCategory.isNight && weatherCategory != WeatherCategory.OVERCAST_NIGHT) {
@@ -468,6 +436,59 @@ fun WeatherSkyBackground(
                 )
                 drawSunDust(width, height, dustParticles, slowProgress)
             }
+        }
+
+        // 2. 真实摄影级自然云海与天际底图 (全屏平滑自适应，舒缓大气呼吸流淌，位于太阳与月亮前方)
+        if (skyTextureRes != null) {
+            Image(
+                painter = painterResource(id = skyTextureRes),
+                contentDescription = "天空云海真实背景",
+                contentScale = ContentScale.Crop,
+                colorFilter = cloudColorFilter,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val cloudProgress = cloudProgressState.value
+                        val baseDriftX = sin(cloudProgress * 2f * PI.toFloat()) * 1000f
+                        val baseDriftY = cos(cloudProgress * 2f * PI.toFloat()) * 12f
+                        val offset = parallaxOffsetProvider()
+                        val entranceProgress = entranceAnim.value
+                        val entranceZoom = 1.0f + (1f - entranceProgress) * 0.30f
+                        val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
+
+                        translationX = baseDriftX - offset * 60f
+                        translationY = baseDriftY
+                        scaleX = 2.95f * entranceZoom
+                        scaleY = 2.95f * entranceZoom
+                        alpha = baseCloudAlpha * entranceAlpha
+                    }
+            )
+        }
+
+        // 3. 动态天气物理粒子与大气光影层 (全屏无缝渲染，雨、雪、雷电、雾霾、大风粒子置于云层前方)
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val offset = parallaxOffsetProvider()
+                    val entranceProgress = entranceAnim.value
+                    val canvasZoom = 1.0f + (1f - entranceProgress) * 0.50f
+                    val canvasAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
+                    translationX = -offset * 60f
+                    scaleX = canvasZoom
+                    scaleY = canvasZoom
+                    alpha = canvasAlpha
+                }
+        ) {
+            val width = size.width
+            val height = size.height
+
+            // 在 DrawScope 阶段直接消费动画当前值，彻底避免 Composable 函数体反复重组
+            val fastProgress = fastProgressState.value
+            val mediumProgress = mediumProgressState.value
+            val cloudProgress = cloudProgressState.value
+            val continuousRotation = continuousRotationState.value
+            val lightningPhase = lightningPhaseState.value
 
             // 大气自然薄雾与光漫射扩散 (多云/阴天/雨雪天气下的真实大气柔和过渡)
             if (weatherCategory != WeatherCategory.SUNNY && weatherCategory != WeatherCategory.SUNNY_NIGHT) {
@@ -480,8 +501,6 @@ fun WeatherSkyBackground(
                     progress = cloudProgress
                 )
             }
-
-
 
             if (weatherCategory == WeatherCategory.FOG || weatherCategory == WeatherCategory.SANDSTORM) {
                 drawAtmosphericHazeOrSand(
