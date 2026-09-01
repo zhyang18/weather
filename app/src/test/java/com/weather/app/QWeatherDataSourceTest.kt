@@ -361,4 +361,178 @@ class QWeatherDataSourceTest {
         val dataSource = QWeatherWeatherDataSource()
         assertFalse(dataSource.getActiveConfig().isConfigured())
     }
+
+    /**
+     * 测试和风天气控制台请求量统计 JSON 响应解析与数据聚合
+     */
+    @Test
+    fun testQWeatherStatsJsonParsing() {
+        val jsonStr = """
+            {
+              "code": "200",
+              "updateTime": "2026-09-01T10:00:00Z",
+              "asOf": "2026-09-01T09:00:00Z",
+              "stats": [
+                {
+                  "api": "v7/weather/now",
+                  "count": 1000,
+                  "success": 995,
+                  "failure": 5
+                },
+                {
+                  "api": "v7/weather/7d",
+                  "count": 500,
+                  "success": 500,
+                  "failure": 0
+                },
+                {
+                  "api": "v2/city/lookup",
+                  "count": 100,
+                  "success": 98,
+                  "failure": 2
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val summary = com.weather.app.datasource.qweather.QWeatherStatsFetcher.parseStatsJson(jsonStr)
+
+        assertEquals("2026-09-01T09:00:00Z", summary.asOfRaw)
+        assertFalse(summary.isPrivilegeDenied)
+        assertEquals(1600L, summary.totalCount)
+        assertEquals(1593L, summary.successCount)
+        assertEquals(7L, summary.failureCount)
+        assertEquals(3, summary.items.size)
+
+        // 验证成功率计算
+        val expectedRate = (1593f / 1600f) * 100f
+        assertEquals(expectedRate, summary.successRate, 0.01f)
+
+        // 验证接口显示名称转换
+        assertEquals("天气预报", summary.items[0].getDisplayName())
+        assertEquals("天气预报", summary.items[1].getDisplayName())
+        assertEquals("城市检索 (GeoAPI)", summary.items[2].getDisplayName())
+    }
+
+    /**
+     * 测试控制台 API 统计时间格式化转换
+     */
+    @Test
+    fun testIsoTimestampFormatting() {
+        val formatted = com.weather.app.datasource.qweather.QWeatherStatsFetcher.formatIsoTimestamp("2026-09-01T09:00:00Z")
+        assertTrue(formatted.isNotEmpty())
+        assertFalse(formatted.contains("Z"))
+    }
+
+    /**
+     * 测试和风天气官方控制台实际返回的 apis 数组与 errorRate 格式解析
+     */
+    @Test
+    fun testQWeatherRealConsoleStatsJsonParsing() {
+        val realJsonStr = """
+            {
+              "code": "200",
+              "asOf": "2026-09-01T03:00:00Z",
+              "requests": 952,
+              "errorRate": "19.32%",
+              "apis": [
+                {
+                  "name": "天气预报",
+                  "requests": 708,
+                  "errorRate": "0.00%"
+                },
+                {
+                  "name": "天气预警",
+                  "requests": 122,
+                  "errorRate": "48.31%"
+                },
+                {
+                  "name": "空气质量",
+                  "requests": 122,
+                  "errorRate": "48.31%"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val summary = com.weather.app.datasource.qweather.QWeatherStatsFetcher.parseStatsJson(realJsonStr)
+
+        assertEquals("2026-09-01T03:00:00Z", summary.asOfRaw)
+        assertFalse(summary.isPrivilegeDenied)
+        assertEquals(952L, summary.totalCount)
+        assertEquals(19.32f, summary.errorRate, 0.01f)
+        assertEquals(3, summary.items.size)
+
+        // 验证各项解析与接口名称转换
+        assertEquals("天气预报", summary.items[0].getDisplayName())
+        assertEquals(708L, summary.items[0].count)
+        assertEquals(0.00f, summary.items[0].errorRate ?: 0f, 0.01f)
+
+        assertEquals("天气预警", summary.items[1].getDisplayName())
+        assertEquals(122L, summary.items[1].count)
+        assertEquals(48.31f, summary.items[1].errorRate ?: 0f, 0.01f)
+
+        assertEquals("空气质量", summary.items[2].getDisplayName())
+        assertEquals(122L, summary.items[2].count)
+        assertEquals(48.31f, summary.items[2].errorRate ?: 0f, 0.01f)
+    }
+
+    /**
+     * 测试和风天气官方规范（metadata + success/errors 24小时逐小时数组）完整解析
+     */
+    @Test
+    fun testQWeatherOfficial24hHourlyStatsJsonParsing() {
+        val officialJsonStr = """
+            {
+              "metadata": {
+                "tag": "stats-tag-123",
+                "asOf": "2026-09-01T03:59:00Z",
+                "attributions": ["QWeather Metrics"]
+              },
+              "success": [
+                {
+                  "api": "天气预报",
+                  "hours": [0,0,0,0,0,0,0,0,10,20,30,40,50,60,70,80,90,100,50,40,30,20,8,0]
+                },
+                {
+                  "api": "天气预警",
+                  "hours": [0,0,0,0,0,0,0,0,0,0,0,5,5,5,10,10,10,10,5,3,0,0,0,0]
+                }
+              ],
+              "errors": [
+                {
+                  "api": "天气预警",
+                  "hours": [0,0,0,0,0,0,0,0,0,0,0,10,10,10,10,10,5,5,5,0,0,0,0,0]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val summary = com.weather.app.datasource.qweather.QWeatherStatsFetcher.parseStatsJson(officialJsonStr)
+
+        assertEquals("2026-09-01T03:59:00Z", summary.asOfRaw)
+        assertFalse(summary.isPrivilegeDenied)
+        assertEquals(2, summary.items.size)
+
+        // 验证分类 1：天气预报 (总成功 698, 错误 0)
+        val weatherItem = summary.items.first { it.api == "天气预报" }
+        assertEquals(698L, weatherItem.success)
+        assertEquals(0L, weatherItem.failure)
+        assertEquals(698L, weatherItem.count)
+        assertEquals(0.00f, weatherItem.errorRate ?: 0f, 0.01f)
+
+        // 验证分类 2：天气预警 (总成功 63, 错误 65, 总计 128)
+        val alertItem = summary.items.first { it.api == "天气预警" }
+        assertEquals(63L, alertItem.success)
+        assertEquals(65L, alertItem.failure)
+        assertEquals(128L, alertItem.count)
+
+        // 验证全局汇总
+        assertEquals(826L, summary.totalCount)
+        assertEquals(761L, summary.successCount)
+        assertEquals(65L, summary.failureCount)
+        assertEquals(24, summary.hourlyTotals.size)
+        assertEquals(24, summary.hourlyErrors.size)
+    }
 }
+

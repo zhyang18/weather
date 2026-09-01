@@ -120,4 +120,23 @@ interface QWeatherApiService {
     suspend fun getIpPosition(
         @Url url: String
     ): ResponseBody
+
+    /**
+     * 获取和风天气控制台请求量统计数据 (Console API)
+     *
+     * @return 包含控制台统计 JSON 的 [ResponseBody]
+     */
+    @GET("metrics/v1/stats")
+    suspend fun getStats(): ResponseBody
+
+    /**
+     * 根据指定的完整 URL 获取控制台请求量统计数据
+     *
+     * @param url 控制台统计完整请求 URL
+     * @return 包含控制台统计 JSON 的 [ResponseBody]
+     */
+    @GET
+    suspend fun getStatsFromUrl(
+        @Url url: String
+    ): ResponseBody
 }

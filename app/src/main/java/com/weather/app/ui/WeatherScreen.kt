@@ -430,6 +430,7 @@ fun WeatherScreen(
     if (uiState.showQWeatherConfigDialog) {
         com.weather.app.ui.dialogs.QWeatherConfigDialog(
             config = uiState.qWeatherConfig,
+            initialStats = uiState.qWeatherStats,
             onSave = { config ->
                 viewModel.saveQWeatherConfig(config)
             },

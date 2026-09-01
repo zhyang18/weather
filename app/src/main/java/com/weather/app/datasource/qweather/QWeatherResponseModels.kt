@@ -395,3 +395,137 @@ data class QWeatherGeoLocation(
     @SerializedName("adm1") val adm1: String? = null,
     @SerializedName("country") val country: String? = null
 )
+
+/**
+ * 控制台请求量统计响应模型 (GET /metrics/v1/stats)
+ *
+ * @property metadata 元数据信息
+ * @property success 成功请求数据列表 (按 API 分类与 24 小时逐小时数组)
+ * @property errors 错误请求数据列表 (按 API 分类与 24 小时逐小时数组)
+ */
+data class QWeatherConsoleMetricsResponse(
+    @SerializedName("metadata") val metadata: QWeatherConsoleMetadata? = null,
+    @SerializedName("success") val success: List<QWeatherHourlyApiStat>? = null,
+    @SerializedName("errors") val errors: List<QWeatherHourlyApiStat>? = null
+) : QWeatherBaseResponse()
+
+/**
+ * 控制台元数据模型
+ *
+ * @property tag 数据唯一标识
+ * @property asOf 当前数据截止日期时间 (ISO 8601 UTC)
+ * @property attributions 数据归因信息
+ */
+data class QWeatherConsoleMetadata(
+    @SerializedName("tag") val tag: String? = null,
+    @SerializedName("asOf") val asOf: String? = null,
+    @SerializedName("attributions") val attributions: List<String>? = null
+)
+
+/**
+ * 24 小时逐小时 API 请求量统计
+ *
+ * @property api 接口名称 (如 "天气预报", "天气预警", "空气质量" 等)
+ * @property hours 最近 24 小时每小时的请求量数组 (共 24 项，最后一项以 asOf 为准)
+ */
+data class QWeatherHourlyApiStat(
+    @SerializedName("api") val api: String? = null,
+    @SerializedName("hours") val hours: List<Long>? = null
+)
+
+/**
+ * 请求量统计单项分类数据
+ *
+ * @property api 被调用的 API 标识或分类名称 (例如 "天气预报", "天气预警", "空气质量" 等)
+ * @property count 24 小时总调用次数
+ * @property success 24 小时成功调用次数
+ * @property failure 24 小时失败调用次数
+ * @property errorRate 错误率百分比 (0.0 ~ 100.0)
+ * @property hourlySuccess 24 小时逐小时成功量数组
+ * @property hourlyFailure 24 小时逐小时错误量数组
+ * @property time 统计时间点或时间段 (可选)
+ */
+data class QWeatherStatItem(
+    @SerializedName("api") val api: String? = null,
+    @SerializedName("count") val count: Long? = null,
+    @SerializedName("success") val success: Long? = null,
+    @SerializedName("failure") val failure: Long? = null,
+    @SerializedName("errorRate") val errorRate: Float? = null,
+    val hourlySuccess: List<Long> = emptyList(),
+    val hourlyFailure: List<Long> = emptyList(),
+    @SerializedName("time") val time: String? = null
+) {
+    /**
+     * 获取友好的 API 接口中文名称
+     *
+     * @return 转换后的接口中文可读名称
+     */
+    fun getDisplayName(): String {
+        val rawApi = api ?: "未知接口"
+        return when {
+            rawApi == "天气预报" || rawApi.contains("weather/now", ignoreCase = true) || rawApi.contains("weather/7d", ignoreCase = true) || rawApi.contains("weather/24h", ignoreCase = true) || rawApi.equals("weather", ignoreCase = true) -> "天气预报"
+            rawApi == "天气预警" || rawApi.contains("weatheralert", ignoreCase = true) || rawApi.contains("warning", ignoreCase = true) -> "天气预警"
+            rawApi == "空气质量" || rawApi.contains("airquality", ignoreCase = true) || rawApi.contains("air", ignoreCase = true) -> "空气质量"
+            rawApi == "城市检索" || rawApi.contains("geo", ignoreCase = true) || rawApi.contains("city", ignoreCase = true) -> "城市检索 (GeoAPI)"
+            rawApi == "生活指数" || rawApi.contains("indices", ignoreCase = true) -> "生活指数"
+            rawApi == "分钟降水" || rawApi.contains("minutely", ignoreCase = true) -> "分钟降水"
+            rawApi == "天文气象" || rawApi.contains("solar", ignoreCase = true) || rawApi.contains("sun", ignoreCase = true) || rawApi.contains("moon", ignoreCase = true) || rawApi.contains("astronomy", ignoreCase = true) -> "天文气象"
+            else -> rawApi
+        }
+    }
+
+    /**
+     * 获取格式化的错误率百分比字符串
+     *
+     * @return 格式化后的错误率百分比（如 "19.32%" 或 "0.00%"）
+     */
+    fun getFormattedErrorRate(): String {
+        val rate = errorRate ?: run {
+            val total = count ?: 0L
+            val err = failure ?: 0L
+            if (total > 0L) (err.toFloat() / total.toFloat()) * 100f else 0f
+        }
+        return String.format(java.util.Locale.US, "%.2f%%", rate)
+    }
+}
+
+/**
+ * 控制台请求量统计聚合汇总实体
+ *
+ * 用于 UI 界面可视化呈现。
+ *
+ * @property asOfRaw 原始截止统计时间字符串
+ * @property formattedAsOf 格式化后的本地显示时间
+ * @property totalCount 统计周期内总请求次数
+ * @property successCount 成功调用总次数
+ * @property failureCount 失败调用总次数
+ * @property successRate 成功率百分比（0.0 ~ 100.0）
+ * @property errorRate 错误率百分比（0.0 ~ 100.0）
+ * @property hourlyTotals 24 小时每小时全接口总调用量数组
+ * @property hourlyErrors 24 小时每小时全接口总错误量数组
+ * @property items 各接口细分统计列表
+ * @property isPrivilegeDenied 是否因为未在控制台开通控制台 API 权限而受限
+ */
+data class QWeatherStatsSummary(
+    val asOfRaw: String = "",
+    val formattedAsOf: String = "",
+    val totalCount: Long = 0L,
+    val successCount: Long = 0L,
+    val failureCount: Long = 0L,
+    val successRate: Float = 100f,
+    val errorRate: Float = 0f,
+    val hourlyTotals: List<Long> = emptyList(),
+    val hourlyErrors: List<Long> = emptyList(),
+    val items: List<QWeatherStatItem> = emptyList(),
+    val isPrivilegeDenied: Boolean = false
+) {
+    /**
+     * 获取格式化的整体错误率百分比字符串
+     *
+     * @return 格式化后的整体错误率百分比（如 "19.32%"）
+     */
+    fun getFormattedErrorRate(): String {
+        return String.format(java.util.Locale.US, "%.2f%%", errorRate)
+    }
+}
+

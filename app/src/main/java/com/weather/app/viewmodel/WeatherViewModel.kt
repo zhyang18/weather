@@ -90,6 +90,9 @@ data class WeatherUiState(
     val isMapRadarEnabled: Boolean = false,
     val showQWeatherConfigDialog: Boolean = false,
     val qWeatherConfig: com.weather.app.datasource.qweather.QWeatherConfig = com.weather.app.datasource.qweather.QWeatherConfig(),
+    val qWeatherStats: com.weather.app.datasource.qweather.QWeatherStatsSummary? = null,
+    val isFetchingQWeatherStats: Boolean = false,
+    val qWeatherStatsError: String? = null,
     val showCaiyunConfigDialog: Boolean = false,
     val caiyunConfig: com.weather.app.datasource.caiyun.CaiyunConfig = com.weather.app.datasource.caiyun.CaiyunConfig(),
     val showBackupRestoreDialog: Boolean = false,
@@ -1019,6 +1022,54 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      */
     fun setShowQWeatherConfigDialog(show: Boolean) {
         _uiState.update { it.copy(showQWeatherConfigDialog = show) }
+        if (show && _uiState.value.qWeatherConfig.isConfigured() && _uiState.value.qWeatherStats == null) {
+            fetchQWeatherStats(_uiState.value.qWeatherConfig)
+        }
+    }
+
+    /**
+     * 在线拉取和风天气控制台请求量统计数据
+     *
+     * @param config 指定的和风天气凭据配置实体（可选，若未指定则使用当前状态中的配置）
+     */
+    fun fetchQWeatherStats(config: com.weather.app.datasource.qweather.QWeatherConfig? = null) {
+        val targetConfig = config ?: _uiState.value.qWeatherConfig
+        if (!targetConfig.isConfigured()) {
+            _uiState.update {
+                it.copy(
+                    isFetchingQWeatherStats = false,
+                    qWeatherStatsError = "请先完整配置 Project ID、Key ID 和 Private Key"
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isFetchingQWeatherStats = true,
+                    qWeatherStatsError = null
+                )
+            }
+
+            val result = com.weather.app.datasource.qweather.QWeatherStatsFetcher.fetchStats(targetConfig)
+            result.onSuccess { summary ->
+                _uiState.update {
+                    it.copy(
+                        isFetchingQWeatherStats = false,
+                        qWeatherStats = summary,
+                        qWeatherStatsError = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isFetchingQWeatherStats = false,
+                        qWeatherStatsError = error.localizedMessage ?: "获取控制台统计数据失败"
+                    )
+                }
+            }
+        }
     }
 
     /**
