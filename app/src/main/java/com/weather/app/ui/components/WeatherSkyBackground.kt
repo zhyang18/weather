@@ -158,7 +158,7 @@ fun WeatherSkyBackground(
     val fastProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(850, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(animation = tween(1600, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "fastProgress"
     )
 
@@ -202,39 +202,39 @@ fun WeatherSkyBackground(
     val rainParticles = remember {
         List(200) { index ->
             when {
-                // 近景特写疾速大雨滴（15%）：超长运动模糊拖尾、高亮白金流光、速度极快
+                // 近景特写大雨滴（15%）：长流光、晶亮通透、速度较快自然
                 index % 7 == 0 -> {
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
-                        length = Random.nextFloat() * 60f + 110f,
-                        speedMultiplier = Random.nextFloat() * 0.6f + 2.1f,
+                        length = Random.nextFloat() * 55f + 95f,
+                        speedMultiplier = Random.nextFloat() * 0.40f + 1.35f,
                         alpha = Random.nextFloat() * 0.18f + 0.82f,
-                        strokeWidth = Random.nextFloat() * 0.8f + 2.2f,
+                        strokeWidth = Random.nextFloat() * 0.7f + 2.1f,
                         layer = 2,
                         slantJitter = (Random.nextFloat() - 0.5f) * 0.02f
                     )
                 }
-                // 中景主力雨丝（35%）：自然雨线、平滑运动拖尾与端部高光
+                // 中景主力雨丝（35%）：自然雨线、端部渐隐、节奏平稳
                 index % 3 == 0 -> {
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
-                        length = Random.nextFloat() * 35f + 60f,
-                        speedMultiplier = Random.nextFloat() * 0.4f + 1.35f,
+                        length = Random.nextFloat() * 30f + 50f,
+                        speedMultiplier = Random.nextFloat() * 0.30f + 0.95f,
                         alpha = Random.nextFloat() * 0.25f + 0.55f,
                         strokeWidth = Random.nextFloat() * 0.5f + 1.3f,
                         layer = 1,
                         slantJitter = (Random.nextFloat() - 0.5f) * 0.015f
                     )
                 }
-                // 远景细密雨幕（50%）：密集轻盈、半透明羽化虚化、纵深感极强
+                // 远景细密雨幕（50%）：密集轻盈、半透明羽化、舒缓柔和
                 else -> {
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
-                        length = Random.nextFloat() * 22f + 30f,
-                        speedMultiplier = Random.nextFloat() * 0.3f + 0.95f,
+                        length = Random.nextFloat() * 18f + 25f,
+                        speedMultiplier = Random.nextFloat() * 0.20f + 0.70f,
                         alpha = Random.nextFloat() * 0.16f + 0.22f,
                         strokeWidth = Random.nextFloat() * 0.3f + 0.8f,
                         layer = 0,
@@ -503,9 +503,22 @@ fun WeatherSkyBackground(
             // 在 DrawScope 阶段直接消费动画当前值，彻底避免 Composable 函数体反复重组
             val fastProgress = fastProgressState.value
             val mediumProgress = mediumProgressState.value
+            val slowProgress = slowProgressState.value
             val cloudProgress = cloudProgressState.value
             val continuousRotation = continuousRotationState.value
             val lightningPhase = lightningPhaseState.value
+
+            // 白昼太阳穿透云层高光与透云日冕（置于云层前方，呈现真实破云而出的耀眼日光）
+            if (isSunVisible && !weatherCategory.isNight) {
+                val sunCenter = calculateSunCenter(width, height, sunProgress)
+                drawSunCloudPenetration(
+                    width = width,
+                    sunCenter = sunCenter,
+                    dayProgress = sunProgress,
+                    pulseProgress = slowProgress,
+                    isCloudy = (weatherCategory == WeatherCategory.CLOUDY)
+                )
+            }
 
             // 大气自然薄雾与光漫射扩散 (多云/阴天/雨雪天气下的真实大气柔和过渡)
             if (weatherCategory != WeatherCategory.SUNNY && weatherCategory != WeatherCategory.SUNNY_NIGHT) {
@@ -1565,6 +1578,73 @@ private fun DrawScope.drawSunWithRays(
     drawCircle(
         color = state.coreColors[0].copy(alpha = (0.95f * masterAlpha).coerceIn(0f, 1f)),
         radius = sunSpanRadius * 0.20f,
+        center = sunCenter
+    )
+}
+
+/**
+ * 绘制白昼太阳穿透云层的强光核与耀斑（透云日光日盘与日冕）
+ *
+ * 当天空中漂浮自然云海时，强烈的太阳光穿透云层，在云朵前方形成高亮晶莹的日光核心与穿云漫射，
+ * 解决底层太阳被半透明云图遮盖导致肉眼看不清太阳的问题。
+ *
+ * @param width 画面宽度 (px)
+ * @param sunCenter 太阳中心屏幕坐标 [Offset]
+ * @param dayProgress 日照时间进度 (0.0f ~ 1.0f)
+ * @param pulseProgress 太阳呼吸胀缩相位 (0f ~ 1f)
+ * @param isCloudy 是否为多云天气
+ */
+private fun DrawScope.drawSunCloudPenetration(
+    width: Float,
+    sunCenter: Offset,
+    dayProgress: Float,
+    pulseProgress: Float,
+    isCloudy: Boolean
+) {
+    val state = calculateSolarPhysicalState(dayProgress)
+    val masterAlpha = state.horizonExtinction
+
+    // 太阳发光跨度半径
+    val sunSpanRadius = width * (0.26f + pulseProgress * 0.015f) * state.diskScale
+
+    // 1. 透云强光日冕与近日光晕（确保太阳穿云依然有极亮金白光晕）
+    val penetrationGlowRadius = sunSpanRadius * (if (isCloudy) 1.25f else 1.10f)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                state.coreColors[0].copy(alpha = (0.92f * masterAlpha).coerceIn(0f, 1f)),
+                state.coreColors[1].copy(alpha = (0.75f * masterAlpha).coerceIn(0f, 1f)),
+                state.innerGlowColors[0].copy(alpha = (0.45f * masterAlpha).coerceIn(0f, 1f)),
+                state.innerGlowColors[1].copy(alpha = (0.18f * masterAlpha).coerceIn(0f, 1f)),
+                Color.Transparent
+            ),
+            center = sunCenter,
+            radius = penetrationGlowRadius
+        ),
+        center = sunCenter,
+        radius = penetrationGlowRadius
+    )
+
+    // 2. 极炽白金日盘光核（在云层前方形成穿透性强光核心）
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                Color.White.copy(alpha = (0.98f * masterAlpha).coerceIn(0f, 1f)),
+                state.coreColors[0].copy(alpha = (0.90f * masterAlpha).coerceIn(0f, 1f)),
+                state.coreColors[1].copy(alpha = (0.60f * masterAlpha).coerceIn(0f, 1f)),
+                Color.Transparent
+            ),
+            center = sunCenter,
+            radius = sunSpanRadius * 0.45f
+        ),
+        center = sunCenter,
+        radius = sunSpanRadius * 0.45f
+    )
+
+    // 3. 太阳最中心纯白高光点
+    drawCircle(
+        color = Color.White.copy(alpha = (0.98f * masterAlpha).coerceIn(0f, 1f)),
+        radius = sunSpanRadius * 0.22f,
         center = sunCenter
     )
 }
