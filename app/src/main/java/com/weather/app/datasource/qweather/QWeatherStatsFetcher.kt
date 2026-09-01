@@ -235,6 +235,7 @@ object QWeatherStatsFetcher {
             // 聚合各 API 分类项
             val statItems = mutableListOf<QWeatherStatItem>()
             val hourlyTotals = MutableList(24) { 0L }
+            val hourlySuccess = MutableList(24) { 0L }
             val hourlyErrors = MutableList(24) { 0L }
 
             var totalCount = 0L
@@ -255,6 +256,7 @@ object QWeatherStatsFetcher {
                     val s = acc.successHours.getOrElse(h) { 0L }
                     val e = acc.errorHours.getOrElse(h) { 0L }
                     hourlyTotals[h] += (s + e)
+                    hourlySuccess[h] += s
                     hourlyErrors[h] += e
                 }
 
@@ -286,6 +288,7 @@ object QWeatherStatsFetcher {
                 successRate = finalSuccessRate,
                 errorRate = finalErrorRate,
                 hourlyTotals = hourlyTotals,
+                hourlySuccess = hourlySuccess,
                 hourlyErrors = hourlyErrors,
                 items = statItems,
                 isPrivilegeDenied = false

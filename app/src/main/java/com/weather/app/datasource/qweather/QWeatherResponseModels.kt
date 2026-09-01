@@ -502,6 +502,7 @@ data class QWeatherStatItem(
  * @property successRate 成功率百分比（0.0 ~ 100.0）
  * @property errorRate 错误率百分比（0.0 ~ 100.0）
  * @property hourlyTotals 24 小时每小时全接口总调用量数组
+ * @property hourlySuccess 24 小时每小时全接口成功调用量数组
  * @property hourlyErrors 24 小时每小时全接口总错误量数组
  * @property items 各接口细分统计列表
  * @property isPrivilegeDenied 是否因为未在控制台开通控制台 API 权限而受限
@@ -515,6 +516,7 @@ data class QWeatherStatsSummary(
     val successRate: Float = 100f,
     val errorRate: Float = 0f,
     val hourlyTotals: List<Long> = emptyList(),
+    val hourlySuccess: List<Long> = emptyList(),
     val hourlyErrors: List<Long> = emptyList(),
     val items: List<QWeatherStatItem> = emptyList(),
     val isPrivilegeDenied: Boolean = false
@@ -526,6 +528,52 @@ data class QWeatherStatsSummary(
      */
     fun getFormattedErrorRate(): String {
         return String.format(java.util.Locale.US, "%.2f%%", errorRate)
+    }
+
+    /**
+     * 计算 24 小时每小时对应的北京时间小时文本（格式 "HH:00"）
+     *
+     * @return 长度为 24 的北京时间列表（例如 ["12:00", ..., "11:00"]）
+     */
+    fun calculateBeijingHourLabels(): List<String> {
+        val calendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+8"))
+        val cleanStr = asOfRaw.replace("Z", "+0000").replace("+00:00", "+0000")
+        if (cleanStr.isNotBlank()) {
+            val formats = listOf(
+                "yyyy-MM-dd'T'HH:mm:ssZ",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+                "yyyy-MM-dd'T'HH:mmZ",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd HH:mm:ss"
+            )
+            for (fmt in formats) {
+                try {
+                    val sdf = java.text.SimpleDateFormat(fmt, java.util.Locale.US)
+                    if (fmt.contains("Z")) {
+                        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    }
+                    val date = sdf.parse(cleanStr)
+                    if (date != null) {
+                        calendar.time = date
+                        calendar.timeZone = java.util.TimeZone.getTimeZone("GMT+8")
+                        break
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        val endHourMillis = calendar.timeInMillis
+        val hourLabels = mutableListOf<String>()
+        val hourSdf = java.text.SimpleDateFormat("HH:00", java.util.Locale.getDefault())
+        hourSdf.timeZone = java.util.TimeZone.getTimeZone("GMT+8")
+
+        for (i in 0 until 24) {
+            val offsetHours = 23 - i
+            val hourTime = endHourMillis - (offsetHours * 3600 * 1000L)
+            hourLabels.add(hourSdf.format(java.util.Date(hourTime)))
+        }
+        return hourLabels
     }
 }
 

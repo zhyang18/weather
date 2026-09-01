@@ -136,42 +136,69 @@ fun QWeatherConfigDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = Color(0xF2182230), // 95% 磨砂深灰蓝底色
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xF7151D2A), // 磨砂深空板岩蓝底色
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .padding(vertical = 24.dp)
+                .fillMaxWidth(0.93f)
+                .padding(vertical = 20.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(horizontal = 20.dp, vertical = 22.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                // 顶部标题
-                Text(
-                    text = "和风天气",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White
-                )
+                // 顶部标题与品牌徽标
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                androidx.compose.ui.graphics.Brush.linearGradient(
+                                    listOf(Color(0xFF3B82F6), Color(0xFF1D4ED8))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "和",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
-                Text(
-                    text = "基于 Ed25519 算法的安全访问凭据与 24 小时控制台用量统计",
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.65f)
-                )
+                    Column {
+                        Text(
+                            text = "和风天气凭据与控制台",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Ed25519 签名鉴权 · 24 小时控制台用量统计",
+                            fontSize = 11.5.sp,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Tab 切换栏
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color.White.copy(alpha = 0.08f))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.07f))
                         .padding(3.dp)
                 ) {
                     val tabs = listOf("凭据配置", "用量统计")
@@ -180,15 +207,21 @@ fun QWeatherConfigDialog(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) Color(0xFF3B82F6) else Color.Transparent)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(
+                                    if (isSelected) androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                        listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
+                                    ) else androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                        listOf(Color.Transparent, Color.Transparent)
+                                    )
+                                )
                                 .clickable {
                                     selectedTabIndex = index
                                     if (index == 1 && statsSummary == null && !isFetchingStats) {
                                         triggerFetchStats()
                                     }
                                 }
-                                .padding(vertical = 7.dp),
+                                .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -213,16 +246,19 @@ fun QWeatherConfigDialog(
                             errorMessage = null
                             successMessage = null
                         },
-                        label = { Text("Project ID（项目 ID）", color = Color.White.copy(alpha = 0.7f)) },
-                        placeholder = { Text("例如：project_123456", color = Color.White.copy(alpha = 0.3f)) },
+                        label = { Text("Project ID（项目 ID）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
+                        placeholder = { Text("例如：project_123456", color = Color.White.copy(alpha = 0.3f), fontSize = 12.5.sp) },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         enabled = !isVerifying,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF60A5FA),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            cursorColor = Color(0xFF60A5FA)
+                            focusedBorderColor = Color(0xFF3B82F6),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
+                            cursorColor = Color(0xFF60A5FA),
+                            focusedContainerColor = Color(0x0FFFFFFF),
+                            unfocusedContainerColor = Color(0x0AFFFFFF)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -237,16 +273,19 @@ fun QWeatherConfigDialog(
                             errorMessage = null
                             successMessage = null
                         },
-                        label = { Text("Key ID / 凭据 ID（kid）", color = Color.White.copy(alpha = 0.7f)) },
-                        placeholder = { Text("例如：key_abc123", color = Color.White.copy(alpha = 0.3f)) },
+                        label = { Text("Key ID / 凭据 ID（kid）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
+                        placeholder = { Text("例如：key_abc123", color = Color.White.copy(alpha = 0.3f), fontSize = 12.5.sp) },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         enabled = !isVerifying,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF60A5FA),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            cursorColor = Color(0xFF60A5FA)
+                            focusedBorderColor = Color(0xFF3B82F6),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
+                            cursorColor = Color(0xFF60A5FA),
+                            focusedContainerColor = Color(0x0FFFFFFF),
+                            unfocusedContainerColor = Color(0x0AFFFFFF)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -261,17 +300,20 @@ fun QWeatherConfigDialog(
                             errorMessage = null
                             successMessage = null
                         },
-                        label = { Text("Ed25519 Private Key（私钥）", color = Color.White.copy(alpha = 0.7f)) },
-                        placeholder = { Text("粘贴 -----BEGIN PRIVATE KEY----- ... 或 Base64 文本", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                        label = { Text("Ed25519 Private Key（私钥）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
+                        placeholder = { Text("-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----", color = Color.White.copy(alpha = 0.3f), fontSize = 11.5.sp) },
                         minLines = 3,
-                        maxLines = 6,
+                        maxLines = 5,
+                        shape = RoundedCornerShape(12.dp),
                         enabled = !isVerifying,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF60A5FA),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            cursorColor = Color(0xFF60A5FA)
+                            focusedBorderColor = Color(0xFF3B82F6),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
+                            cursorColor = Color(0xFF60A5FA),
+                            focusedContainerColor = Color(0x0FFFFFFF),
+                            unfocusedContainerColor = Color(0x0AFFFFFF)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -286,16 +328,19 @@ fun QWeatherConfigDialog(
                             errorMessage = null
                             successMessage = null
                         },
-                        label = { Text("API 域名（Host）", color = Color.White.copy(alpha = 0.7f)) },
-                        placeholder = { Text("如：xxx.qweatherapi.com 或 devapi.qweather.com", color = Color.White.copy(alpha = 0.3f)) },
+                        label = { Text("API 专属域名（Host）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
+                        placeholder = { Text("例如：xxx.qweatherapi.com", color = Color.White.copy(alpha = 0.3f), fontSize = 12.5.sp) },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         enabled = !isVerifying,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF60A5FA),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            cursorColor = Color(0xFF60A5FA)
+                            focusedBorderColor = Color(0xFF3B82F6),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
+                            cursorColor = Color(0xFF60A5FA),
+                            focusedContainerColor = Color(0x0FFFFFFF),
+                            unfocusedContainerColor = Color(0x0AFFFFFF)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -303,16 +348,16 @@ fun QWeatherConfigDialog(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "提示：API Host 需与和风控制台【项目管理】分配的专属域名一致（如 xxx.qweatherapi.com）",
+                        text = "提示：API Host 需与和风控制台【项目管理】分配的专属域名一致",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = Color.White.copy(alpha = 0.45f)
                     )
 
                     // 错误提示
                     if (errorMessage != null) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = Color(0xFFEF4444).copy(alpha = 0.15f),
                             border = BorderStroke(0.6.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
                             modifier = Modifier.fillMaxWidth()
@@ -331,7 +376,7 @@ fun QWeatherConfigDialog(
                     if (successMessage != null) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = Color(0xFF10B981).copy(alpha = 0.15f),
                             border = BorderStroke(0.6.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
                             modifier = Modifier.fillMaxWidth()
@@ -349,26 +394,36 @@ fun QWeatherConfigDialog(
 
                     // 使用提示 / 凭据与权限获取指引
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color.White.copy(alpha = 0.06f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.05f),
+                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(Color(0xFF60A5FA))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "如何获取 Project ID、Key ID 与私钥？",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF93C5FD)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "如何获取 Project ID、Key ID 与私钥？",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFF60A5FA)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "1. 登录和风天气开发者控制台 (console.qweather.com)\n" +
-                                        "2. 进入【项目管理】创建或选择项目，获取专属 API Host 与 Project ID\n" +
-                                        "3. 新建凭据（推荐 Ed25519 签名），获取 Key ID (kid) 并复制私钥内容\n" +
-                                        "4. 在凭据详情中勾选【控制台权限】中的【请求量统计】以启用用量查询",
+                                text = "① 登录和风开发者控制台 (console.qweather.com)\n" +
+                                        "② 进入【项目管理】创建或选择项目，获取 API Host 与 Project ID\n" +
+                                        "③ 新建凭据（推荐 Ed25519 签名），获取 Key ID 并复制私钥\n" +
+                                        "④ 凭据详情中勾选【控制台权限】下的【请求量统计】以启用查询",
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.7f),
-                                lineHeight = 16.sp
+                                lineHeight = 17.sp
                             )
                         }
                     }
@@ -415,20 +470,22 @@ fun QWeatherConfigDialog(
                                 }
                             },
                             enabled = !isVerifying,
+                            shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.25f)),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                         ) {
-                            Text("测试连接", fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f))
+                            Text("测试连接", fontSize = 12.5.sp, color = Color.White.copy(alpha = 0.9f))
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedButton(
                                 onClick = onDismiss,
                                 enabled = !isVerifying,
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                             ) {
-                                Text("取消", color = Color.White.copy(alpha = 0.85f))
+                                Text("取消", color = Color.White.copy(alpha = 0.85f), fontSize = 12.5.sp)
                             }
 
                             Spacer(modifier = Modifier.width(10.dp))
@@ -465,8 +522,9 @@ fun QWeatherConfigDialog(
                                     }
                                 },
                                 enabled = !isVerifying,
+                                shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF3B82F6),
+                                    containerColor = Color(0xFF2563EB),
                                     contentColor = Color.White
                                 )
                             ) {
@@ -479,7 +537,7 @@ fun QWeatherConfigDialog(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("验证中...", fontSize = 13.sp, maxLines = 1)
                                 } else {
-                                    Text("保存", fontSize = 13.5.sp, maxLines = 1)
+                                    Text("保存配置", fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                                 }
                             }
                         }
@@ -501,22 +559,13 @@ fun QWeatherConfigDialog(
                     ) {
                         Button(
                             onClick = onDismiss,
+                            shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF3B82F6),
+                                containerColor = Color(0xFF2563EB),
                                 contentColor = Color.White
                             )
                         ) {
-                            if (isVerifying) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("验证中...", fontSize = 13.sp, maxLines = 1)
-                            } else {
-                                Text("保存", fontSize = 13.5.sp, maxLines = 1)
-                            }
+                            Text("关闭", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -541,9 +590,9 @@ fun QWeatherStatsCard(
     onRefresh: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = Color(0x1AFFFFFF),
-        border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.12f)),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0x12FFFFFF),
+        border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -559,13 +608,14 @@ fun QWeatherStatsCard(
             ) {
                 Column {
                     Text(
-                        text = "控制台请求量统计",
+                        text = "控制台 API 用量分析",
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
+                    Spacer(modifier = Modifier.height(1.dp))
                     Text(
-                        text = "基于 /metrics/v1/stats (数据延迟约 1 小时)",
+                        text = "官方 /metrics/v1/stats 数据 (延迟约 1 小时)",
                         fontSize = 10.5.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
@@ -574,6 +624,7 @@ fun QWeatherStatsCard(
                 OutlinedButton(
                     onClick = onRefresh,
                     enabled = !isFetching,
+                    shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     border = BorderStroke(0.6.dp, Color(0xFF60A5FA).copy(alpha = 0.6f)),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF93C5FD)),
@@ -595,35 +646,36 @@ fun QWeatherStatsCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             when {
                 // 1. 权限未开通警告
                 statsSummary?.isPrivilegeDenied == true -> {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = Color(0xFFF59E0B).copy(alpha = 0.15f),
                         border = BorderStroke(0.6.dp, Color(0xFFF59E0B).copy(alpha = 0.6f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Text(
                                 text = "⚠️ 未开启控制台 API 请求量权限",
                                 color = Color(0xFFFCD34D),
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.SemiBold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "和风天气控制台需在【项目管理】-> 点击当前凭据 -> 勾选【控制台权限】中的【请求量统计】。\n提示：若刚开启权限，控制台可能需要 1~2 分钟生效，请点击下方按钮重新查询。",
                                 color = Color.White.copy(alpha = 0.8f),
                                 fontSize = 11.sp,
-                                lineHeight = 15.sp
+                                lineHeight = 16.sp
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             OutlinedButton(
                                 onClick = onRefresh,
                                 enabled = !isFetching,
+                                shape = RoundedCornerShape(6.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                 border = BorderStroke(0.6.dp, Color(0xFFFCD34D).copy(alpha = 0.8f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFCD34D)),
@@ -640,12 +692,27 @@ fun QWeatherStatsCard(
                 // 2. 数据获取成功并展示
                 statsSummary != null -> {
                     if (statsSummary.formattedAsOf.isNotBlank()) {
-                        Text(
-                            text = "数据截止时间: ${statsSummary.formattedAsOf}",
-                            fontSize = 11.sp,
-                            color = Color(0xFF93C5FD).copy(alpha = 0.9f)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(RoundedCornerShape(2.5.dp))
+                                    .background(Color(0xFF34D399))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "统计截止时间: ${statsSummary.formattedAsOf}",
+                                fontSize = 10.5.sp,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
                     }
 
                     // 3 栏指标数字卡片
@@ -663,7 +730,7 @@ fun QWeatherStatsCard(
                         QWeatherStatMetricBox(
                             title = "成功调用",
                             value = statsSummary.successCount.toString(),
-                            subText = "2xx 响应",
+                            subText = String.format(java.util.Locale.US, "成功率 %.1f%%", statsSummary.successRate),
                             color = Color(0xFF34D399),
                             modifier = Modifier.weight(1f)
                         )
@@ -676,31 +743,28 @@ fun QWeatherStatsCard(
                         )
                     }
 
-                    // 24 小时请求量趋势微图
+                    // 24 小时用量与成功趋势图
                     if (statsSummary.hourlyTotals.isNotEmpty() && statsSummary.totalCount > 0) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        QWeather24hTrendBar(
-                            hourlyTotals = statsSummary.hourlyTotals,
-                            hourlyErrors = statsSummary.hourlyErrors
-                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        QWeather24hTrendCard(statsSummary = statsSummary)
                     }
 
                     // 成功率条
                     if (statsSummary.totalCount > 0) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "请求成功率",
+                                text = "请求整体成功率",
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.7f)
                             )
                             Text(
                                 text = String.format(java.util.Locale.US, "%.2f%%", statsSummary.successRate),
-                                fontSize = 11.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (statsSummary.successRate >= 95f) Color(0xFF34D399) else Color(0xFFFBBF24)
                             )
@@ -719,14 +783,14 @@ fun QWeatherStatsCard(
 
                     // 各接口调用细分分类列表
                     if (statsSummary.items.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "24 小时各 API 分类请求统计：",
+                            text = "24 小时各 API 分类请求分布：",
                             fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.85f)
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White.copy(alpha = 0.9f)
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         statsSummary.items.forEach { item ->
                             QWeatherStatItemRow(
@@ -770,72 +834,147 @@ fun QWeatherStatsCard(
 }
 
 /**
- * 24 小时逐小时请求量趋势微型柱状图组件
+ * 24 小时逐小时请求量堆叠趋势柱状图卡片组件
  *
- * @param hourlyTotals 24 小时全接口总调用量列表
- * @param hourlyErrors 24 小时全接口总错误量列表
+ * 合并总用量与成功/失败分布，采用堆叠柱状图呈现：绿柱在下表示成功请求，红柱在上表示失败请求。
+ * 底部刻度精确换算为北京时间 (UTC+8) 整点。
+ *
+ * @param statsSummary 请求量统计汇总实体 [QWeatherStatsSummary]
  */
 @Composable
-fun QWeather24hTrendBar(
-    hourlyTotals: List<Long>,
-    hourlyErrors: List<Long>
+fun QWeather24hTrendCard(
+    statsSummary: QWeatherStatsSummary
 ) {
-    val maxHourly = hourlyTotals.maxOrNull()?.coerceAtLeast(1L) ?: 1L
+    val maxHourly = statsSummary.hourlyTotals.maxOrNull()?.coerceAtLeast(1L) ?: 1L
+    val hourLabels = remember(statsSummary.asOfRaw) { statsSummary.calculateBeijingHourLabels() }
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
         color = Color(0x14FFFFFF),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            // 顶部标题、图例与峰值信息
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("24小时每小时用量趋势", fontSize = 10.5.sp, color = Color.White.copy(alpha = 0.6f))
-                Text("峰值: $maxHourly 次/h", fontSize = 10.sp, color = Color(0xFF60A5FA))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "24小时用量趋势",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // 图例：绿柱成功，红柱失败
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(RoundedCornerShape(1.5.dp))
+                                .background(Color(0xFF34D399))
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("成功", fontSize = 9.5.sp, color = Color.White.copy(alpha = 0.6f))
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(RoundedCornerShape(1.5.dp))
+                                .background(Color(0xFFF87171))
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("失败", fontSize = 9.5.sp, color = Color.White.copy(alpha = 0.6f))
+                    }
+                }
+
+                Text(
+                    text = "峰值: $maxHourly 次/h",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF60A5FA)
+                )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
+            // 24 小时堆叠柱状图（红柱在上，绿柱在下）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(28.dp),
+                    .height(32.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
                 for (h in 0 until 24) {
-                    val count = hourlyTotals.getOrElse(h) { 0L }
-                    val err = hourlyErrors.getOrElse(h) { 0L }
-                    val barRatio = if (count > 0L) (count.toFloat() / maxHourly.toFloat()).coerceIn(0.12f, 1f) else 0.04f
-                    val hasError = err > 0L
-                    val barHeight = (28f * barRatio).dp
+                    val total = statsSummary.hourlyTotals.getOrElse(h) { 0L }
+                    val success = statsSummary.hourlySuccess.getOrElse(h) { 0L }
+                    val error = statsSummary.hourlyErrors.getOrElse(h) { 0L }
 
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(barHeight)
-                            .clip(RoundedCornerShape(topStart = 1.5.dp, topEnd = 1.5.dp))
-                            .background(
-                                if (hasError) Color(0xFFF87171)
-                                else if (count > 0L) Color(0xFF60A5FA)
-                                else Color.White.copy(alpha = 0.08f)
-                            )
-                    )
+                    if (total <= 0L) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(1.5.dp)
+                                .clip(RoundedCornerShape(1.dp))
+                                .background(Color.White.copy(alpha = 0.08f))
+                        )
+                    } else {
+                        val barRatio = (total.toFloat() / maxHourly.toFloat()).coerceIn(0.12f, 1f)
+                        val totalHeight = (32f * barRatio).dp
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(totalHeight)
+                                .clip(RoundedCornerShape(topStart = 1.5.dp, topEnd = 1.5.dp))
+                        ) {
+                            // 1. 红柱在上方（失败请求）
+                            if (error > 0L) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(error.toFloat())
+                                        .background(Color(0xFFF87171))
+                                )
+                            }
+                            // 2. 绿柱在下方（成功请求）
+                            if (success > 0L || error == 0L) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(success.coerceAtLeast(1L).toFloat())
+                                        .background(Color(0xFF34D399))
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
+            // 北京时间刻度轴
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("-24h", fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.35f))
-                Text("-12h", fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.35f))
-                Text("最新(asOf)", fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.35f))
+                val t0 = hourLabels.getOrElse(0) { "00:00" }
+                val t6 = hourLabels.getOrElse(6) { "06:00" }
+                val t12 = hourLabels.getOrElse(12) { "12:00" }
+                val t18 = hourLabels.getOrElse(18) { "18:00" }
+                val t23 = hourLabels.getOrElse(23) { "23:00" }
+
+                Text(t0, fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.45f))
+                Text(t6, fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.45f))
+                Text(t12, fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.45f))
+                Text(t18, fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.45f))
+                Text("$t23(最新)", fontSize = 8.5.sp, color = Color(0xFF93C5FD).copy(alpha = 0.8f))
             }
         }
     }
