@@ -442,7 +442,8 @@ class WeatherRepository(
      * 执行自动定位并加载定位所在城市天气
      *
      * 遵循当前定位设置展示模式（地标/街道 或 区县），优先尝试设备原生高精度 GPS/基站网络实时定位与逆地理编码匹配。
-     * 当系统原生 Geocoder 逆地理服务不可用时，依托内置全国城市坐标库精确就近匹配，杜绝经纬度丢失与粗糙 IP 漂移。
+     * 当系统原生 Geocoder 逆地理服务不可用时，依托内置全国城市坐标库精确就近匹配，杜绝经纬度丢失与粗糙 IP 漂移；
+     * 若在极端无信号环境下未获取到新定位，优先保护复用已有真实历史定位城市，杜绝外网 IP 漂移篡改。
      *
      * @param forceRefresh 是否强制触发实时定位更新（为 true 时禁用旧缓存直接向硬件请求最新定位）
      * @return 包含聚合天气数据 [WeatherData] 的结果 [Result]
@@ -450,8 +451,9 @@ class WeatherRepository(
     suspend fun autoLocateAndFetchWeather(forceRefresh: Boolean = true): Result<WeatherData> = withContext(Dispatchers.IO) {
         val currentSource = getActiveDataSource()
         val displayMode = getLocationDisplayMode()
+        val existingAutoCity = getSavedCities().firstOrNull { it.isAutoLocated }
 
-        // 1. 尝试使用设备 GPS / 网络实时高精度定位
+        // 1. 优先尝试使用设备 GPS / 网络实时高精度定位与系统最新已知位置
         var locatedCity: CityInfo? = null
         if (locationManager.hasLocationPermission()) {
             val location = locationManager.getCurrentLocation(forceRefresh = forceRefresh)
@@ -474,14 +476,19 @@ class WeatherRepository(
             }
         }
 
-        // 2. 仅在完全无法获取设备硬件 GPS/网络定位时，才调用数据源的外网 IP 兜底定位
+        // 2. 硬件定位获取失败时的防漂移保护：
+        // 若已有真实定位城市记录，优先保留已有真实城市；仅在冷启动且完全无历史记录时才允许外网 IP 首次推荐
         if (locatedCity == null) {
-            val ipLocateResult = currentSource.autoLocate()
-            locatedCity = ipLocateResult.getOrNull()
+            if (existingAutoCity != null && (existingAutoCity.latitude != null || existingAutoCity.name.isNotEmpty())) {
+                locatedCity = existingAutoCity
+            } else {
+                val ipLocateResult = currentSource.autoLocate()
+                locatedCity = ipLocateResult.getOrNull()
+            }
         }
 
         // 3. 更新已保存城市列表中的定位城市
-        val targetCity = locatedCity ?: getSavedCities().firstOrNull { it.isAutoLocated } ?: getSavedCities().firstOrNull() ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true)
+        val targetCity = locatedCity ?: existingAutoCity ?: getSavedCities().firstOrNull() ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true)
         updateAutoLocatedCity(targetCity)
 
         // 4. 获取目标城市的天气数据并回写可靠气象站点编码

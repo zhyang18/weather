@@ -219,7 +219,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
             locateResult.onSuccess { data ->
                 val updatedList = repository.getSavedCities()
+                val updatedAutoCity = updatedList.firstOrNull { it.isAutoLocated } ?: data.city
                 val cache = _uiState.value.weatherCache.toMutableMap()
+                cache[updatedAutoCity.getCacheKey()] = data
+                cache[updatedAutoCity.code.ifEmpty { updatedAutoCity.name }] = data
+                cache[updatedAutoCity.name] = data
                 cache[data.city.getCacheKey()] = data
                 cache[data.city.code.ifEmpty { data.city.name }] = data
                 cache[data.city.name] = data
@@ -286,7 +290,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
                 locateResult.onSuccess { data ->
                     val updatedList = repository.getSavedCities()
+                    val updatedAutoCity = updatedList.firstOrNull { it.isAutoLocated } ?: data.city
                     val cache = _uiState.value.weatherCache.toMutableMap()
+                    cache[updatedAutoCity.getCacheKey()] = data
+                    cache[updatedAutoCity.code.ifEmpty { updatedAutoCity.name }] = data
+                    cache[updatedAutoCity.name] = data
                     cache[data.city.getCacheKey()] = data
                     cache[data.city.code.ifEmpty { data.city.name }] = data
                     cache[data.city.name] = data
