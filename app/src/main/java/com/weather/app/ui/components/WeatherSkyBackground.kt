@@ -177,11 +177,11 @@ fun WeatherSkyBackground(
         label = "slowProgress"
     )
 
-    // 4. 大气云海动态漂移专用驱动（28.0s 舒缓平稳流动，呈现宁静大气的真实天际流淌）
+    // 4. 大气云海动态漂移专用驱动（30.0s 周期大气流动）
     val cloudProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(28000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(animation = tween(30000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "cloudProgress"
     )
 
@@ -366,9 +366,8 @@ fun WeatherSkyBackground(
                 Brush.verticalGradient(listOf(animatedTop, animatedMid, animatedBottom))
             )
     ) {
-        // 1. 真实摄影级自然云海与天际底图 (全屏无缝平滑沉浸融合，无任何横向截断与分层色块)
+        // 1. 真实摄影级自然云海与天际底图 (全屏平滑自适应，舒缓大气呼吸流淌，0 重组)
         if (skyTextureRes != null) {
-            // Layer 1: 底层主云海 (全屏平滑自适应，舒缓宏大天际漂移，0 重组)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
@@ -378,41 +377,18 @@ fun WeatherSkyBackground(
                     .fillMaxSize()
                     .graphicsLayer {
                         val cloudProgress = cloudProgressState.value
-                        val baseDriftX = sin(cloudProgress * 2f * PI.toFloat()) * 45f
+                        val baseDriftX = sin(cloudProgress * 2f * PI.toFloat()) * 450f
                         val baseDriftY = cos(cloudProgress * 2f * PI.toFloat()) * 12f
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
                         val entranceZoom = 1.0f + (1f - entranceProgress) * 0.30f
                         val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
+
                         translationX = baseDriftX - offset * 60f
                         translationY = baseDriftY
-                        scaleX = 1.18f * entranceZoom
-                        scaleY = 1.18f * entranceZoom
+                        scaleX = 1.95f * entranceZoom
+                        scaleY = 1.95f * entranceZoom
                         alpha = baseCloudAlpha * entranceAlpha
-                    }
-            )
-
-            // Layer 2: 镜像高空轻透流云 (极轻微弱视差缓动)
-            Image(
-                painter = painterResource(id = skyTextureRes),
-                contentDescription = "深景视差流云",
-                contentScale = ContentScale.Crop,
-                colorFilter = cloudColorFilter,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val cloudProgress = cloudProgressState.value
-                        val fastDriftX = sin((cloudProgress + 0.35f) * 2f * PI.toFloat()) * 65f
-                        val fastDriftY = sin((cloudProgress + 0.60f) * 2f * PI.toFloat()) * 15f
-                        val offset = parallaxOffsetProvider()
-                        val entranceProgress = entranceAnim.value
-                        val layerZoom = 1.0f + (1f - entranceProgress) * 0.30f
-                        val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
-                        translationX = fastDriftX - offset * 80f
-                        translationY = fastDriftY
-                        scaleX = -1.20f * layerZoom
-                        scaleY = 1.20f * layerZoom
-                        alpha = baseCloudAlpha * 0.16f * entranceAlpha
                     }
             )
         }

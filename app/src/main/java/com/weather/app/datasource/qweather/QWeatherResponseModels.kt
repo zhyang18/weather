@@ -473,10 +473,14 @@ data class QWeatherHourlyApiStat(
  * @property count 24 小时总调用次数
  * @property success 24 小时成功调用次数
  * @property failure 24 小时失败调用次数
- * @property errorRate 错误率百分比 (0.0 ~ 100.0)
+ * @property errorRate 24 小时错误率百分比 (0.0 ~ 100.0)
  * @property hourlySuccess 24 小时逐小时成功量数组
  * @property hourlyFailure 24 小时逐小时错误量数组
  * @property time 统计时间点或时间段 (可选)
+ * @property todayCount 当日 00:00 起的今日总调用次数
+ * @property todaySuccess 当日 00:00 起的今日成功调用次数
+ * @property todayFailure 当日 00:00 起的今日失败调用次数
+ * @property todayErrorRate 当日 00:00 起的今日错误率百分比 (0.0 ~ 100.0)
  */
 data class QWeatherStatItem(
     @SerializedName("api") val api: String? = null,
@@ -486,7 +490,11 @@ data class QWeatherStatItem(
     @SerializedName("errorRate") val errorRate: Float? = null,
     val hourlySuccess: List<Long> = emptyList(),
     val hourlyFailure: List<Long> = emptyList(),
-    @SerializedName("time") val time: String? = null
+    @SerializedName("time") val time: String? = null,
+    @SerializedName("todayCount") val todayCount: Long? = null,
+    @SerializedName("todaySuccess") val todaySuccess: Long? = null,
+    @SerializedName("todayFailure") val todayFailure: Long? = null,
+    @SerializedName("todayErrorRate") val todayErrorRate: Float? = null
 ) {
     /**
      * 获取友好的 API 接口中文名称
@@ -503,19 +511,45 @@ data class QWeatherStatItem(
             rawApi == "生活指数" || rawApi.contains("indices", ignoreCase = true) -> "生活指数"
             rawApi == "分钟降水" || rawApi.contains("minutely", ignoreCase = true) -> "分钟降水"
             rawApi == "天文气象" || rawApi.contains("solar", ignoreCase = true) || rawApi.contains("sun", ignoreCase = true) || rawApi.contains("moon", ignoreCase = true) || rawApi.contains("astronomy", ignoreCase = true) -> "天文气象"
+            rawApi.contains("console", ignoreCase = true) || rawApi.contains("metrics", ignoreCase = true) -> "控制台监控 (Console)"
+            rawApi.contains("finance", ignoreCase = true) -> "账单财务 (Finance)"
             else -> rawApi
         }
     }
 
     /**
-     * 获取格式化的错误率百分比字符串
+     * 获取精炼简短的接口中文名称（去除英文括号后缀，适合紧凑排版）
      *
-     * @return 格式化后的错误率百分比（如 "19.32%" 或 "0.00%"）
+     * @return 精简后的接口中文名称（例如 "控制台监控"、"城市检索"）
+     */
+    fun getShortDisplayName(): String {
+        val name = getDisplayName()
+        return name.substringBefore(" (").trim()
+    }
+
+    /**
+     * 获取格式化的 24 小时错误率百分比字符串
+     *
+     * @return 格式化后的 24 小时错误率百分比（如 "19.32%" 或 "0.00%"）
      */
     fun getFormattedErrorRate(): String {
         val rate = errorRate ?: run {
             val total = count ?: 0L
             val err = failure ?: 0L
+            if (total > 0L) (err.toFloat() / total.toFloat()) * 100f else 0f
+        }
+        return String.format(java.util.Locale.US, "%.2f%%", rate)
+    }
+
+    /**
+     * 获取格式化的当日 (00:00起) 错误率百分比字符串
+     *
+     * @return 格式化后的当日错误率百分比（如 "0.00%"）
+     */
+    fun getFormattedTodayErrorRate(): String {
+        val rate = todayErrorRate ?: run {
+            val total = todayCount ?: 0L
+            val err = todayFailure ?: 0L
             if (total > 0L) (err.toFloat() / total.toFloat()) * 100f else 0f
         }
         return String.format(java.util.Locale.US, "%.2f%%", rate)
@@ -529,16 +563,22 @@ data class QWeatherStatItem(
  *
  * @property asOfRaw 原始截止统计时间字符串
  * @property formattedAsOf 格式化后的本地显示时间
- * @property totalCount 统计周期内总请求次数
- * @property successCount 成功调用总次数
- * @property failureCount 失败调用总次数
- * @property successRate 成功率百分比（0.0 ~ 100.0）
- * @property errorRate 错误率百分比（0.0 ~ 100.0）
+ * @property totalCount 统计周期内 (24小时) 总请求次数
+ * @property successCount 24 小时成功调用总次数
+ * @property failureCount 24 小时失败调用总次数
+ * @property successRate 24 小时成功率百分比（0.0 ~ 100.0）
+ * @property errorRate 24 小时错误率百分比（0.0 ~ 100.0）
  * @property hourlyTotals 24 小时每小时全接口总调用量数组
  * @property hourlySuccess 24 小时每小时全接口成功调用量数组
  * @property hourlyErrors 24 小时每小时全接口总错误量数组
  * @property items 各接口细分统计列表
  * @property isPrivilegeDenied 是否因为未在控制台开通控制台 API 权限而受限
+ * @property todayTotalCount 当日 (00:00起) 总请求次数
+ * @property todaySuccessCount 当日 (00:00起) 成功调用总次数
+ * @property todayFailureCount 当日 (00:00起) 失败调用总次数
+ * @property todaySuccessRate 当日 (00:00起) 成功率百分比（0.0 ~ 100.0）
+ * @property todayErrorRate 当日 (00:00起) 错误率百分比（0.0 ~ 100.0）
+ * @property todayHoursCovered 当日 (00:00起) 已覆盖统计的小时数（例如 16 小时）
  */
 data class QWeatherStatsSummary(
     val asOfRaw: String = "",
@@ -552,15 +592,30 @@ data class QWeatherStatsSummary(
     val hourlySuccess: List<Long> = emptyList(),
     val hourlyErrors: List<Long> = emptyList(),
     val items: List<QWeatherStatItem> = emptyList(),
-    val isPrivilegeDenied: Boolean = false
+    val isPrivilegeDenied: Boolean = false,
+    val todayTotalCount: Long = 0L,
+    val todaySuccessCount: Long = 0L,
+    val todayFailureCount: Long = 0L,
+    val todaySuccessRate: Float = 100f,
+    val todayErrorRate: Float = 0f,
+    val todayHoursCovered: Int = 0
 ) {
     /**
-     * 获取格式化的整体错误率百分比字符串
+     * 获取格式化的 24 小时整体错误率百分比字符串
      *
-     * @return 格式化后的整体错误率百分比（如 "19.32%"）
+     * @return 格式化后的 24 小时整体错误率百分比（如 "19.32%"）
      */
     fun getFormattedErrorRate(): String {
         return String.format(java.util.Locale.US, "%.2f%%", errorRate)
+    }
+
+    /**
+     * 获取格式化的当日 (00:00起) 整体错误率百分比字符串
+     *
+     * @return 格式化后的当日整体错误率百分比（如 "0.00%"）
+     */
+    fun getFormattedTodayErrorRate(): String {
+        return String.format(java.util.Locale.US, "%.2f%%", todayErrorRate)
     }
 
     /**

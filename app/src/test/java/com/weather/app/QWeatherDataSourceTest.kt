@@ -533,6 +533,52 @@ class QWeatherDataSourceTest {
         assertEquals(65L, summary.failureCount)
         assertEquals(24, summary.hourlyTotals.size)
         assertEquals(24, summary.hourlyErrors.size)
+
+        // 验证当日 00:00 起的今日统计自动聚合 (asOf 为 UTC 03:59，即北京时间 11:59，共覆盖今日 12 小时)
+        assertEquals(12, summary.todayHoursCovered)
+        assertEquals(711L, summary.todayTotalCount)
+        assertEquals(656L, summary.todaySuccessCount)
+        assertEquals(55L, summary.todayFailureCount)
+        val expectedTodaySuccessRate = (656f / 711f) * 100f
+        assertEquals(expectedTodaySuccessRate, summary.todaySuccessRate, 0.01f)
+        val expectedTodayErrorRate = (55f / 711f) * 100f
+        assertEquals(expectedTodayErrorRate, summary.todayErrorRate, 0.01f)
+
+        // 验证分类项今日统计
+        assertEquals(598L, weatherItem.todayCount)
+        assertEquals(598L, weatherItem.todaySuccess)
+        assertEquals(0L, weatherItem.todayFailure)
+        assertEquals(0.00f, weatherItem.todayErrorRate ?: 0f, 0.01f)
+
+        assertEquals(113L, alertItem.todayCount)
+        assertEquals(58L, alertItem.todaySuccess)
+        assertEquals(55L, alertItem.todayFailure)
+    }
+
+    /**
+     * 测试跨天边界场景（如凌晨刚过 00:00 与晚上 23:00）下今日统计索引计算的准确性
+     */
+    @Test
+    fun testTodayStatsCalculationWithMidnightBoundary() {
+        // 场景 1：北京时间凌晨 01:30 (UTC 前一天 17:30)，今日应仅包含 2 个小时 (00:00 与 01:00)
+        val asOfEarly = "2026-09-01T17:30:00Z" // UTC 17:30 -> GMT+8 09-02 01:30
+        val indicesEarly = com.weather.app.datasource.qweather.QWeatherStatsFetcher.calculateTodayHourIndices(asOfEarly)
+        assertEquals(2, indicesEarly.size)
+        assertEquals(listOf(22, 23), indicesEarly)
+
+        // 场景 2：北京时间晚上 23:00 (UTC 15:00)，今日应完整覆盖 24 个小时 (00:00 ~ 23:00)
+        val asOfLate = "2026-09-01T15:00:00Z" // UTC 15:00 -> GMT+8 09-01 23:00
+        val indicesLate = com.weather.app.datasource.qweather.QWeatherStatsFetcher.calculateTodayHourIndices(asOfLate)
+        assertEquals(24, indicesLate.size)
+        assertEquals(0, indicesLate.first())
+        assertEquals(23, indicesLate.last())
+
+        // 场景 3：直接带 GMT+8 时区偏移格式时间字符串
+        val asOfWithOffset = "2026-09-01T15:00:00+08:00"
+        val indicesWithOffset = com.weather.app.datasource.qweather.QWeatherStatsFetcher.calculateTodayHourIndices(asOfWithOffset)
+        assertEquals(16, indicesWithOffset.size) // 00:00 至 15:00 共 16 个小时 (索引 8..23)
+        assertEquals(8, indicesWithOffset.first())
+        assertEquals(23, indicesWithOffset.last())
     }
 
     /**

@@ -238,6 +238,9 @@ object QWeatherStatsFetcher {
             val hourlySuccess = MutableList(24) { 0L }
             val hourlyErrors = MutableList(24) { 0L }
 
+            val todayIndices = calculateTodayHourIndices(asOfRaw)
+            val todayHoursCovered = todayIndices.size
+
             var totalCount = 0L
             var successCount = 0L
             var failureCount = 0L
@@ -247,6 +250,11 @@ object QWeatherStatsFetcher {
                 val apiFailure = acc.errorHours.sum()
                 val apiTotal = apiSuccess + apiFailure
                 val apiErrorRate = if (apiTotal > 0L) (apiFailure.toFloat() / apiTotal.toFloat()) * 100f else 0f
+
+                val itemTodaySuccess = todayIndices.sumOf { acc.successHours.getOrElse(it) { 0L } }
+                val itemTodayFailure = todayIndices.sumOf { acc.errorHours.getOrElse(it) { 0L } }
+                val itemTodayTotal = itemTodaySuccess + itemTodayFailure
+                val itemTodayErrorRate = if (itemTodayTotal > 0L) (itemTodayFailure.toFloat() / itemTodayTotal.toFloat()) * 100f else 0f
 
                 totalCount += apiTotal
                 successCount += apiSuccess
@@ -268,16 +276,34 @@ object QWeatherStatsFetcher {
                         failure = apiFailure,
                         errorRate = apiErrorRate,
                         hourlySuccess = acc.successHours,
-                        hourlyFailure = acc.errorHours
+                        hourlyFailure = acc.errorHours,
+                        todayCount = itemTodayTotal,
+                        todaySuccess = itemTodaySuccess,
+                        todayFailure = itemTodayFailure,
+                        todayErrorRate = itemTodayErrorRate
                     )
                 )
             }
 
-            // 按调用量从高到低排序
+            // 按 24h 调用量从高到低排序
             statItems.sortByDescending { it.count ?: 0L }
 
             val finalErrorRate = if (totalCount > 0L) (failureCount.toFloat() / totalCount.toFloat()) * 100f else 0f
             val finalSuccessRate = if (totalCount > 0L) (successCount.toFloat() / totalCount.toFloat()) * 100f else 100f
+
+            // 计算全局今日 (00:00起) 统计
+            var todayTotalCount = 0L
+            var todaySuccessCount = 0L
+            var todayFailureCount = 0L
+
+            for (h in todayIndices) {
+                todayTotalCount += hourlyTotals.getOrElse(h) { 0L }
+                todaySuccessCount += hourlySuccess.getOrElse(h) { 0L }
+                todayFailureCount += hourlyErrors.getOrElse(h) { 0L }
+            }
+
+            val todaySuccessRate = if (todayTotalCount > 0L) (todaySuccessCount.toFloat() / todayTotalCount.toFloat()) * 100f else 100f
+            val todayErrorRate = if (todayTotalCount > 0L) (todayFailureCount.toFloat() / todayTotalCount.toFloat()) * 100f else 0f
 
             return QWeatherStatsSummary(
                 asOfRaw = asOfRaw,
@@ -291,7 +317,13 @@ object QWeatherStatsFetcher {
                 hourlySuccess = hourlySuccess,
                 hourlyErrors = hourlyErrors,
                 items = statItems,
-                isPrivilegeDenied = false
+                isPrivilegeDenied = false,
+                todayTotalCount = todayTotalCount,
+                todaySuccessCount = todaySuccessCount,
+                todayFailureCount = todayFailureCount,
+                todaySuccessRate = todaySuccessRate,
+                todayErrorRate = todayErrorRate,
+                todayHoursCovered = todayHoursCovered
             )
         }
 
@@ -362,7 +394,11 @@ object QWeatherStatsFetcher {
                         success = success,
                         failure = failure,
                         errorRate = calculatedErrorRate,
-                        time = time
+                        time = time,
+                        todayCount = count,
+                        todaySuccess = success,
+                        todayFailure = failure,
+                        todayErrorRate = calculatedErrorRate
                     )
                 )
             }
@@ -429,8 +465,66 @@ object QWeatherStatsFetcher {
             successRate = finalSuccessRate,
             errorRate = finalErrorRate,
             items = statItems,
-            isPrivilegeDenied = false
+            isPrivilegeDenied = false,
+            todayTotalCount = totalCount,
+            todaySuccessCount = successCount,
+            todayFailureCount = failureCount,
+            todaySuccessRate = finalSuccessRate,
+            todayErrorRate = finalErrorRate,
+            todayHoursCovered = 24
         )
+    }
+
+    /**
+     * 计算 24 小时逐小时数组中属于当日（北京时间 00:00 至今）的小时索引列表
+     *
+     * 以北京时间当天 00:00:00 为起始节点，筛选 24 个小时中处于当天的索引。
+     *
+     * @param asOfRaw 原始数据截止时间（ISO 8601 格式字符串）
+     * @return 属于当天的小时索引列表（索引范围 0..23）
+     */
+    fun calculateTodayHourIndices(asOfRaw: String): List<Int> {
+        val beijingCalendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+8"))
+        val cleanStr = asOfRaw.replace("Z", "+0000").replace("+00:00", "+0000")
+        if (cleanStr.isNotBlank()) {
+            val formats = listOf(
+                "yyyy-MM-dd'T'HH:mm:ssZ",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+                "yyyy-MM-dd'T'HH:mmZ",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd HH:mm:ss"
+            )
+            for (fmt in formats) {
+                try {
+                    val sdf = java.text.SimpleDateFormat(fmt, java.util.Locale.US)
+                    if (fmt.contains("Z")) {
+                        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    }
+                    val date = sdf.parse(cleanStr)
+                    if (date != null) {
+                        beijingCalendar.time = date
+                        beijingCalendar.timeZone = java.util.TimeZone.getTimeZone("GMT+8")
+                        break
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        val endHourMillis = beijingCalendar.timeInMillis
+        val todayStartCalendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+8")).apply {
+            timeInMillis = endHourMillis
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val todayStartMillis = todayStartCalendar.timeInMillis
+
+        return (0 until 24).filter { h ->
+            val hourMillis = endHourMillis - ((23 - h) * 3600 * 1000L)
+            hourMillis >= todayStartMillis
+        }
     }
 
     /**

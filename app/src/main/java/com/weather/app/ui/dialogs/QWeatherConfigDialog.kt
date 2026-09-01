@@ -692,27 +692,88 @@ fun QWeatherStatsCard(
                         Spacer(modifier = Modifier.height(10.dp))
                     }
 
-                    // 3 栏指标数字卡片
+                    // 今日 (00:00起) 用量指标卡片
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "今日用量 (00:00起)",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF93C5FD)
+                        )
+                        if (statsSummary.todayHoursCovered > 0) {
+                            Text(
+                                text = "已统计 ${statsSummary.todayHoursCovered} 小时",
+                                fontSize = 10.sp,
+                                color = Color.White.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         QWeatherStatMetricBox(
-                            title = "总请求量",
-                            value = statsSummary.totalCount.toString(),
-                            subText = "最近 24 小时",
+                            title = "今日请求量",
+                            value = statsSummary.todayTotalCount.toString(),
+                            subText = "00:00 至今",
                             color = Color(0xFF60A5FA),
                             modifier = Modifier.weight(1f)
                         )
                         QWeatherStatMetricBox(
-                            title = "成功调用",
+                            title = "今日成功",
+                            value = statsSummary.todaySuccessCount.toString(),
+                            subText = String.format(java.util.Locale.US, "成功率 %.1f%%", statsSummary.todaySuccessRate),
+                            color = Color(0xFF34D399),
+                            modifier = Modifier.weight(1f)
+                        )
+                        QWeatherStatMetricBox(
+                            title = "今日错误率",
+                            value = statsSummary.getFormattedTodayErrorRate(),
+                            subText = "失败 ${statsSummary.todayFailureCount} 次",
+                            color = if (statsSummary.todayErrorRate > 0f) Color(0xFFF87171) else Color(0xFF34D399),
+                            modifier = Modifier.weight(1.1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 近 24 小时总览指标卡片
+                    Text(
+                        text = "近 24 小时总览",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        QWeatherStatMetricBox(
+                            title = "24h 请求量",
+                            value = statsSummary.totalCount.toString(),
+                            subText = "最近 24 小时",
+                            color = Color(0xFF93C5FD),
+                            modifier = Modifier.weight(1f)
+                        )
+                        QWeatherStatMetricBox(
+                            title = "24h 成功",
                             value = statsSummary.successCount.toString(),
                             subText = String.format(java.util.Locale.US, "成功率 %.1f%%", statsSummary.successRate),
                             color = Color(0xFF34D399),
                             modifier = Modifier.weight(1f)
                         )
                         QWeatherStatMetricBox(
-                            title = "错误率",
+                            title = "24h 错误率",
                             value = statsSummary.getFormattedErrorRate(),
                             subText = "失败 ${statsSummary.failureCount} 次",
                             color = if (statsSummary.errorRate > 0f) Color(0xFFF87171) else Color(0xFF34D399),
@@ -735,7 +796,7 @@ fun QWeatherStatsCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "请求整体成功率",
+                                text = "24h 请求整体成功率",
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.7f)
                             )
@@ -758,24 +819,12 @@ fun QWeatherStatsCard(
                         )
                     }
 
-                    // 各接口调用细分分类列表
+                    // 各接口调用分类竖柱图可视化区域 (一个竖柱表示一类请求)
                     if (statsSummary.items.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "24 小时各 API 分类请求分布：",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White.copy(alpha = 0.9f)
+                        QWeatherApiCategoryVerticalBarChart(
+                            statsSummary = statsSummary
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        statsSummary.items.forEach { item ->
-                            QWeatherStatItemRow(
-                                item = item,
-                                maxCount = statsSummary.totalCount.coerceAtLeast(1L)
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
                     }
                 }
 
@@ -799,7 +848,7 @@ fun QWeatherStatsCard(
                 // 4. 默认未查询占位提示
                 else -> {
                     Text(
-                        text = "点击上方【刷新】查询当前和风天气帐号的 24 小时 API 请求量分类统计。",
+                        text = "点击上方【刷新】查询当前和风天气帐号的 24 小时与今日 API 请求量分类统计。",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.55f),
                         lineHeight = 15.sp
@@ -1007,97 +1056,323 @@ fun QWeatherStatMetricBox(
 }
 
 /**
- * 细分分类接口调用统计行组件
+ * 根据接口分类名称获取专属图表主题配色
  *
- * @param item 接口分类统计数据 [QWeatherStatItem]
- * @param maxCount 最大请求量基准值（用于计算占比进度条）
+ * @param apiName 接口分类名称
+ * @param index 索引序号
+ * @return 对应的主题高亮颜色 [Color]
+ */
+fun getApiPaletteColor(apiName: String, index: Int): Color {
+    val cleanName = apiName.lowercase()
+    return when {
+        cleanName.contains("预报") || cleanName.contains("weather") -> Color(0xFF38BDF8) // 天青蓝
+        cleanName.contains("预警") || cleanName.contains("warning") || cleanName.contains("alert") -> Color(0xFFFB923C) // 琥珀橙
+        cleanName.contains("空气") || cleanName.contains("air") -> Color(0xFF34D399) // 薄荷绿
+        cleanName.contains("控制台") || cleanName.contains("console") || cleanName.contains("metrics") -> Color(0xFFA78BFA) // 紫罗兰
+        cleanName.contains("检索") || cleanName.contains("geo") || cleanName.contains("city") -> Color(0xFF2DD4BF) // 蓝绿
+        cleanName.contains("指数") || cleanName.contains("indices") -> Color(0xFFF472B6) // 玫瑰粉
+        cleanName.contains("降水") || cleanName.contains("minutely") -> Color(0xFF60A5FA) // 湖蓝
+        else -> {
+            val palette = listOf(
+                Color(0xFF38BDF8),
+                Color(0xFFFB923C),
+                Color(0xFF34D399),
+                Color(0xFFA78BFA),
+                Color(0xFFF472B6),
+                Color(0xFF2DD4BF),
+                Color(0xFF818CF8)
+            )
+            palette[index % palette.size]
+        }
+    }
+}
+
+/**
+ * 各接口分类请求量竖柱图组件（一个竖柱代表一类请求）
+ *
+ * 横向排列各 API 分类竖柱，柱高正比于该类接口的请求量，
+ * 竖柱内部采用红/绿（或主题色）堆叠呈现成功与失败比例，并在柱顶与 X 轴清晰标注调用量与接口名称。
+ *
+ * @param statsSummary 控制台用量统计数据汇总实体 [QWeatherStatsSummary]
  */
 @Composable
-fun QWeatherStatItemRow(
-    item: QWeatherStatItem,
-    maxCount: Long
+fun QWeatherApiCategoryVerticalBarChart(
+    statsSummary: QWeatherStatsSummary
 ) {
-    val count = item.count ?: 0L
-    val success = item.success ?: 0L
-    val failure = item.failure ?: 0L
-    val progress = (count.toFloat() / maxCount.toFloat()).coerceIn(0f, 1f)
-    val errorRate = item.errorRate ?: 0f
-    val percentOfTotal = if (maxCount > 0L) (count.toFloat() / maxCount.toFloat()) * 100f else 0f
+    val totalCount = statsSummary.totalCount.coerceAtLeast(1L)
+    val maxTodayCount = statsSummary.items.maxOfOrNull { (it.todayCount ?: it.count ?: 0L) }?.coerceAtLeast(1L) ?: 1L
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0x0DFFFFFF))
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0x14FFFFFF),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        // 第一行：分类名称、总次数与错误率标签
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            Text(
-                text = item.getDisplayName(),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.95f)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 顶部标题与图例
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "${count} 次",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF93C5FD)
+                    text = "各接口请求分布（竖柱图）",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.95f)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(
-                            if (errorRate > 0f) Color(0xFFEF4444).copy(alpha = 0.2f) else Color(0xFF10B981).copy(alpha = 0.15f)
-                        )
-                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                ) {
-                    Text(
-                        text = "错误率 ${item.getFormattedErrorRate()}",
-                        fontSize = 9.5.sp,
-                        color = if (errorRate > 0f) Color(0xFFFCA5A5) else Color(0xFF6EE7B7)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(RoundedCornerShape(1.5.dp))
+                            .background(Color(0xFF34D399))
                     )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("成功", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f))
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(RoundedCornerShape(1.5.dp))
+                            .background(Color(0xFFF87171))
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("失败", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 竖柱图绘制主体区 (高度 120dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(115.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                statsSummary.items.forEachIndexed { index, item ->
+                    val todayCount = item.todayCount ?: item.count ?: 0L
+                    val todaySuccess = item.todaySuccess ?: item.success ?: 0L
+                    val todayFailure = item.todayFailure ?: item.failure ?: 0L
+                    val themeColor = getApiPaletteColor(item.getDisplayName(), index)
+
+                    val ratio = (todayCount.toFloat() / maxTodayCount.toFloat()).coerceIn(0.10f, 1f)
+                    val barHeight = (88f * ratio).dp
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.Bottom
+                    ) {
+                        // 柱顶今日调用量标注
+                        Text(
+                            text = todayCount.toString(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = themeColor,
+                            maxLines = 1
+                        )
+
+                        Spacer(modifier = Modifier.height(3.dp))
+
+                        // 垂直柱条（红柱在上失败，绿/主题色在下成功）
+                        Column(
+                            modifier = Modifier
+                                .width(26.dp)
+                                .height(barHeight)
+                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                .background(Color.White.copy(alpha = 0.08f))
+                        ) {
+                            if (todayFailure > 0L) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(todayFailure.toFloat())
+                                        .background(Color(0xFFF87171))
+                                )
+                            }
+                            if (todaySuccess > 0L || todayFailure == 0L) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(todaySuccess.coerceAtLeast(1L).toFloat())
+                                        .background(if (todayFailure > 0L) Color(0xFF34D399) else themeColor)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // X 轴基准线
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.15f))
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // X 轴各接口名称与错误率标签
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Top
+            ) {
+                statsSummary.items.forEach { item ->
+                    val todayErrorRate = item.todayErrorRate ?: 0f
+                    val count = item.count ?: 0L
+                    val percent = (count.toFloat() / totalCount.toFloat()) * 100f
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        // 接口名称（提取精简中文名称）
+                        Text(
+                            text = item.getShortDisplayName().take(4),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.9f),
+                            maxLines = 1
+                        )
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        // 错误率胶囊标签
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(
+                                    if (todayErrorRate > 0f) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFF10B981).copy(alpha = 0.15f)
+                                )
+                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = item.getFormattedTodayErrorRate(),
+                                fontSize = 8.5.sp,
+                                color = if (todayErrorRate > 0f) Color(0xFFFCA5A5) else Color(0xFF6EE7B7),
+                                maxLines = 1
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        // 24h 占比
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.1f%%", percent),
+                            fontSize = 8.5.sp,
+                            color = Color.White.copy(alpha = 0.45f)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 各接口详细数据卡片（双行分层排版，彻底避免文字过长截断）
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                statsSummary.items.forEachIndexed { index, item ->
+                    val todayCount = item.todayCount ?: item.count ?: 0L
+                    val todaySuccess = item.todaySuccess ?: item.success ?: 0L
+                    val todayFailure = item.todayFailure ?: item.failure ?: 0L
+                    val todayErrorRate = item.todayErrorRate ?: 0f
+                    val count = item.count ?: 0L
+                    val percent = (count.toFloat() / totalCount.toFloat()) * 100f
+                    val themeColor = getApiPaletteColor(item.getDisplayName(), index)
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0x0EFFFFFF))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        // 第一行：彩色圆点 + 接口精简名称（左） 与 24h 总量及占比（右）
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(themeColor)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = item.getShortDisplayName(),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White.copy(alpha = 0.95f)
+                                )
+                            }
+
+                            Text(
+                                text = "24h: $count 次 (${String.format(java.util.Locale.US, "%.1f%%", percent)})",
+                                fontSize = 10.sp,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(3.dp))
+
+                        // 第二行：今日调用量及成功/失败明细（左） 与 错误率状态胶囊（右）
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "今日 $todayCount 次",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = themeColor
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "(成 $todaySuccess · 败 $todayFailure)",
+                                    fontSize = 9.5.sp,
+                                    color = Color.White.copy(alpha = 0.5f)
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(
+                                        if (todayErrorRate > 0f) Color(0xFFEF4444).copy(alpha = 0.2f) else Color(0xFF10B981).copy(alpha = 0.15f)
+                                    )
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "错误率 ${item.getFormattedTodayErrorRate()}",
+                                    fontSize = 8.5.sp,
+                                    color = if (todayErrorRate > 0f) Color(0xFFFCA5A5) else Color(0xFF6EE7B7)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(3.dp))
-
-        // 第二行：成功与失败小字对比 + 占总量比例
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "成功 $success · 失败 $failure",
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.5f)
-            )
-            Text(
-                text = String.format(java.util.Locale.US, "占比 %.1f%%", percentOfTotal),
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.5f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // 第三行：占总量的进度条
-        LinearProgressIndicator(
-            progress = progress,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-                .clip(RoundedCornerShape(1.5.dp)),
-            color = Color(0xFF60A5FA),
-            trackColor = Color.White.copy(alpha = 0.08f)
-        )
     }
 }
