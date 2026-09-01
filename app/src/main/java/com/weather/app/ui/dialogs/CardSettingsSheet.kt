@@ -42,7 +42,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -270,9 +269,11 @@ fun CardSettingsSheet(
                 .navigationBarsPadding()
                 .padding(horizontal = 18.dp, vertical = 2.dp)
         ) {
-            // 1. 弹窗头部：标题 + 快捷操作按钮
+            // 1. 弹窗头部：标题 + 全选/全反选切换开关
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -291,18 +292,26 @@ fun CardSettingsSheet(
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
-                        onClick = { onUpdateAll(CardDisplayConfig.allEnabled()) }
-                    ) {
-                        Text(
-                            text = "全部开启",
-                            fontSize = 13.sp,
-                            color = Color(0xFF64B5F6),
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // 全选/全反选切换开关
+                Switch(
+                    checked = config.isAllEnabled(),
+                    onCheckedChange = { isChecked ->
+                        if (isChecked) {
+                            onUpdateAll(CardDisplayConfig.allEnabled())
+                        } else {
+                            onUpdateAll(CardDisplayConfig.allDisabled())
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF2196F3),
+                        uncheckedThumbColor = Color.White.copy(alpha = 0.65f),
+                        uncheckedTrackColor = Color.White.copy(alpha = 0.15f),
+                        uncheckedBorderColor = Color.Transparent
+                    )
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))

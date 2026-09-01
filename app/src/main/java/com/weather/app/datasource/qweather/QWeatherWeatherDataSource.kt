@@ -1006,42 +1006,23 @@ class QWeatherWeatherDataSource(
     }
 
     /**
-     * 将 ISO 8601 时间格式化为 "HH:mm" 展示时间
+     * 将 ISO 8601 时间格式化为当地城市时间的 "HH:mm" 展示时间
      *
-     * @param isoTime ISO 时间字符串（如 "2026-08-28T15:00+08:00"）
-     * @return 格式化后的时间（如 "15:00"）
+     * @param isoTime ISO 时间字符串（如 "2026-08-28T15:00+08:00" 或 "2026-09-01T02:14Z"）
+     * @return 格式化后的本地时区时间（如 "10:14"）
      */
     private fun formatIsoToDisplayHour(isoTime: String): String {
-        return try {
-            if (isoTime.contains("T")) {
-                val timePart = isoTime.substringAfter("T").take(5)
-                timePart
-            } else {
-                isoTime.takeLast(5)
-            }
-        } catch (_: Exception) {
-            isoTime
-        }
+        return com.weather.app.util.TimeUtils.formatToLocalDisplayHour(isoTime)
     }
 
     /**
-     * 将 ISO 8601 发布时间转换为 "HH:mm" 发布时间格式
+     * 将 ISO 8601 发布时间转换为当地城市时间的 "HH:mm 发布" 格式
      *
-     * @param isoTime ISO 时间字符串
-     * @return 格式化后的发布时间（如 "14:30 发布"）
+     * @param isoTime ISO 时间字符串（如 "2026-09-01T02:14Z"）
+     * @return 格式化后的发布时间（如 "10:14 发布"）
      */
     private fun formatIsoToTime(isoTime: String): String {
-        if (isoTime.isEmpty()) return "刚刚发布"
-        return try {
-            val time = if (isoTime.contains("T")) {
-                isoTime.substringAfter("T").take(5)
-            } else {
-                isoTime.take(5)
-            }
-            "$time 发布"
-        } catch (_: Exception) {
-            "刚刚发布"
-        }
+        return com.weather.app.util.TimeUtils.formatToLocalPublishTime(isoTime, appendSuffix = true)
     }
 
     /**

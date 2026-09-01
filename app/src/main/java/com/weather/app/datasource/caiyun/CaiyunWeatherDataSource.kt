@@ -869,38 +869,23 @@ class CaiyunWeatherDataSource(
     }
 
     /**
-     * 将 ISO 格式时间转换为日期字符串 (yyyy-MM-dd)
+     * 将 ISO 格式时间转换为当地城市日期字符串 (yyyy-MM-dd)
      *
      * @param isoStr ISO 时间字符串（例如 "2026-08-28T00:00+08:00"）
-     * @return 格式化后的日期字符串
+     * @return 格式化后的本地日期字符串
      */
     private fun formatIsoToDateStr(isoStr: String): String {
-        if (isoStr.length >= 10) {
-            return isoStr.substring(0, 10)
-        }
-        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
-        return sdf.format(Date())
+        return com.weather.app.util.TimeUtils.formatToLocalDateStr(isoStr)
     }
 
     /**
-     * 将 ISO 格式时间转换为小时展示字符串 (HH:00)
+     * 将 ISO 格式时间转换为当地城市小时展示字符串 (HH:00)
      *
      * @param isoStr ISO 时间字符串
      * @return 格式化后的小时字符串（如 "16:00"）
      */
     private fun formatIsoToDisplayHour(isoStr: String): String {
-        return try {
-            if (isoStr.contains("T")) {
-                val timePart = isoStr.substringAfter("T").take(5)
-                timePart
-            } else if (isoStr.length >= 13) {
-                isoStr.substring(11, 16)
-            } else {
-                isoStr
-            }
-        } catch (_: Exception) {
-            isoStr
-        }
+        return com.weather.app.util.TimeUtils.formatToLocalDisplayHour(isoStr)
     }
 
     /**

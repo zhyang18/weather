@@ -81,6 +81,31 @@ data class CardDisplayConfig(
     }
 
     /**
+     * 判断是否所有卡片均已开启
+     *
+     * @return 当所有卡片均为开启状态时返回 true，否则返回 false
+     */
+    fun isAllEnabled(): Boolean {
+        return showWeatherAlert &&
+                showMinutelyPrecipitation &&
+                showHourlyForecast &&
+                showDailyForecast &&
+                showAirQuality &&
+                showSunriseSunset &&
+                showEarthDaylight &&
+                showMoonPhase &&
+                showFeelsLike &&
+                showWind &&
+                showHumidity &&
+                showPressure &&
+                showPrecipitation &&
+                showUvIndex &&
+                showVisibility &&
+                showLocationMap &&
+                showLifeIndex
+    }
+
+    /**
      * 拷贝并切换指定卡片的显示状态
      *
      * @param cardId 卡片唯一标识 Key

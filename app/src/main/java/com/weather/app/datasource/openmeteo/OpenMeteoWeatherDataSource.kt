@@ -864,21 +864,11 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
     /**
      * 格式化 ISO 采样时间为适合界面展示的时分格式 (HH:mm)
      *
-     * @param isoTime ISO 8601 时间（如 "2026-08-27T14:00"）
-     * @return 简短时间文本（如 "14:00"）
+     * @param isoTime ISO 8601 时间（如 "2026-08-27T14:00" 或 "2026-09-01T02:14Z"）
+     * @return 本地时区下的简短时间文本（如 "14:00"）
      */
     private fun formatIsoToDisplayHour(isoTime: String): String {
-        return try {
-            if (isoTime.contains("T")) {
-                isoTime.substringAfter("T").take(5)
-            } else if (isoTime.contains(" ")) {
-                isoTime.substringAfter(" ").take(5)
-            } else {
-                isoTime
-            }
-        } catch (_: Exception) {
-            isoTime
-        }
+        return com.weather.app.util.TimeUtils.formatToLocalDisplayHour(isoTime)
     }
 
     /**
@@ -892,10 +882,13 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
             val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
             return sdf.format(Date())
         }
-        return try {
+        val parsed = com.weather.app.util.TimeUtils.parseToDate(isoTime)
+        return if (parsed != null) {
+            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
+            sdf.timeZone = java.util.TimeZone.getDefault()
+            sdf.format(parsed)
+        } else {
             isoTime.replace("T", " ").take(16)
-        } catch (_: Exception) {
-            isoTime
         }
     }
 }
