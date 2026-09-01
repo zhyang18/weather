@@ -87,7 +87,7 @@ class SojsonWeatherDataSource : WeatherDataSource {
         return WeatherSourceInfo(
             id = "sojson",
             name = "SOJSON 天气",
-            description = "支持15日超长预报与空气质量",
+            description = "支持15日预报与空气质量",
             isDefault = false,
             isAvailable = true
         )

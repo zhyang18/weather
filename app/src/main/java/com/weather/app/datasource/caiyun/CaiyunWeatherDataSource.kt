@@ -116,7 +116,7 @@ class CaiyunWeatherDataSource(
         return WeatherSourceInfo(
             id = "caiyun",
             name = "彩云天气",
-            description = "国内高精度分钟级气象（API 凭据身份验证）",
+            description = "高精度分钟级降水预报",
             isDefault = false,
             isAvailable = true
         )

@@ -130,22 +130,7 @@ fun SourceSelectionSheet(
                                     color = if (source.isAvailable) Color.White else Color.White.copy(alpha = 0.4f)
                                 )
 
-                                if (source.isDefault) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(Color(0xFF2563EB))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = "默认",
-                                            color = Color.White,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Normal
-                                        )
-                                    }
-                                } else if (!source.isAvailable) {
+                                if (!source.isAvailable) {
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Box(
                                         modifier = Modifier
@@ -167,7 +152,9 @@ fun SourceSelectionSheet(
                             Text(
                                 text = source.description,
                                 fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.65f)
+                                color = Color.White.copy(alpha = 0.65f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
 

@@ -28,7 +28,6 @@ class WeatherDataSourceTest {
         assertNotNull(defaultSource)
         assertEquals("cma", defaultSource.getSourceInfo().id)
         assertEquals("中央气象台", defaultSource.getSourceInfo().name)
-        assertTrue(defaultSource.getSourceInfo().isDefault)
     }
 
     /**

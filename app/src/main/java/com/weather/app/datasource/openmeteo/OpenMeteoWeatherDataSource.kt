@@ -201,7 +201,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
         return WeatherSourceInfo(
             id = "open_meteo",
             name = "Open-Meteo",
-            description = "全球高精度开源气象模型（国内数据不准）",
+            description = "全球开源高精度气象模型",
             isDefault = false,
             isAvailable = true
         )

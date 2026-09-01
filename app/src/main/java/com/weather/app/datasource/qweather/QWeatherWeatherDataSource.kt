@@ -179,7 +179,7 @@ class QWeatherWeatherDataSource(
         return WeatherSourceInfo(
             id = "qweather",
             name = "和风天气",
-            description = "权威高精度气象数据源（JWT 身份认证）",
+            description = "高精度商业气象数据源",
             isDefault = false,
             isAvailable = true
         )

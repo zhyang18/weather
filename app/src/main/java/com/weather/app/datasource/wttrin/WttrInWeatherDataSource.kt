@@ -92,7 +92,7 @@ class WttrInWeatherDataSource : WeatherDataSource {
         return WeatherSourceInfo(
             id = "wttr_in",
             name = "wttr.in",
-            description = "全球终端友好开源天气服务（支持全球/国内城市及经纬度）",
+            description = "全球开源天气查询服务",
             isDefault = false,
             isAvailable = true
         )
