@@ -177,11 +177,11 @@ fun WeatherSkyBackground(
         label = "slowProgress"
     )
 
-    // 4. 大气云海动态漂移专用驱动（30.0s 周期大气流动）
+    // 4. 大气云海动态漂移专用驱动（80.0s 周期大气流动）
     val cloudProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(30000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(animation = tween(80000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "cloudProgress"
     )
 
@@ -377,7 +377,7 @@ fun WeatherSkyBackground(
                     .fillMaxSize()
                     .graphicsLayer {
                         val cloudProgress = cloudProgressState.value
-                        val baseDriftX = sin(cloudProgress * 2f * PI.toFloat()) * 450f
+                        val baseDriftX = sin(cloudProgress * 2f * PI.toFloat()) * 1000f
                         val baseDriftY = cos(cloudProgress * 2f * PI.toFloat()) * 12f
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
@@ -386,8 +386,8 @@ fun WeatherSkyBackground(
 
                         translationX = baseDriftX - offset * 60f
                         translationY = baseDriftY
-                        scaleX = 1.95f * entranceZoom
-                        scaleY = 1.95f * entranceZoom
+                        scaleX = 2.95f * entranceZoom
+                        scaleY = 2.95f * entranceZoom
                         alpha = baseCloudAlpha * entranceAlpha
                     }
             )
