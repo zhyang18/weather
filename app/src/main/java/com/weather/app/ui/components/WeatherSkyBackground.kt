@@ -177,15 +177,13 @@ fun WeatherSkyBackground(
         label = "slowProgress"
     )
 
-    // 4. 大气云海动态漂移专用驱动（18.0s 适度匀速连续流动，兼顾肉眼可见的明显移动速度与自然大气美感）
+    // 4. 大气云海动态漂移专用驱动（28.0s 舒缓平稳流动，呈现宁静大气的真实天际流淌）
     val cloudProgressState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(18000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(animation = tween(28000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "cloudProgress"
     )
-
-    val dynamicCloudClusters = remember { createDynamicCloudClusters() }
 
     val continuousRotationState = infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -370,7 +368,7 @@ fun WeatherSkyBackground(
     ) {
         // 1. 真实摄影级自然云海与天际底图 (全屏无缝平滑沉浸融合，无任何横向截断与分层色块)
         if (skyTextureRes != null) {
-            // Layer 1: 底层主云海 (全屏平滑自适应，宽幅优雅漂移，增加微幅三维起伏，0 重组)
+            // Layer 1: 底层主云海 (全屏平滑自适应，舒缓宏大天际漂移，0 重组)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "天空云海真实背景",
@@ -380,23 +378,21 @@ fun WeatherSkyBackground(
                     .fillMaxSize()
                     .graphicsLayer {
                         val cloudProgress = cloudProgressState.value
-                        // 宽幅自然漂移：复合双频正弦模拟气流微扰，横向幅度提升至 85px，纵向起伏 18px
-                        val baseDriftX = (sin(cloudProgress * 2f * PI.toFloat()) * 0.85f +
-                                sin(cloudProgress * 4f * PI.toFloat()) * 0.15f) * 85f
-                        val baseDriftY = cos(cloudProgress * 2f * PI.toFloat()) * 18f
+                        val baseDriftX = sin(cloudProgress * 2f * PI.toFloat()) * 45f
+                        val baseDriftY = cos(cloudProgress * 2f * PI.toFloat()) * 12f
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
                         val entranceZoom = 1.0f + (1f - entranceProgress) * 0.30f
                         val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
                         translationX = baseDriftX - offset * 60f
                         translationY = baseDriftY
-                        scaleX = 1.24f * entranceZoom
-                        scaleY = 1.24f * entranceZoom
+                        scaleX = 1.18f * entranceZoom
+                        scaleY = 1.18f * entranceZoom
                         alpha = baseCloudAlpha * entranceAlpha
                     }
             )
 
-            // Layer 2: 镜像视差深景流云 (高层轻透稀疏微云，145px 大幅视差流动)
+            // Layer 2: 镜像高空轻透流云 (极轻微弱视差缓动)
             Image(
                 painter = painterResource(id = skyTextureRes),
                 contentDescription = "深景视差流云",
@@ -406,19 +402,17 @@ fun WeatherSkyBackground(
                     .fillMaxSize()
                     .graphicsLayer {
                         val cloudProgress = cloudProgressState.value
-                        // 远景高速差大幅漂移：横向幅度提升至 145px，伴随 24px 纵向浮沉
-                        val fastDriftX = (sin((cloudProgress + 0.35f) * 2f * PI.toFloat()) * 0.82f +
-                                sin((cloudProgress + 0.70f) * 4f * PI.toFloat()) * 0.18f) * 145f
-                        val fastDriftY = sin((cloudProgress + 0.55f) * 2f * PI.toFloat()) * 24f
+                        val fastDriftX = sin((cloudProgress + 0.35f) * 2f * PI.toFloat()) * 65f
+                        val fastDriftY = sin((cloudProgress + 0.60f) * 2f * PI.toFloat()) * 15f
                         val offset = parallaxOffsetProvider()
                         val entranceProgress = entranceAnim.value
                         val layerZoom = 1.0f + (1f - entranceProgress) * 0.30f
                         val entranceAlpha = (0.50f + 0.50f * entranceProgress).coerceIn(0f, 1f)
-                        translationX = fastDriftX - offset * 90f
+                        translationX = fastDriftX - offset * 80f
                         translationY = fastDriftY
-                        scaleX = -1.28f * layerZoom
-                        scaleY = 1.28f * layerZoom
-                        alpha = baseCloudAlpha * 0.22f * entranceAlpha
+                        scaleX = -1.20f * layerZoom
+                        scaleY = 1.20f * layerZoom
+                        alpha = baseCloudAlpha * 0.16f * entranceAlpha
                     }
             )
         }
@@ -511,14 +505,7 @@ fun WeatherSkyBackground(
                 )
             }
 
-            // 全天候拟真动态单向连续流云系统 (覆盖多云、阴天、雨天、雪天、雷暴、风天等所有天气，支持全屏无缝单向连续漂移)
-            drawUnifiedDynamicSkyClouds(
-                width = width,
-                height = height,
-                weatherCategory = weatherCategory,
-                progress = cloudProgress,
-                cloudClusters = dynamicCloudClusters
-            )
+
 
             if (weatherCategory == WeatherCategory.FOG || weatherCategory == WeatherCategory.SANDSTORM) {
                 drawAtmosphericHazeOrSand(
@@ -749,113 +736,7 @@ private data class DustParticle(
     val speedX: Float
 )
 
-/**
- * 拟真动态大气流云团微元气泡模型
- *
- * @property dxRatio 相对于云团中心的横向偏移比
- * @property dyRatio 相对于云团中心的纵向偏移比
- * @property radiusRatio 相对于云团基础宽度的半径比
- * @property alphaScale 该微元相对不透明度缩放
- */
-private data class CloudPuff(
-    val dxRatio: Float,
-    val dyRatio: Float,
-    val radiusRatio: Float,
-    val alphaScale: Float = 1.0f
-)
 
-/**
- * 拟真动态大气流云团数据模型
- *
- * @property initialXRatio 初始横向相对位置 (0.0 ~ 1.0)
- * @property yRatio 纵向相对位置 (天穹 0.05 ~ 0.50 区间)
- * @property widthRatio 云团横向跨度相对比 (相对于屏幕宽度)
- * @property speedMultiplier 单向平移流动速度乘数
- * @property baseAlpha 基础不透明度
- * @property layer 云层深度 (0: 远景轻薄高云, 1: 中景主力层云, 2: 近景低空速动云)
- * @property puffs 组成该云团的蓬松微元集合
- */
-private data class DynamicCloudCluster(
-    val initialXRatio: Float,
-    val yRatio: Float,
-    val widthRatio: Float,
-    val speedMultiplier: Float,
-    val baseAlpha: Float,
-    val layer: Int,
-    val puffs: List<CloudPuff>
-)
-
-/**
- * 封装四个元素的不可变数据类
- *
- * @property first 第一个元素
- * @property second 第二个元素
- * @property third 第三个元素
- * @property fourth 第四个元素
- */
-private data class Quadruple<out A, out B, out C, out D>(
-    val first: A,
-    val second: B,
-    val third: C,
-    val fourth: D
-)
-
-/**
- * 创建全天候拟真动态流动云团数据集
- *
- * 采用轻盈通透的高空远景广阔流云体系，
- * 支持在天穹中实现全屏无缝单向平缓流动，纯净通透，兼顾动态美感与视觉清爽度。
- *
- * @return 动态云团列表 [List] of [DynamicCloudCluster]
- */
-private fun createDynamicCloudClusters(): List<DynamicCloudCluster> {
-    return listOf(
-        // Layer 0: 高空轻薄广阔层云 (流动平缓，通透轻盈，延展宽阔)
-        DynamicCloudCluster(
-            initialXRatio = 0.05f,
-            yRatio = 0.08f,
-            widthRatio = 0.85f,
-            speedMultiplier = 0.55f,
-            baseAlpha = 0.28f,
-            layer = 0,
-            puffs = listOf(
-                CloudPuff(-0.35f, 0.02f, 0.32f, 0.70f),
-                CloudPuff(-0.15f, -0.04f, 0.38f, 0.90f),
-                CloudPuff(0.08f, 0.00f, 0.42f, 1.00f),
-                CloudPuff(0.28f, -0.02f, 0.34f, 0.80f),
-                CloudPuff(0.42f, 0.04f, 0.26f, 0.60f)
-            )
-        ),
-        DynamicCloudCluster(
-            initialXRatio = 0.55f,
-            yRatio = 0.14f,
-            widthRatio = 0.78f,
-            speedMultiplier = 0.65f,
-            baseAlpha = 0.26f,
-            layer = 0,
-            puffs = listOf(
-                CloudPuff(-0.30f, 0.00f, 0.30f, 0.75f),
-                CloudPuff(-0.05f, -0.03f, 0.36f, 0.95f),
-                CloudPuff(0.18f, 0.02f, 0.35f, 0.85f),
-                CloudPuff(0.36f, -0.01f, 0.28f, 0.65f)
-            )
-        ),
-        DynamicCloudCluster(
-            initialXRatio = 0.28f,
-            yRatio = 0.22f,
-            widthRatio = 0.72f,
-            speedMultiplier = 0.60f,
-            baseAlpha = 0.24f,
-            layer = 0,
-            puffs = listOf(
-                CloudPuff(-0.28f, 0.01f, 0.26f, 0.70f),
-                CloudPuff(-0.10f, -0.02f, 0.34f, 0.90f),
-                CloudPuff(0.12f, 0.00f, 0.36f, 0.85f),
-                CloudPuff(0.32f, 0.02f, 0.25f, 0.60f)
-            )
-        )
-    )
-}
 
 // ==================== 工具辅助方法 ====================
 
@@ -2583,111 +2464,7 @@ private fun DrawScope.drawWindRibbons(
     }
 }
 
-/**
- * 绘制全天候拟真动态单向连续流云系统
- *
- * 支持多云、阴天、雨天、雪天、雾天、大风等所有天气现象：
- * 1. 采用全屏跨度无缝连续单向流动（Wrap-around Flow），云团从一侧持续滑向另一侧并循环往复，彻底杜绝原地来回摆动的局限；
- * 2. 采用高空轻薄远景流云速度体系（0.55x ~ 0.65x），平缓舒展，通透宁静；
- * 3. 根据实时天气类别智能适配云朵色调（白昼雪白纯净、夜间银灰月华、阴天厚重铅灰、雨天深青灰、雪天冷灰白等）与覆盖浓度。
- *
- * @param width 画面宽度 (px)
- * @param height 画面高度 (px)
- * @param weatherCategory 天气场景分类枚举 [WeatherCategory]
- * @param progress 动画时间相位 (0f ~ 1f)
- * @param cloudClusters 预分配的动态云团数据集 [List] of [DynamicCloudCluster]
- */
-private fun DrawScope.drawUnifiedDynamicSkyClouds(
-    width: Float,
-    height: Float,
-    weatherCategory: WeatherCategory,
-    progress: Float,
-    cloudClusters: List<DynamicCloudCluster>
-) {
-    // 晴天不绘制厚云层（保留纯净蓝天与太阳/星月光晕）
-    if (weatherCategory == WeatherCategory.SUNNY || weatherCategory == WeatherCategory.SUNNY_NIGHT) {
-        return
-    }
 
-    // 1. 根据天气分类计算全局透明度与色彩配置
-    val (primaryCloudColor, secondaryCloudColor, globalAlphaScale, weatherSpeedScale) = when (weatherCategory) {
-        WeatherCategory.CLOUDY -> {
-            Quadruple(Color(0xFFFFFFFF), Color(0xFFE8F3FD), 1.05f, 1.0f)
-        }
-        WeatherCategory.CLOUDY_NIGHT -> {
-            Quadruple(Color(0xFFD2E0F0), Color(0xFF8DA2BA), 0.90f, 0.95f)
-        }
-        WeatherCategory.OVERCAST -> {
-            Quadruple(Color(0xFFE2E9EE), Color(0xFF96A5B2), 1.35f, 1.1f)
-        }
-        WeatherCategory.OVERCAST_NIGHT -> {
-            Quadruple(Color(0xFF7A8B9E), Color(0xFF384656), 1.25f, 1.0f)
-        }
-        WeatherCategory.RAIN_LIGHT, WeatherCategory.SNOW_LIGHT -> {
-            Quadruple(Color(0xFFCED9E4), Color(0xFF7B8D9E), 1.20f, 1.15f)
-        }
-        WeatherCategory.RAIN_HEAVY, WeatherCategory.SNOW_HEAVY -> {
-            Quadruple(Color(0xFFB0C2D2), Color(0xFF5A6B7C), 1.40f, 1.35f)
-        }
-        WeatherCategory.THUNDERSTORM -> {
-            Quadruple(Color(0xFF889EB5), Color(0xFF3D4E60), 1.45f, 1.50f)
-        }
-        WeatherCategory.WINDY -> {
-            Quadruple(Color(0xFFEAF2FB), Color(0xFFA6C0D9), 1.10f, 2.00f)
-        }
-        WeatherCategory.FOG, WeatherCategory.SANDSTORM -> {
-            Quadruple(Color(0xFFDFE6ED), Color(0xFFA2B0BE), 0.85f, 0.80f)
-        }
-        else -> {
-            Quadruple(Color(0xFFFFFFFF), Color(0xFFDCEAF7), 1.0f, 1.0f)
-        }
-    }
-
-    // 2. 遍历绘制每个云簇
-    for (cluster in cloudClusters) {
-        val clusterWidth = width * cluster.widthRatio
-        // 单向移动的全屏总行程（包含出屏幕左侧与右侧的完整缓冲区）
-        val totalTravel = width + clusterWidth * 1.8f
-        // 单向匀速平移 + 连续无缝循环
-        val rawOffset = (cluster.initialXRatio * totalTravel + progress * totalTravel * cluster.speedMultiplier * weatherSpeedScale) % totalTravel
-        // 从左往右移动：起始在 -clusterWidth * 0.9f，终点在 width + clusterWidth * 0.9f
-        val clusterCenterX = rawOffset - clusterWidth * 0.9f
-
-        // 轻微的大气垂直气流正弦波动
-        val verticalWave = sin((progress * cluster.speedMultiplier * 2f * PI.toFloat()) + cluster.initialXRatio * 6.28f) * (14f + cluster.layer * 6f)
-        val clusterCenterY = height * cluster.yRatio + verticalWave
-
-        // 剔除完全在屏幕视口外的绘制计算
-        if (clusterCenterX + clusterWidth * 0.9f < 0f || clusterCenterX - clusterWidth * 0.9f > width) {
-            continue
-        }
-
-        val clusterAlpha = (cluster.baseAlpha * globalAlphaScale).coerceIn(0f, 0.90f)
-
-        // 绘制组成该云簇的各个柔焦气泡
-        for (puff in cluster.puffs) {
-            val puffRadius = clusterWidth * puff.radiusRatio
-            val puffCenterX = clusterCenterX + clusterWidth * puff.dxRatio
-            val puffCenterY = clusterCenterY + clusterWidth * puff.dyRatio
-            val puffAlpha = (clusterAlpha * puff.alphaScale).coerceIn(0f, 1f)
-
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        primaryCloudColor.copy(alpha = puffAlpha),
-                        secondaryCloudColor.copy(alpha = puffAlpha * 0.65f),
-                        secondaryCloudColor.copy(alpha = puffAlpha * 0.20f),
-                        Color.Transparent
-                    ),
-                    center = Offset(puffCenterX, puffCenterY),
-                    radius = puffRadius
-                ),
-                center = Offset(puffCenterX, puffCenterY),
-                radius = puffRadius
-            )
-        }
-    }
-}
 
 
 

@@ -534,5 +534,83 @@ class QWeatherDataSourceTest {
         assertEquals(24, summary.hourlyTotals.size)
         assertEquals(24, summary.hourlyErrors.size)
     }
+
+    /**
+     * 测试真实和风天气气象灾害预警 JSON 结构解析（包含 senderName, eventType 对象与完整防御指南）
+     */
+    @Test
+    fun testRealQWeatherAlertJsonParsing() {
+        val alertJson = """
+            {
+              "metadata": {
+                "tag": "903d6b9cea6829e2aa647dddef4f42f6940708cc352182febaaa9df759e1d0d1",
+                "zeroResult": false,
+                "attributions": [
+                  "国家预警信息发布中心",
+                  "当前预警数据可能存在延迟或信息过时，以官方数据发布为准。"
+                ]
+              },
+              "alerts": [
+                {
+                  "id": "202608311845001070325211",
+                  "senderName": "桂林市气象台",
+                  "issuedTime": "2026-08-31T10:45Z",
+                  "messageType": {
+                    "code": "update",
+                    "supersedes": ["202608291910003709460640"]
+                  },
+                  "eventType": {
+                    "name": "大风",
+                    "code": "1006"
+                  },
+                  "urgency": null,
+                  "severity": "minor",
+                  "certainty": null,
+                  "icon": "1006",
+                  "color": {
+                    "code": "blue",
+                    "red": 30,
+                    "green": 50,
+                    "blue": 205,
+                    "alpha": 1
+                  },
+                  "effectiveTime": "2026-08-31T10:45Z",
+                  "onsetTime": "2026-08-31T10:45Z",
+                  "expireTime": "2026-09-01T10:45Z",
+                  "headline": "桂林市气象台更新大风蓝色预警信号",
+                  "description": "桂林市气象台31日18时45分继续发布大风蓝色预警信号：预计未来24小时内市区将出现6级（或阵风7级）以上大风，请做好防范。",
+                  "criteria": "24小时内可能受大风影响，平均风力可达6级以上，或者阵风7级以上；或者已经受大风影响，平均风力为6～7级，或者阵风7～8级并可能持续。",
+                  "instruction": "1. 政府及相关部门按照职责做好防大风工作；\n2. 关好门窗，加固围板、棚架、广告牌等易被风吹动的搭建物，妥善安置易受大风影响的室外物品，遮盖建筑物资；\n3. 相关水域水上作业和过往船舶应当采取积极的应对措施，如回港避风或者绕道航行等；\n4. 行人注意尽量少骑自行车，刮风时不要在广告牌、临时搭建物等下面逗留；\n5. 有关部门和单位注意森林、草原等防火。"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val warningResp = gson.fromJson(alertJson, QWeatherWarningResponse::class.java)
+        assertNotNull(warningResp)
+        assertEquals(1, warningResp.alerts?.size)
+
+        val alertItem = warningResp.alerts?.first()
+        assertNotNull(alertItem)
+        assertEquals("桂林市气象台", alertItem?.getSenderDisplayName())
+        assertEquals("大风", alertItem?.getEventDisplayName())
+        assertEquals("桂林市气象台更新大风蓝色预警信号", alertItem?.headline)
+        assertTrue(alertItem?.description?.contains("预计未来24小时内市区将出现6级") == true)
+        assertTrue(alertItem?.criteria?.contains("24小时内可能受大风影响") == true)
+        assertTrue(alertItem?.instruction?.contains("1. 政府及相关部门按照职责做好防大风工作") == true)
+
+        // 验证转为本地发布时间与完整时效时间
+        val localPubTime = com.weather.app.util.TimeUtils.formatToLocalPublishTime(alertItem?.issuedTime ?: "", appendSuffix = true)
+        assertEquals("18:45 发布", localPubTime)
+
+        val fullPubTime = com.weather.app.util.TimeUtils.formatToFullDateTime(alertItem?.issuedTime ?: "")
+        assertEquals("2026-08-31 18:45", fullPubTime)
+
+        val fullEffectiveTime = com.weather.app.util.TimeUtils.formatToFullDateTime(alertItem?.effectiveTime ?: "")
+        assertEquals("2026-08-31 18:45", fullEffectiveTime)
+
+        val fullExpireTime = com.weather.app.util.TimeUtils.formatToFullDateTime(alertItem?.expireTime ?: "")
+        assertEquals("2026-09-01 18:45", fullExpireTime)
+    }
 }
 

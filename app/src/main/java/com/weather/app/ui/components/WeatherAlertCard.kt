@@ -2,6 +2,7 @@ package com.weather.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -25,9 +28,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weather.app.model.WeatherAlert
+import com.weather.app.util.TimeUtils
 
 /**
  * 预警等级视觉主题色彩配置实体
@@ -43,32 +48,23 @@ private data class AlertTheme(
 )
 
 /**
- * 预警正文条目实体
+ * 官方气象灾害预警卡片组件（首页精炼重点卡片）
  *
- * @property indexPrefix 序号前缀（如 "1." 或 "2."，无序号时为空）
- * @property bodyText 条目正文内容文本
- */
-private data class AlertItem(
-    val indexPrefix: String = "",
-    val bodyText: String = ""
-)
-
-/**
- * 官方气象灾害预警卡片组件
- *
- * 优化排版与视觉质感：
- * 1. 顶部左侧展示结构化预警级别徽章胶囊（带对应等级色彩与警示图标），右侧展示具体发布时间；
- * 2. 标题区自适应换行，层级鲜明，彻底消除孤立单字换行与图标对齐错位；
- * 3. 正文条目采用悬挂缩进排版（序号独立于左侧，换行后的文字与首行文字完全垂直对齐，不与序号对齐）；
- * 4. 卡片四周环绕预警主题色微光边框，与沉浸式毛玻璃卡片风格完美契合。
+ * 1. 顶部左侧展示预警级别胶囊徽章（带对应等级色彩与警示图标），右侧展示完整发布时间；
+ * 2. 标题区展示官方发布全称；
+ * 3. 核心信息区精炼展示预警重点描述与关键影响，杜绝过长文字霸屏；
+ * 4. 展示预警时效范围（生效与截止时间）；
+ * 5. 底部提供发布机构与直观的“查看详情与防御指南 >”入口，点击可呼出全量预警详情抽屉。
  *
  * @param alert 气象预警数据实体 [WeatherAlert]
  * @param modifier 外部修饰符
+ * @param onAlertClick 点击卡片查看完整详情时的回调
  */
 @Composable
 fun WeatherAlertCard(
     alert: WeatherAlert,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAlertClick: () -> Unit = {}
 ) {
     val theme = remember(alert.level, alert.title) {
         getAlertTheme(alert.level, alert.title)
@@ -78,12 +74,37 @@ fun WeatherAlertCard(
         getAlertBadgeText(alert.title, alert.level)
     }
 
-    val formattedPublishTime = remember(alert.publishTime) {
-        com.weather.app.util.TimeUtils.formatToLocalPublishTime(alert.publishTime, appendSuffix = true)
+    // 格式化完整发布时间（如 "2026-08-31 18:45 发布"）
+    val fullPublishTimeText = remember(alert.publishTime) {
+        TimeUtils.formatToFullDateTime(alert.publishTime, appendSuffix = true)
     }
 
-    val contentItems = remember(alert.content) {
-        parseAlertItems(alert.content)
+    // 格式化完整生效时间与截止时间
+    val timeSpanText = remember(alert.effectiveTime, alert.expireTime, alert.publishTime) {
+        val effective = alert.effectiveTime.ifEmpty { alert.publishTime }
+        val expire = alert.expireTime
+        when {
+            effective.isNotBlank() && expire.isNotBlank() -> {
+                "时效：$effective 至 $expire"
+            }
+            expire.isNotBlank() -> {
+                "截止时间：$expire"
+            }
+            effective.isNotBlank() -> {
+                "生效时间：$effective"
+            }
+            else -> ""
+        }
+    }
+
+    // 提取首页重点精炼描述：优先采用 description，若为空则提取 instruction 的前要点
+    val summaryText = remember(alert.description, alert.instruction, alert.content) {
+        when {
+            alert.description.isNotBlank() -> alert.description
+            alert.instruction.isNotBlank() -> alert.instruction.lines().firstOrNull { it.isNotBlank() } ?: alert.instruction
+            alert.content.isNotBlank() -> alert.content.lines().firstOrNull { it.isNotBlank() } ?: alert.content
+            else -> "请有关单位和人员做好防范准备，注意天气变化。"
+        }
     }
 
     Column(
@@ -106,9 +127,10 @@ fun WeatherAlertCard(
                 ),
                 shape = RoundedCornerShape(18.dp)
             )
+            .clickable { onAlertClick() }
             .padding(16.dp)
     ) {
-        // 1. 顶部状态栏：左侧预警等级胶囊徽章，右侧发布时间
+        // 1. 顶部状态栏：左侧预警等级胶囊徽章，右侧完整发布时间
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -142,11 +164,11 @@ fun WeatherAlertCard(
                 )
             }
 
-            // 右侧发布时间（统一转换到当地城市时间）
-            if (formattedPublishTime.isNotBlank()) {
+            // 右侧完整发布时间（如 "2026-08-31 18:45 发布"）
+            if (fullPublishTimeText.isNotBlank()) {
                 Text(
-                    text = formattedPublishTime,
-                    color = Color.White.copy(alpha = 0.65f),
+                    text = fullPublishTimeText,
+                    color = Color.White.copy(alpha = 0.70f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Normal
                 )
@@ -165,62 +187,71 @@ fun WeatherAlertCard(
             )
         }
 
-        // 3. 预警正文详情与防御指南（悬挂缩进排版，换行文字与首行文字对齐）
-        if (contentItems.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
+        // 3. 预警核心重点描述（控制在 3 行内，精炼突出）
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = summaryText,
+            color = Color.White.copy(alpha = 0.88f),
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
 
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+        // 4. 生效与截止时间提示（若存在）
+        if (timeSpanText.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                contentItems.forEach { item ->
-                    if (item.indexPrefix.isNotBlank()) {
-                        // 带序号条目：左侧为固定序号，右侧为文字内容，换行时文字在右侧一列严格左对齐
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = item.indexPrefix,
-                                color = Color.White.copy(alpha = 0.88f),
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                fontWeight = FontWeight.Normal
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = item.bodyText,
-                                color = Color.White.copy(alpha = 0.88f),
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                fontWeight = FontWeight.Normal,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    } else {
-                        // 无序号条目：普通单段文本自然流式展示
-                        Text(
-                            text = item.bodyText,
-                            color = Color.White.copy(alpha = 0.88f),
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                            fontWeight = FontWeight.Normal,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
+                Icon(
+                    imageVector = Icons.Default.Schedule,
+                    contentDescription = "预警时效",
+                    tint = theme.primary.copy(alpha = 0.85f),
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = timeSpanText,
+                    color = Color.White.copy(alpha = 0.65f),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Normal
+                )
             }
         }
 
-        // 4. 底部发布机构标注
-        if (alert.publisher.isNotBlank() && alert.publisher != "预警信息发布中心") {
-            Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 5. 底部栏：左侧发布机构，右侧查看全部详情与防御指南引导
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "发布机构：${alert.publisher}",
-                color = Color.White.copy(alpha = 0.55f),
+                text = alert.publisher.ifEmpty { "预警信息发布中心" },
+                color = Color.White.copy(alpha = 0.50f),
                 fontSize = 11.5.sp,
                 fontWeight = FontWeight.Normal
             )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "查看详情与防御指南",
+                    color = theme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "查看详情",
+                    tint = theme.primary,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
         }
     }
 }
@@ -258,7 +289,6 @@ private fun getAlertTheme(level: String, title: String): AlertTheme {
             )
         }
         else -> {
-            // 默认为黄色预警
             AlertTheme(
                 primary = Color(0xFFFFD54F),
                 background = Color(0x2EFFD54F),
@@ -278,7 +308,6 @@ private fun getAlertTheme(level: String, title: String): AlertTheme {
  * @return 精炼后的徽章标签文本
  */
 private fun getAlertBadgeText(title: String, level: String): String {
-    // 匹配常见气象灾害类型关键字
     val weatherKeywords = listOf(
         "高温", "暴雨", "雷雨大风", "雷电", "大风", "冰雹", "暴雪", "道路结冰",
         "大雾", "霾", "沙尘暴", "干旱", "寒潮", "霜冻", "台风", "森林火险"
@@ -298,79 +327,5 @@ private fun getAlertBadgeText(title: String, level: String): String {
         "$matchedType · ${resolvedLevel}预警"
     } else {
         "${resolvedLevel}预警"
-    }
-}
-
-/**
- * 智能解析预警正文详情中的多条防御指南并拆分出序号与主体正文
- *
- * 支持识别带数字编号 (如 "1. " 或 "1、") 或换行符分隔的条目，将序号与文本分离以支持悬挂缩进对齐排版。
- *
- * @param content 原始预警正文字符串
- * @return 分解后的条目列表 [List] of [AlertItem]
- */
-private fun parseAlertItems(content: String): List<AlertItem> {
-    val clean = content.trim()
-    if (clean.isEmpty()) return emptyList()
-
-    // 匹配序号前缀的正则表达式 (如 "1.", "1、", "(1)", "①", "一、")
-    val itemPrefixRegex = Regex("^(\\d+[\\.、]|\\(\\d+\\)|[①-⑩]|(?:[一二三四五六七八九十]+[、\\.]))\\s*(.*)$", RegexOption.DOT_MATCHES_ALL)
-
-    // 1. 若包含换行符，优先按行拆分并提取序号
-    if (clean.contains("\n")) {
-        val rawLines = clean.split("\n")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-
-        if (rawLines.isNotEmpty()) {
-            return rawLines.map { line ->
-                val match = itemPrefixRegex.find(line)
-                if (match != null) {
-                    AlertItem(
-                        indexPrefix = match.groupValues[1].trim(),
-                        bodyText = match.groupValues[2].trim()
-                    )
-                } else {
-                    AlertItem(indexPrefix = "", bodyText = line)
-                }
-            }
-        }
-    }
-
-    // 2. 若不含换行但包含内嵌数字编号格式 (如 "1. ... 2. ...")
-    val embeddedNumberPattern = Regex("(?:^|\\s*)(\\d+[\\.、]\\s*)")
-    val matches = embeddedNumberPattern.findAll(clean).toList()
-    if (matches.size > 1) {
-        val items = mutableListOf<AlertItem>()
-        for (i in matches.indices) {
-            val start = matches[i].range.first
-            val end = if (i + 1 < matches.size) matches[i + 1].range.first else clean.length
-            val rawItem = clean.substring(start, end).trim()
-            val match = itemPrefixRegex.find(rawItem)
-            if (match != null) {
-                items.add(
-                    AlertItem(
-                        indexPrefix = match.groupValues[1].trim(),
-                        bodyText = match.groupValues[2].trim()
-                    )
-                )
-            } else {
-                items.add(AlertItem(indexPrefix = "", bodyText = rawItem))
-            }
-        }
-        if (items.isNotEmpty()) return items
-    }
-
-    // 3. 单行普通文本尝试提取前缀或直接作为单项
-    val singleMatch = itemPrefixRegex.find(clean)
-    return if (singleMatch != null) {
-        listOf(
-            AlertItem(
-                indexPrefix = singleMatch.groupValues[1].trim(),
-                bodyText = singleMatch.groupValues[2].trim()
-            )
-        )
-    } else {
-        listOf(AlertItem(indexPrefix = "", bodyText = clean))
     }
 }

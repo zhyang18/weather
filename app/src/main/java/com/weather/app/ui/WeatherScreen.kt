@@ -79,6 +79,7 @@ import com.weather.app.ui.components.WeatherAlertCard
 import com.weather.app.ui.components.WeatherDetailGrid
 import com.weather.app.ui.components.WeatherSkyBackground
 import com.weather.app.ui.components.LifeIndexDetailSheet
+import com.weather.app.model.WeatherAlert
 import com.weather.app.model.LifeIndex
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -218,6 +219,7 @@ fun WeatherScreen(
     }
 
     var currentLifeIndexSheet by remember { mutableStateOf<LifeIndex?>(null) }
+    var currentAlertDetail by remember { mutableStateOf<WeatherAlert?>(null) }
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -298,6 +300,9 @@ fun WeatherScreen(
                     isVerticalScrollEnabled = true,
                     onDailyChartModeChange = { viewModel.setDailyChartMode(it) },
                     onRefresh = { viewModel.refreshCityAtIndex(page) },
+                    onAlertClick = { alert ->
+                        currentAlertDetail = alert
+                    },
                     onSunriseSunsetClick = { targetCity ->
                         viewModel.setShowSunriseSunsetScreen(true, targetCity)
                     },
@@ -392,6 +397,14 @@ fun WeatherScreen(
         LifeIndexDetailSheet(
             lifeIndex = lifeIndex,
             onDismiss = { currentLifeIndexSheet = null }
+        )
+    }
+
+    // 全量气象灾害预警详情抽屉
+    currentAlertDetail?.let { alert ->
+        com.weather.app.ui.dialogs.WeatherAlertDetailSheet(
+            alert = alert,
+            onDismiss = { currentAlertDetail = null }
         )
     }
 
@@ -827,6 +840,7 @@ private fun CityWeatherPageContent(
     isVerticalScrollEnabled: Boolean = true,
     onDailyChartModeChange: (Boolean) -> Unit,
     onRefresh: () -> Unit,
+    onAlertClick: (WeatherAlert) -> Unit = {},
     onSunriseSunsetClick: (CityInfo) -> Unit = {},
     onEarthDaylightClick: () -> Unit = {},
     onLocationMapClick: (CityInfo) -> Unit = {},
@@ -923,7 +937,10 @@ private fun CityWeatherPageContent(
                 // 2. 官方气象灾害预警卡片 (用户开启且有预警数据时展示)
                 if (cardConfig.showWeatherAlert) {
                     weatherData.alert?.let { alert ->
-                        WeatherAlertCard(alert = alert)
+                        WeatherAlertCard(
+                            alert = alert,
+                            onAlertClick = { onAlertClick(alert) }
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                     }
                 }

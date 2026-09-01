@@ -44,6 +44,33 @@ object TimeUtils {
     }
 
     /**
+     * 将原始时间字符串解析并换算为本地时区的完整日期时间展示（如 "2026-08-31 18:45" 或 "2026-08-31 18:45 发布"）
+     *
+     * @param rawTime 原始时间字符串（支持 ISO 8601 UTC、带时区偏移、标准日期时间或纯时间）
+     * @param appendSuffix 是否在末尾追加 " 发布" 后缀，默认为 false
+     * @return 换算为本地时区的完整日期时间字符串（如 "2026-08-31 18:45"）
+     */
+    fun formatToFullDateTime(rawTime: String, appendSuffix: Boolean = false): String {
+        if (rawTime.isBlank()) return if (appendSuffix) "刚刚发布" else ""
+
+        val clean = rawTime.trim()
+        val parsedDate = parseToDate(clean)
+
+        return if (parsedDate != null) {
+            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
+            sdf.timeZone = TimeZone.getDefault()
+            val text = sdf.format(parsedDate)
+            if (appendSuffix) "$text 发布" else text
+        } else {
+            if (clean.contains("发布")) {
+                if (appendSuffix) clean else clean.replace("发布", "").trim()
+            } else {
+                if (appendSuffix) "$clean 发布" else clean
+            }
+        }
+    }
+
+    /**
      * 将原始时间字符串解析并换算为本地时区的小时展示时间（如 "14:00"）
      *
      * @param rawTime 原始时间字符串

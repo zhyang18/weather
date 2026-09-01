@@ -847,20 +847,31 @@ class QWeatherWeatherDataSource(
             // 1. 优先解析 V1 新版 alerts 列表
             val alertItem = warningResp.alerts?.firstOrNull()
             if (alertItem != null) {
+                val eventName = alertItem.getEventDisplayName()
                 val title = alertItem.headline ?: alertItem.title 
-                    ?: "${cityName}发布${alertItem.event ?: alertItem.typeName ?: "气象"}${alertItem.level ?: ""}预警"
-                val content = alertItem.instruction ?: alertItem.description ?: alertItem.text 
-                    ?: "请有关单位和人员做好防范准备。"
+                    ?: "${cityName}发布${eventName.ifEmpty { "气象" }}${alertItem.level ?: ""}预警"
+                val instruction = alertItem.instruction ?: ""
+                val description = alertItem.description ?: alertItem.text ?: ""
+                val content = instruction.ifEmpty { description }.ifEmpty { "请有关单位和人员做好防范准备。" }
                 val level = alertItem.level ?: mapSeverityToLevel(alertItem.severity)
-                val publisher = alertItem.sender ?: "预警信息发布中心"
-                val pubTime = formatIsoToTime(alertItem.issuedTime ?: alertItem.pubTime ?: alertItem.effectiveTime ?: "")
+                val publisher = alertItem.getSenderDisplayName()
+                val pubTime = formatIsoToFullDateTime(alertItem.issuedTime ?: alertItem.pubTime ?: alertItem.effectiveTime ?: "")
+                val effectiveTime = formatIsoToFullDateTime(alertItem.effectiveTime ?: alertItem.startTime ?: "")
+                val expireTime = formatIsoToFullDateTime(alertItem.expireTime ?: alertItem.endTime ?: "")
+                val criteria = alertItem.criteria ?: ""
 
                 return WeatherAlert(
                     title = title,
                     level = level,
                     content = content,
+                    description = description,
+                    instruction = instruction,
+                    criteria = criteria,
                     publisher = publisher,
-                    publishTime = pubTime
+                    publishTime = pubTime,
+                    effectiveTime = effectiveTime,
+                    expireTime = expireTime,
+                    eventName = eventName
                 )
             }
 
@@ -868,17 +879,20 @@ class QWeatherWeatherDataSource(
             val warnItem = warningResp.warning?.firstOrNull()
             if (warnItem != null) {
                 val title = warnItem.title ?: "${cityName}发布${warnItem.typeName ?: "气象"}${warnItem.level ?: ""}预警"
-                val content = warnItem.text ?: "请有关单位和人员做好防范准备。"
+                val text = warnItem.text ?: "请有关单位和人员做好防范准备。"
                 val level = warnItem.level ?: "黄色"
                 val publisher = warnItem.sender ?: "预警信息发布中心"
-                val pubTime = formatIsoToTime(warnItem.pubTime ?: "")
+                val pubTime = formatIsoToFullDateTime(warnItem.pubTime ?: "")
+                val eventName = warnItem.typeName ?: ""
 
                 return WeatherAlert(
                     title = title,
                     level = level,
-                    content = content,
+                    content = text,
+                    description = text,
                     publisher = publisher,
-                    publishTime = pubTime
+                    publishTime = pubTime,
+                    eventName = eventName
                 )
             }
         }
@@ -893,16 +907,29 @@ class QWeatherWeatherDataSource(
                     if (item != null) {
                         val headline = item.optString("headline", "")
                         val title = item.optString("title", "").ifEmpty { headline }.ifEmpty { "${cityName}发布气象灾害预警" }
-                        val content = item.optString("instruction", "").ifEmpty { item.optString("description", "") }.ifEmpty { item.optString("text", "请有关单位和人员做好防范准备。") }
+                        val instruction = item.optString("instruction", "")
+                        val description = item.optString("description", "").ifEmpty { item.optString("text", "") }
+                        val criteria = item.optString("criteria", "")
+                        val content = instruction.ifEmpty { description }.ifEmpty { "请有关单位和人员做好防范准备。" }
                         val level = item.optString("level", "").ifEmpty { mapSeverityToLevel(item.optString("severity", "")) }
-                        val sender = item.optString("sender", "预警信息发布中心")
-                        val timeStr = formatIsoToTime(item.optString("issuedTime", "").ifEmpty { item.optString("pubTime", "") })
+                        val sender = item.optString("senderName", "").ifEmpty { item.optString("sender", "预警信息发布中心") }
+                        val timeStr = formatIsoToFullDateTime(item.optString("issuedTime", "").ifEmpty { item.optString("pubTime", "") })
+                        val effectiveTime = formatIsoToFullDateTime(item.optString("effectiveTime", "").ifEmpty { item.optString("startTime", "") })
+                        val expireTime = formatIsoToFullDateTime(item.optString("expireTime", "").ifEmpty { item.optString("endTime", "") })
+                        val eventName = item.optString("event", "").ifEmpty { item.optString("typeName", "") }
+
                         return WeatherAlert(
                             title = title,
                             level = level,
                             content = content,
+                            description = description,
+                            instruction = instruction,
+                            criteria = criteria,
                             publisher = sender,
-                            publishTime = timeStr
+                            publishTime = timeStr,
+                            effectiveTime = effectiveTime,
+                            expireTime = expireTime,
+                            eventName = eventName
                         )
                     }
                 }
@@ -1023,6 +1050,16 @@ class QWeatherWeatherDataSource(
      */
     private fun formatIsoToTime(isoTime: String): String {
         return com.weather.app.util.TimeUtils.formatToLocalPublishTime(isoTime, appendSuffix = true)
+    }
+
+    /**
+     * 将 ISO 8601 时间格式化为当地城市时间的完整 "yyyy-MM-dd HH:mm" 展示时间
+     *
+     * @param isoTime ISO 时间字符串（如 "2026-08-31T10:45Z"）
+     * @return 格式化后的完整本地时区时间（如 "2026-08-31 18:45"）
+     */
+    private fun formatIsoToFullDateTime(isoTime: String): String {
+        return com.weather.app.util.TimeUtils.formatToFullDateTime(isoTime)
     }
 
     /**

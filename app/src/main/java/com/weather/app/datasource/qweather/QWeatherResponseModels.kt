@@ -312,6 +312,7 @@ data class QWeatherWarningResponse(
 data class QWeatherAlertItem(
     @SerializedName("id") val id: String? = null,
     @SerializedName("sender") val sender: String? = null,
+    @SerializedName("senderName") val senderName: String? = null,
     @SerializedName("pubTime") val pubTime: String? = null,
     @SerializedName("issuedTime") val issuedTime: String? = null,
     @SerializedName("title") val title: String? = null,
@@ -326,12 +327,44 @@ data class QWeatherAlertItem(
     @SerializedName("severityColor") val severityColor: String? = null,
     @SerializedName("type") val type: String? = null,
     @SerializedName("event") val event: String? = null,
-    @SerializedName("eventType") val eventType: String? = null,
+    @SerializedName("eventType") val eventType: com.google.gson.JsonElement? = null,
     @SerializedName("typeName") val typeName: String? = null,
     @SerializedName("text") val text: String? = null,
     @SerializedName("description") val description: String? = null,
+    @SerializedName("criteria") val criteria: String? = null,
     @SerializedName("instruction") val instruction: String? = null
-)
+) {
+    /**
+     * 获取预警发布机构显示名称（兼容 senderName 与 sender）
+     *
+     * @return 发布机构名称
+     */
+    fun getSenderDisplayName(): String {
+        return senderName ?: sender ?: "预警信息发布中心"
+    }
+
+    /**
+     * 获取预警事件类型显示名称（兼容 event, typeName 以及嵌套的 eventType 对象）
+     *
+     * @return 预警事件类型名称（如 "大风", "暴雨"）
+     */
+    fun getEventDisplayName(): String {
+        if (!event.isNullOrBlank()) return event
+        if (!typeName.isNullOrBlank()) return typeName
+        if (eventType != null) {
+            try {
+                if (eventType.isJsonObject) {
+                    val obj = eventType.asJsonObject
+                    val name = obj.get("name")?.asString
+                    if (!name.isNullOrBlank()) return name
+                } else if (eventType.isJsonPrimitive) {
+                    return eventType.asString
+                }
+            } catch (_: Exception) {}
+        }
+        return ""
+    }
+}
 
 /**
  * 灾害预警详细数据项（旧版 V7 接口兼容）
