@@ -351,7 +351,7 @@ fun WeatherSkyBackground(
 
     val baseCloudAlpha = remember(weatherCategory) {
         when (weatherCategory) {
-            WeatherCategory.CLOUDY -> 0.35f
+            WeatherCategory.CLOUDY -> 0.9f
             WeatherCategory.CLOUDY_NIGHT -> 0.26f
             WeatherCategory.OVERCAST -> 0.48f
             WeatherCategory.OVERCAST_NIGHT -> 0.42f
