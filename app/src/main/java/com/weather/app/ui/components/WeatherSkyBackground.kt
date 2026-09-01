@@ -200,39 +200,45 @@ fun WeatherSkyBackground(
     )
 
     val rainParticles = remember {
-        List(180) { index ->
+        List(200) { index ->
             when {
-                index % 6 == 0 -> {
+                // 近景特写疾速大雨滴（15%）：超长运动模糊拖尾、高亮白金流光、速度极快
+                index % 7 == 0 -> {
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
-                        length = Random.nextFloat() * 45f + 90f,
-                        speedMultiplier = Random.nextFloat() * 0.5f + 1.7f,
-                        alpha = Random.nextFloat() * 0.20f + 0.80f,
-                        strokeWidth = Random.nextFloat() * 0.6f + 2.2f,
-                        layer = 2
+                        length = Random.nextFloat() * 60f + 110f,
+                        speedMultiplier = Random.nextFloat() * 0.6f + 2.1f,
+                        alpha = Random.nextFloat() * 0.18f + 0.82f,
+                        strokeWidth = Random.nextFloat() * 0.8f + 2.2f,
+                        layer = 2,
+                        slantJitter = (Random.nextFloat() - 0.5f) * 0.02f
                     )
                 }
-                index % 2 == 0 -> {
+                // 中景主力雨丝（35%）：自然雨线、平滑运动拖尾与端部高光
+                index % 3 == 0 -> {
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
-                        length = Random.nextFloat() * 30f + 55f,
-                        speedMultiplier = Random.nextFloat() * 0.4f + 1.2f,
-                        alpha = Random.nextFloat() * 0.25f + 0.65f,
-                        strokeWidth = Random.nextFloat() * 0.5f + 1.5f,
-                        layer = 1
+                        length = Random.nextFloat() * 35f + 60f,
+                        speedMultiplier = Random.nextFloat() * 0.4f + 1.35f,
+                        alpha = Random.nextFloat() * 0.25f + 0.55f,
+                        strokeWidth = Random.nextFloat() * 0.5f + 1.3f,
+                        layer = 1,
+                        slantJitter = (Random.nextFloat() - 0.5f) * 0.015f
                     )
                 }
+                // 远景细密雨幕（50%）：密集轻盈、半透明羽化虚化、纵深感极强
                 else -> {
                     RainParticle(
                         xRatio = Random.nextFloat(),
                         yOffset = Random.nextFloat(),
-                        length = Random.nextFloat() * 20f + 35f,
+                        length = Random.nextFloat() * 22f + 30f,
                         speedMultiplier = Random.nextFloat() * 0.3f + 0.95f,
-                        alpha = Random.nextFloat() * 0.20f + 0.35f,
-                        strokeWidth = Random.nextFloat() * 0.3f + 1.0f,
-                        layer = 0
+                        alpha = Random.nextFloat() * 0.16f + 0.22f,
+                        strokeWidth = Random.nextFloat() * 0.3f + 0.8f,
+                        layer = 0,
+                        slantJitter = (Random.nextFloat() - 0.5f) * 0.01f
                     )
                 }
             }
@@ -240,23 +246,34 @@ fun WeatherSkyBackground(
     }
 
     val rainSplashes = remember {
-        List(22) { index ->
+        List(26) { index ->
+            val count = 4
+            val angles = FloatArray(count) { i ->
+                // 向上扇形喷溅角度 (以水平为基准朝斜上方飞散)
+                (0.35f + (i.toFloat() / (count - 1)) * 0.90f) * PI.toFloat() + (Random.nextFloat() * 0.2f - 0.1f)
+            }
+            val speeds = FloatArray(count) {
+                Random.nextFloat() * 0.6f + 0.8f
+            }
             RainSplashParticle(
-                xRatio = 0.04f + (index.toFloat() / 22f) * 0.92f + (Random.nextFloat() * 0.04f - 0.02f),
-                yRatio = 0.78f + (Random.nextFloat() * 0.18f),
-                splashRadius = Random.nextFloat() * 8f + 6f,
-                phaseOffset = (index * 0.17f) % 1f
+                xRatio = 0.03f + (index.toFloat() / 26f) * 0.94f + (Random.nextFloat() * 0.03f - 0.015f),
+                yRatio = 0.76f + (Random.nextFloat() * 0.20f),
+                splashRadius = Random.nextFloat() * 10f + 8f,
+                phaseOffset = (index * 0.137f) % 1f,
+                dropletAngles = angles,
+                dropletSpeeds = speeds
             )
         }
     }
 
     val ripples = remember {
-        List(20) { index ->
+        List(24) { index ->
             RainRipple(
-                xRatio = 0.05f + (index.toFloat() / 20f) * 0.90f + (Random.nextFloat() * 0.04f - 0.02f),
-                yRatio = 0.80f + (Random.nextFloat() * 0.16f),
-                maxRadius = Random.nextFloat() * 34f + 24f,
-                phaseOffset = (index * 0.21f) % 1f
+                xRatio = 0.04f + (index.toFloat() / 24f) * 0.92f + (Random.nextFloat() * 0.04f - 0.02f),
+                yRatio = 0.78f + (Random.nextFloat() * 0.18f),
+                maxRadius = Random.nextFloat() * 32f + 20f,
+                phaseOffset = (index * 0.173f) % 1f,
+                secondaryDelay = Random.nextFloat() * 0.10f + 0.18f
             )
         }
     }
@@ -622,7 +639,7 @@ enum class WeatherCategory(val isNight: Boolean) {
 }
 
 /**
- * 高清三层景深雨滴粒子数据模型
+ * 高清三层景深拟真雨滴粒子数据模型
  *
  * @property xRatio 横向相对位置 (0f ~ 1f)
  * @property yOffset 纵向初始相位偏移 (0f ~ 1f)
@@ -631,6 +648,7 @@ enum class WeatherCategory(val isNight: Boolean) {
  * @property alpha 基础透明度
  * @property strokeWidth 雨丝线条粗细 (px)
  * @property layer 景深层级（0: 远景细密雨幕, 1: 中景主力雨丝, 2: 近景疾速晶莹大雨滴）
+ * @property slantJitter 微风倾角自然扰动量 (-0.02f ~ 0.02f)
  */
 private data class RainParticle(
     val xRatio: Float,
@@ -639,7 +657,8 @@ private data class RainParticle(
     val speedMultiplier: Float,
     val alpha: Float,
     val strokeWidth: Float,
-    val layer: Int
+    val layer: Int,
+    val slantJitter: Float = 0f
 )
 
 /**
@@ -649,27 +668,33 @@ private data class RainParticle(
  * @property yRatio 飞溅中心纵向相对位置
  * @property splashRadius 飞溅扩散半径 (px)
  * @property phaseOffset 相位偏移
+ * @property dropletAngles 水花各微粒喷溅角度数组 (弧度)
+ * @property dropletSpeeds 水花各微粒初速度系数数组
  */
 private data class RainSplashParticle(
     val xRatio: Float,
     val yRatio: Float,
     val splashRadius: Float,
-    val phaseOffset: Float
+    val phaseOffset: Float,
+    val dropletAngles: FloatArray = floatArrayOf(0.45f, 1.10f, 1.85f, 2.65f),
+    val dropletSpeeds: FloatArray = floatArrayOf(1.0f, 1.35f, 1.20f, 0.90f)
 )
 
 /**
- * 地面雨滴水波涟漪模型
+ * 地面雨滴同心水波涟漪模型
  *
  * @property xRatio 涟漪中心横向相对位置
  * @property yRatio 涟漪中心纵向相对位置
  * @property maxRadius 扩散最大半径 (px)
  * @property phaseOffset 相位偏移
+ * @property secondaryDelay 次级同心回波产生延迟 (0f ~ 1f)
  */
 private data class RainRipple(
     val xRatio: Float,
     val yRatio: Float,
     val maxRadius: Float,
-    val phaseOffset: Float
+    val phaseOffset: Float,
+    val secondaryDelay: Float = 0.22f
 )
 
 /**
@@ -1545,9 +1570,15 @@ private fun DrawScope.drawSunWithRays(
 }
 
 /**
- * 绘制写实密集垂直细密雨帘、触地水花与水波涟漪
+ * 绘制全天候拟真高清三层景深雨丝与物理水花水波系统
  *
- * 遵循设计图：雨丝保持自然垂直微倾（3.5度斜角），密集细腻晶莹，分层展现远景细雨幕、中景主力雨丝与近景晶亮雨线。
+ * 遵循真实流体与光学物理模型：
+ * 1. 雨丝渐变拖尾（Motion Blur）：采用端到端线性渐变（尾部透明渐隐，头部明亮凝聚），呈现高速相机的运动模糊流光感；
+ * 2. 三层景深层次（3-Layer Depth）：远景细密雨幕营造深邃空间感、中景主力雨丝呈现主降水、近景疾速特写大雨滴带有高光聚光核；
+ * 3. 微风自然扰动（Wind Slant & Jitter）：整体保持自然垂直微倾（约 4 度），单颗雨滴带有独特的空气动力学微扰动；
+ * 4. 物理抛物线水花（Parabolic Splashes）：雨滴触地时，多颗晶莹水珠以不同角度与初速度向上喷溅反弹，受重力自然下落消散；
+ * 5. 双同心水波涟漪（Concentric Wave Ripples）：地面主波纹与次级延迟回波向外扩散，伴随平方衰减渐隐，呈现真实湿润积水感；
+ * 6. 大气近地水汽雨雾（Atmospheric Rain Mist）：暴雨/大雨时伴随地面水汽蒸腾漫射。
  *
  * @param width 画面宽度 (px)
  * @param height 画面高度 (px)
@@ -1568,101 +1599,157 @@ private fun DrawScope.drawRealisticHighDefRain(
     splashProgress: Float,
     isHeavy: Boolean
 ) {
-    // 依设计图调整为垂直微斜 (约 3.5 度斜角)
-    val slantFactor = if (isHeavy) 0.08f else 0.06f
-    val activeDrops = if (isHeavy) drops else drops.take(135)
-    val rainColor = Color(0xFFE3F2FD)
+    // 自然微倾角（约 3.5° ~ 4.5°）与微风轻微顺倾
+    val baseSlant = if (isHeavy) 0.075f else 0.055f
+    val activeDrops = if (isHeavy) drops else drops.take(150)
 
-    // 暴雨水汽雨雾层
-    if (isHeavy) {
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color(0xFF81D4FA).copy(alpha = 0.05f),
-                    Color(0xFFE1F5FE).copy(alpha = 0.12f)
-                ),
-                startY = height * 0.60f,
-                endY = height
+    // 1. 暴雨/大雨近地面湿润水汽雨雾层 (增强全屏纵深与湿润氛围)
+    val mistAlpha = if (isHeavy) 0.16f else 0.08f
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color(0xFF81D4FA).copy(alpha = mistAlpha * 0.35f),
+                Color(0xFFE1F5FE).copy(alpha = mistAlpha)
             ),
-            topLeft = Offset(0f, height * 0.60f),
-            size = Size(width, height * 0.40f)
-        )
+            startY = height * 0.55f,
+            endY = height
+        ),
+        topLeft = Offset(0f, height * 0.55f),
+        size = Size(width, height * 0.45f)
+    )
+
+    // 2. 地面同心水波涟漪（置于雨丝后方，呈现地面湿润积水反射）
+    ripples.forEach { ripple ->
+        val curProgress = (splashProgress + ripple.phaseOffset) % 1f
+        val centerX = ripple.xRatio * width
+        val centerY = ripple.yRatio * height
+        val maxR = ripple.maxRadius * (if (isHeavy) 1.25f else 1.0f)
+
+        // 主波纹（向外扩张并平滑衰减渐隐）
+        val mainRadiusX = curProgress * maxR
+        val mainRadiusY = mainRadiusX * 0.30f
+        val mainAlpha = ((1f - curProgress).pow(1.3f) * (if (isHeavy) 0.50f else 0.35f)).coerceIn(0f, 1f)
+
+        if (mainAlpha > 0.015f && mainRadiusX > 1.5f) {
+            drawOval(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color(0xFFE1F5FE).copy(alpha = mainAlpha * 0.3f),
+                        Color(0xFFFFFFFF).copy(alpha = mainAlpha)
+                    ),
+                    center = Offset(centerX, centerY),
+                    radius = mainRadiusX
+                ),
+                topLeft = Offset(centerX - mainRadiusX, centerY - mainRadiusY),
+                size = Size(mainRadiusX * 2f, mainRadiusY * 2f),
+                style = Stroke(width = if (isHeavy) 1.5f else 1.1f)
+            )
+        }
+
+        // 次级延迟同心波纹
+        val secProgress = curProgress - ripple.secondaryDelay
+        if (secProgress > 0f) {
+            val normSec = secProgress / (1f - ripple.secondaryDelay)
+            val secRadiusX = normSec * (maxR * 0.65f)
+            val secRadiusY = secRadiusX * 0.30f
+            val secAlpha = ((1f - normSec).pow(1.5f) * (if (isHeavy) 0.35f else 0.22f)).coerceIn(0f, 1f)
+
+            if (secAlpha > 0.015f && secRadiusX > 1.0f) {
+                drawOval(
+                    color = Color(0xFFE1F5FE).copy(alpha = secAlpha),
+                    topLeft = Offset(centerX - secRadiusX, centerY - secRadiusY),
+                    size = Size(secRadiusX * 2f, secRadiusY * 2f),
+                    style = Stroke(width = if (isHeavy) 1.1f else 0.8f)
+                )
+            }
+        }
     }
 
+    // 3. 高清三层景深拟真雨丝（远景细雨幕 -> 中景主力 -> 近景特写）
     activeDrops.forEach { drop ->
         val curProgress = (progress * drop.speedMultiplier + drop.yOffset) % 1f
-        val startY = curProgress * (height + drop.length * 1.5f) - drop.length * 1.5f
-        val curLength = if (isHeavy) drop.length * 1.2f else drop.length
+        val curLength = if (isHeavy) drop.length * 1.25f else drop.length
+        val startY = curProgress * (height + curLength * 2f) - curLength * 1.5f
         val endY = startY + curLength
 
-        val slantX = curLength * slantFactor
-        val startX = drop.xRatio * width + (curProgress * width * 0.05f)
-        val endX = startX + slantX
+        val totalSlant = baseSlant + drop.slantJitter
+        val startX = drop.xRatio * width + (curProgress * width * 0.04f)
+        val endX = startX + curLength * totalSlant
 
         if (endY > 0f && startY < height) {
-            val alphaMultiplier = if (isHeavy) 1.2f else 1.0f
-            val baseAlpha = (drop.alpha * alphaMultiplier).coerceIn(0.18f, 0.95f)
+            val alphaMultiplier = if (isHeavy) 1.15f else 1.0f
+            val baseAlpha = (drop.alpha * alphaMultiplier).coerceIn(0.12f, 0.96f)
+            val strokeW = if (isHeavy) drop.strokeWidth * 1.18f else drop.strokeWidth
+
+            // 端到端运动模糊渐变笔刷（尾部透明虚化，头部纯白高光）
+            val dropBrush = Brush.linearGradient(
+                colors = listOf(
+                    Color(0x00D0EAFB),
+                    Color(0xB0E1F5FE).copy(alpha = baseAlpha * 0.55f),
+                    Color.White.copy(alpha = baseAlpha)
+                ),
+                start = Offset(startX, startY),
+                end = Offset(endX, endY)
+            )
 
             drawLine(
-                color = rainColor.copy(alpha = baseAlpha * 0.85f),
+                brush = dropBrush,
                 start = Offset(startX, startY),
                 end = Offset(endX, endY),
-                strokeWidth = if (isHeavy) drop.strokeWidth * 1.15f else drop.strokeWidth,
+                strokeWidth = strokeW,
                 cap = StrokeCap.Round
             )
 
+            // 近景特写大雨滴头部晶莹高光聚光核
             if (drop.layer == 2) {
                 drawCircle(
-                    color = Color.White.copy(alpha = baseAlpha * 0.90f),
-                    radius = drop.strokeWidth * 0.75f,
+                    color = Color.White.copy(alpha = (baseAlpha * 0.95f).coerceIn(0f, 1f)),
+                    radius = strokeW * 0.75f,
+                    center = Offset(endX, endY)
+                )
+            } else if (drop.layer == 1 && baseAlpha > 0.65f) {
+                drawCircle(
+                    color = Color(0xFFF0F8FF).copy(alpha = baseAlpha * 0.70f),
+                    radius = strokeW * 0.50f,
                     center = Offset(endX, endY)
                 )
             }
         }
     }
 
+    // 4. 触地物理抛物线水花飞溅
     splashes.forEach { splash ->
-        val curSplashProgress = (splashProgress * 2.2f + splash.phaseOffset) % 1f
-        if (curSplashProgress < 0.65f) {
-            val splashAlpha = (1f - (curSplashProgress / 0.65f)) * 0.75f
+        val curSplashProgress = (splashProgress * 2.4f + splash.phaseOffset) % 1f
+        if (curSplashProgress < 0.60f) {
+            val normT = curSplashProgress / 0.60f
+            val splashAlpha = ((1f - normT).pow(1.2f) * 0.85f).coerceIn(0f, 1f)
             val cx = splash.xRatio * width
             val cy = splash.yRatio * height
-            val r = splash.splashRadius * (curSplashProgress / 0.65f)
 
-            drawCircle(
-                color = Color.White.copy(alpha = splashAlpha),
-                radius = 1.8f,
-                center = Offset(cx - r * 1.2f, cy - r * 0.8f)
-            )
-            drawCircle(
-                color = Color(0xFFE1F5FE).copy(alpha = splashAlpha * 0.9f),
-                radius = 1.5f,
-                center = Offset(cx + r * 1.4f, cy - r * 1.0f)
-            )
-            drawCircle(
-                color = Color.White.copy(alpha = splashAlpha * 0.8f),
-                radius = 1.2f,
-                center = Offset(cx + r * 0.2f, cy - r * 1.4f)
-            )
-        }
-    }
+            val count = splash.dropletAngles.size
+            for (i in 0 until count) {
+                val angle = splash.dropletAngles[i]
+                val speed = splash.dropletSpeeds[i]
+                val r = splash.splashRadius * speed
 
-    ripples.forEach { ripple ->
-        val curRippleProgress = (splashProgress + ripple.phaseOffset) % 1f
-        val centerX = ripple.xRatio * width
-        val centerY = ripple.yRatio * height
-        val radiusX = curRippleProgress * ripple.maxRadius
-        val radiusY = radiusX * 0.32f
-        val alpha = (1f - curRippleProgress) * (if (isHeavy) 0.55f else 0.40f)
+                // 物理抛物线计算：初速度上抛 + 重力下落
+                val dx = cos(angle) * r * normT
+                val dy = -sin(angle) * r * normT + 0.5f * (r * 1.2f) * normT * normT
 
-        if (alpha > 0.02f) {
-            drawOval(
-                color = Color(0xFFE1F5FE).copy(alpha = alpha),
-                topLeft = Offset(centerX - radiusX, centerY - radiusY),
-                size = Size(radiusX * 2f, radiusY * 2f),
-                style = Stroke(width = if (isHeavy) 1.6f else 1.2f)
-            )
+                val dropRadius = when (i % 3) {
+                    0 -> 1.8f
+                    1 -> 1.4f
+                    else -> 1.1f
+                }
+
+                drawCircle(
+                    color = if (i % 2 == 0) Color.White.copy(alpha = splashAlpha) else Color(0xFFE1F5FE).copy(alpha = splashAlpha * 0.9f),
+                    radius = dropRadius,
+                    center = Offset(cx + dx, cy + dy)
+                )
+            }
         }
     }
 }

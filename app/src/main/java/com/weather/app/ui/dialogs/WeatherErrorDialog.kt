@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,15 +27,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.weather.app.ui.components.getWeatherMenuBackgroundColor
 
 /**
  * 网络请求失败与数据异常提示弹窗组件
  *
- * 采用统一的 95% 磨砂深灰蓝底色与红色警告高亮，当接口请求失败、鉴权不通过或数据异常时向用户直观展示错误详情，
+ * 采用根据天气动态匹配的 94% 半透明磨砂底色与红色警告高亮，当接口请求失败、鉴权不通过或数据异常时向用户直观展示错误详情，
  * 并提供快捷重试或跳转配置凭据操作。
  *
  * @param errorMessage 异常错误详细描述文本
  * @param currentSourceId 当前激活的数据源 ID（如 "qweather", "caiyun", "cma"）
+ * @param weatherText 当前动态天气现象描述（用于提取匹配的天气主题背景色）
  * @param onRetry 点击重试时的回调函数（可选）
  * @param onConfigureQWeatherClick 点击去配置和风天气凭据时的回调函数
  * @param onConfigureCaiyunClick 点击去配置彩云天气凭据时的回调函数
@@ -44,6 +47,7 @@ import androidx.compose.ui.window.DialogProperties
 fun WeatherErrorDialog(
     errorMessage: String,
     currentSourceId: String = "",
+    weatherText: String = "",
     onRetry: (() -> Unit)? = null,
     onConfigureQWeatherClick: () -> Unit = {},
     onConfigureCaiyunClick: () -> Unit = {},
@@ -53,6 +57,14 @@ fun WeatherErrorDialog(
             (errorMessage.contains("401") || errorMessage.contains("JWT") || errorMessage.contains("Authentication failed") || errorMessage.contains("未配置"))
     val isCaiyunAuthError = currentSourceId == "caiyun" &&
             (errorMessage.contains("401") || errorMessage.contains("403") || errorMessage.contains("Token") || errorMessage.contains("token") || errorMessage.contains("未配置") || errorMessage.contains("invalid token"))
+
+    val dialogBackgroundColor = remember(weatherText) {
+        if (weatherText.isNotBlank()) {
+            getWeatherMenuBackgroundColor(weatherText)
+        } else {
+            Color(0xF2182230)
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -64,7 +76,7 @@ fun WeatherErrorDialog(
     ) {
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = Color(0xF2182230), // 95% 磨砂深灰蓝底色
+            color = dialogBackgroundColor, // 动态天气沉浸磨砂底色
             border = BorderStroke(0.8.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
             modifier = Modifier
                 .fillMaxWidth(0.88f)
@@ -77,6 +89,8 @@ fun WeatherErrorDialog(
             ) {
                 // 顶部标题
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -139,7 +153,7 @@ fun WeatherErrorDialog(
                 // 底部操作按钮
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isQWeatherAuthError) {

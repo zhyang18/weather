@@ -471,6 +471,7 @@ fun WeatherScreen(
         com.weather.app.ui.dialogs.WeatherErrorDialog(
             errorMessage = errorMsg,
             currentSourceId = uiState.currentSource.id,
+            weatherText = weatherText,
             onRetry = {
                 viewModel.refreshCurrentCity()
             },
