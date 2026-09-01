@@ -163,23 +163,9 @@
             filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
         }
 
-        /* 小地图卡片紧凑模式下的比例尺位置与尺寸微调，并禁用定位标记的所有鼠标/触摸交互 */
-        .compact-mode .leaflet-bottom.leaflet-left {
-            margin-bottom: 6px;
-            margin-left: 8px;
-        }
-        .compact-mode .leaflet-control-scale-line {
-            font-size: 9.5px !important;
-            padding: 0 2px 4px 2px !important;
-        }
-        .compact-mode .leaflet-control-scale-line::after {
-            bottom: 0px;
-            left: 0px;
-            right: 0px;
-            height: 3px;
-            border-bottom-width: 1px;
-            border-left-width: 1px;
-            border-right-width: 1px;
+        /* 小地图卡片紧凑模式下隐藏比例尺，并禁用定位标记的所有鼠标/触摸交互 */
+        .compact-mode .leaflet-control-scale {
+            display: none !important;
         }
         .compact-mode,
         .compact-mode #map,
@@ -266,7 +252,7 @@
             var mapCoords = toMapCoordinate(rawLat, rawLng);
             currentLat = mapCoords[0];
             currentLng = mapCoords[1];
-            var initialZoom = zoom || 11;
+            var initialZoom = zoom || 14;
 
             if (map) {
                 map.remove();
@@ -511,7 +497,7 @@
 
         window.addEventListener('resize', triggerResize);
         document.addEventListener('DOMContentLoaded', function() {
-            safeInit(32.17, 118.76, 10, true);
+            safeInit(32.17, 118.76, 14, true);
         });
     </script>
 </body>

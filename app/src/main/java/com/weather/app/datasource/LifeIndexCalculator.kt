@@ -92,6 +92,69 @@ object LifeIndexCalculator {
         }
         items.add(LifeIndexItem(name = "舒适度", level = comfortLevel, category = "comfort", advice = comfortAdvice))
 
+        // 6. 紫外线/防晒指数 (UV)
+        val uvVal = current.uvIndex ?: if (weatherText.contains("晴")) 6.0 else if (weatherText.contains("云")) 3.0 else 1.0
+        val (uvLevel, uvAdvice) = when {
+            uvVal >= 8.0 -> Pair("极强", "紫外线强烈，涂抹SPF30+防晒霜，尽量避免外出")
+            uvVal >= 6.0 -> Pair("较强", "紫外线较强，外出需遮阳伞、太阳镜及防晒霜")
+            uvVal >= 3.0 -> Pair("中等", "外出可适当采取遮阳防护措施")
+            else -> Pair("弱", "紫外线较弱，无需特殊防晒防护")
+        }
+        items.add(LifeIndexItem(name = "防晒指数", level = uvLevel, category = "uv", advice = uvAdvice))
+
+        // 7. 钓鱼指数 (Fishing)
+        val (fishingLevel, fishingAdvice) = when {
+            isRainingNow && weatherText.contains("暴") -> Pair("不宜", "暴雨天气水情危险，严禁户外垂钓")
+            current.windSpeed >= 38.0 -> Pair("较不宜", "风力较大影响抛竿观漂，不推荐垂钓")
+            temp in 15.0..26.0 && current.pressure in 1005.0..1020.0 -> Pair("适宜", "气压稳定温和，鱼类活跃，非常适合垂钓")
+            else -> Pair("较适宜", "气象条件尚可，垂钓请注意水边防滑")
+        }
+        items.add(LifeIndexItem(name = "钓鱼指数", level = fishingLevel, category = "fishing", advice = fishingAdvice))
+
+        // 8. 观星指数 (Stargazing)
+        val (starLevel, starAdvice) = when {
+            weatherText.contains("晴") && current.visibility != null && current.visibility >= 10.0 -> Pair("极佳", "夜空晴朗通透无云，非常适宜仰望星空与天文观测")
+            weatherText.contains("晴") || weatherText.contains("少云") -> Pair("适宜", "夜空少云，适宜观星与夜空摄影")
+            isRainingNow || weatherText.contains("雨") || weatherText.contains("阴") -> Pair("不宜", "云层厚重或有降水，不适宜天文观星")
+            else -> Pair("较不宜", "夜空云量较多，星光易受遮挡")
+        }
+        items.add(LifeIndexItem(name = "观星指数", level = starLevel, category = "stargazing", advice = starAdvice))
+
+        // 9. 交通指数 (Traffic)
+        val (trafficLevel, trafficAdvice) = when {
+            weatherText.contains("暴雨") || weatherText.contains("暴雪") || weatherText.contains("大雾") -> Pair("较差", "恶劣天气易导致路面湿滑或视线受阻，谨慎驾驶")
+            isRainingNow || weatherText.contains("雨") || weatherText.contains("雪") -> Pair("一般", "路面湿滑，请控制车速保持安全车距")
+            current.visibility != null && current.visibility < 3.0 -> Pair("较差", "能见度较低，行车请开启雾灯减速慢行")
+            else -> Pair("较好", "天气晴好路况良好，适宜各种交通出行")
+        }
+        items.add(LifeIndexItem(name = "交通指数", level = trafficLevel, category = "traffic", advice = trafficAdvice))
+
+        // 10. 旅游指数 (Travel)
+        val (travelLevel, travelAdvice) = when {
+            isRainingNow && (weatherText.contains("大雨") || weatherText.contains("暴雨")) -> Pair("不宜", "强降水天气，建议推迟户外景区游览计划")
+            temp in 16.0..27.0 && !isRainingNow && current.windSpeed < 30.0 -> Pair("适宜", "温度适宜微风拂面，非常适合景区游览与户外踏青")
+            temp > 33.0 -> Pair("一般", "天气炎热，外出旅游请做好防暑防晒并备足饮水")
+            else -> Pair("较适宜", "气象适中，出行游玩请关注即时天气变化")
+        }
+        items.add(LifeIndexItem(name = "旅游指数", level = travelLevel, category = "travel", advice = travelAdvice))
+
+        // 11. 晾晒指数 (Drying)
+        val (dryingLevel, dryingAdvice) = when {
+            isRainingNow || isRainTomorrow -> Pair("不宜", "有降水天气，不建议在室外晾晒衣物")
+            weatherText.contains("晴") && current.humidity < 60.0 -> Pair("极适宜", "光照充足空气干燥，非常适宜洗晒厚重衣物被褥")
+            weatherText.contains("多云") -> Pair("适宜", "多云天气通风良好，适宜一般衣物晾晒")
+            else -> Pair("较适宜", "建议在通风向阳处晾晒衣物")
+        }
+        items.add(LifeIndexItem(name = "晾晒指数", level = dryingLevel, category = "drying", advice = dryingAdvice))
+
+        // 12. 过敏指数 (Allergy)
+        val (allergyLevel, allergyAdvice) = when {
+            current.windSpeed in 15.0..35.0 && weatherText.contains("晴") && (current.humidity in 30.0..60.0) -> Pair("较易发", "风力适中有利于花粉与微尘扩散，易过敏人群外出请佩戴口罩")
+            isRainingNow -> Pair("少发", "降水有效沉降空气悬浮过敏原，过敏风险较低")
+            else -> Pair("不易发", "气象条件平稳，一般人群无需特殊防范")
+        }
+        items.add(LifeIndexItem(name = "过敏指数", level = allergyLevel, category = "allergy", advice = allergyAdvice))
+
         return LifeIndex(items = items)
     }
 }

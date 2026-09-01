@@ -3,11 +3,14 @@ package com.weather.app.ui.dialogs
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -77,14 +80,14 @@ fun CaiyunConfigDialog(
             shape = RoundedCornerShape(20.dp),
             color = Color(0xF2182230), // 95% 磨砂深灰蓝底色
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .padding(vertical = 24.dp)
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.82f)
+                .padding(vertical = 15.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState())
+                    .fillMaxSize()
+                    .padding(horizontal = 15.dp, vertical = 10.dp)
             ) {
                 // 标题
                 Text(
@@ -94,7 +97,7 @@ fun CaiyunConfigDialog(
                     color = Color.White
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
                 Text(
                     text = "支持官方 AppKey & AppSecret 签名认证与 Token 鉴权",
@@ -102,174 +105,206 @@ fun CaiyunConfigDialog(
                     color = Color.White.copy(alpha = 0.65f)
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // AppKey 标题栏（带重置默认按钮）
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // 中间可滚动内容区域（自动填充剩余高度空间）
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
                 ) {
-                    Text(
-                        text = "AppKey / 访问令牌",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = "使用内置公测凭据",
-                        fontSize = 12.sp,
-                        color = Color(0xFF60A5FA),
+                    Column(
                         modifier = Modifier
-                            .clickable(enabled = !isVerifying) {
-                                appKey = CaiyunConfig.DEFAULT_TOKEN
-                                appSecret = ""
-                                apiHost = CaiyunConfig.DEFAULT_API_HOST
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        // AppKey 标题栏（带重置默认按钮）
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "AppKey / 访问令牌",
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "使用内置公测凭据",
+                                fontSize = 12.sp,
+                                color = Color(0xFF60A5FA),
+                                modifier = Modifier
+                                    .clickable(enabled = !isVerifying) {
+                                        appKey = CaiyunConfig.DEFAULT_TOKEN
+                                        appSecret = ""
+                                        apiHost = CaiyunConfig.DEFAULT_API_HOST
+                                        errorMessage = null
+                                        successMessage = null
+                                    }
+                                    .padding(vertical = 2.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // AppKey 输入框
+                        OutlinedTextField(
+                            value = appKey,
+                            onValueChange = {
+                                appKey = it
                                 errorMessage = null
                                 successMessage = null
+                            },
+                            placeholder = { Text("粘贴【API 凭证管理】中的 AppKey 或 Token", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                            singleLine = true,
+                            enabled = !isVerifying,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF60A5FA),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                cursorColor = Color(0xFF60A5FA)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // AppSecret 输入框
+                        OutlinedTextField(
+                            value = appSecret,
+                            onValueChange = {
+                                appSecret = it
+                                errorMessage = null
+                                successMessage = null
+                            },
+                            label = { Text("AppSecret（API 凭证密钥，Token 模式可留空）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp) },
+                            placeholder = { Text("粘贴完整 AppSecret（点击控制台【显示】或【复制】）", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                            singleLine = true,
+                            enabled = !isVerifying,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF60A5FA),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                cursorColor = Color(0xFF60A5FA)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // API Host 输入框
+                        OutlinedTextField(
+                            value = apiHost,
+                            onValueChange = {
+                                apiHost = it
+                                errorMessage = null
+                                successMessage = null
+                            },
+                            label = { Text("API 域名（Host）", color = Color.White.copy(alpha = 0.7f)) },
+                            placeholder = { Text(CaiyunConfig.DEFAULT_API_HOST, color = Color.White.copy(alpha = 0.3f)) },
+                            singleLine = true,
+                            enabled = !isVerifying,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF60A5FA),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                cursorColor = Color(0xFF60A5FA)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // 错误提示
+                        if (errorMessage != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                                border = BorderStroke(0.6.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = errorMessage ?: "",
+                                    color = Color(0xFFFCA5A5),
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 15.sp,
+                                    modifier = Modifier.padding(8.dp)
+                                )
                             }
-                            .padding(vertical = 2.dp)
-                    )
-                }
+                        }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                        // 验证成功提示
+                        if (successMessage != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                border = BorderStroke(0.6.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = successMessage ?: "",
+                                    color = Color(0xFF6EE7B7),
+                                    fontSize = 11.5.sp,
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            }
+                        }
 
-                // AppKey 输入框
-                OutlinedTextField(
-                    value = appKey,
-                    onValueChange = {
-                        appKey = it
-                        errorMessage = null
-                        successMessage = null
-                    },
-                    placeholder = { Text("粘贴【API 凭证管理】中的 AppKey 或 Token", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
-                    singleLine = true,
-                    enabled = !isVerifying,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF60A5FA),
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                        cursorColor = Color(0xFF60A5FA)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // AppSecret 输入框
-                OutlinedTextField(
-                    value = appSecret,
-                    onValueChange = {
-                        appSecret = it
-                        errorMessage = null
-                        successMessage = null
-                    },
-                    label = { Text("AppSecret（API 凭证密钥，Token 模式可留空）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp) },
-                    placeholder = { Text("粘贴完整 AppSecret（点击控制台【显示】或【复制】）", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
-                    singleLine = true,
-                    enabled = !isVerifying,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF60A5FA),
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                        cursorColor = Color(0xFF60A5FA)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // API Host 输入框
-                OutlinedTextField(
-                    value = apiHost,
-                    onValueChange = {
-                        apiHost = it
-                        errorMessage = null
-                        successMessage = null
-                    },
-                    label = { Text("API 域名（Host）", color = Color.White.copy(alpha = 0.7f)) },
-                    placeholder = { Text(CaiyunConfig.DEFAULT_API_HOST, color = Color.White.copy(alpha = 0.3f)) },
-                    singleLine = true,
-                    enabled = !isVerifying,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF60A5FA),
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                        cursorColor = Color(0xFF60A5FA)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 错误提示
-                if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                        border = BorderStroke(0.6.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = errorMessage ?: "",
-                            color = Color(0xFFFCA5A5),
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            modifier = Modifier.padding(10.dp)
-                        )
+                        // 使用提示（悬挂缩进列表排版）
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White.copy(alpha = 0.06f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                Text(
+                                    text = "如何获取 AppKey & AppSecret？",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF60A5FA)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val guideSteps = listOf(
+                                    "登录彩云开放平台控制台 (platform.caiyunapp.com)",
+                                    "进入【API 凭证管理】，点击【显示密钥】并完整复制 AppKey 与 AppSecret",
+                                    "亦可在【Token 管理】中复制 Token 填入上方（AppSecret 留空）",
+                                    "点击右上角【使用内置公测凭据】可一键极速体验"
+                                )
+                                guideSteps.forEachIndexed { index, step ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 1.5.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}. ",
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF60A5FA),
+                                            lineHeight = 15.sp
+                                        )
+                                        Text(
+                                            text = step,
+                                            fontSize = 10.5.sp,
+                                            color = Color.White.copy(alpha = 0.75f),
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                // 验证成功提示
-                if (successMessage != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF10B981).copy(alpha = 0.15f),
-                        border = BorderStroke(0.6.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = successMessage ?: "",
-                            color = Color(0xFF6EE7B7),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(10.dp)
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(14.dp))
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 使用提示
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color.White.copy(alpha = 0.06f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "如何获取 AppKey & AppSecret？",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF60A5FA)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "1. 登录彩云开放平台控制台 (platform.caiyunapp.com)\n" +
-                                    "2. 进入【API 凭证管理】，点击【显示密钥】并完整复制 AppKey 与 AppSecret\n" +
-                                    "3. 亦可在【Token 管理】中复制 Token 填入上方（AppSecret 留空）\n" +
-                                    "4. 点击右上角【使用内置公测凭据】可一键极速体验",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.7f),
-                            lineHeight = 16.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // 底部操作按钮栏（左右两端对称，避免溢出）
+                // 底部操作按钮栏（左右两端对称，稳固固定在底部）
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

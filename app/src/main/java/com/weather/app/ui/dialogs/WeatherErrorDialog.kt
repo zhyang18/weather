@@ -68,12 +68,12 @@ fun WeatherErrorDialog(
             border = BorderStroke(0.8.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
             modifier = Modifier
                 .fillMaxWidth(0.88f)
-                .padding(vertical = 24.dp)
+                .padding(vertical = 10.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(10.dp)
             ) {
                 // 顶部标题
                 Row(

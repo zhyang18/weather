@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -136,301 +138,286 @@ fun QWeatherConfigDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xF7151D2A), // 磨砂深空板岩蓝底色
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xF2182230), // 95% 磨砂深灰蓝底色（与彩云天气一致）
             modifier = Modifier
-                .fillMaxWidth(0.93f)
-                .padding(vertical = 20.dp)
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.95f)
+                .padding(vertical = 15.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 22.dp)
-                    .verticalScroll(rememberScrollState())
+                    .fillMaxSize()
+                    .padding(horizontal = 15.dp, vertical = 10.dp)
             ) {
-                // 顶部标题与品牌徽标
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                androidx.compose.ui.graphics.Brush.linearGradient(
-                                    listOf(Color(0xFF3B82F6), Color(0xFF1D4ED8))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "和",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
+                // 顶部标题（与彩云天气一致）
+                Text(
+                    text = "和风天气 API 凭证管理",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = Color.White
+                )
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
-                    Column {
-                        Text(
-                            text = "和风天气凭据与控制台",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Ed25519 签名鉴权 · 24 小时控制台用量统计",
-                            fontSize = 11.5.sp,
-                            color = Color.White.copy(alpha = 0.6f)
-                        )
-                    }
-                }
+                Text(
+                    text = "支持 Ed25519 签名鉴权与 24 小时控制台用量统计",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.65f)
+                )
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Tab 切换栏
+                // Tab 切换栏（紧凑设计）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.07f))
-                        .padding(3.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .padding(2.dp)
                 ) {
-                    val tabs = listOf("凭据配置", "用量统计")
+                    val tabs = listOf("凭证配置", "用量统计")
                     tabs.forEachIndexed { index, title ->
                         val isSelected = selectedTabIndex == index
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(
-                                    if (isSelected) androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                        listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
-                                    ) else androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                        listOf(Color.Transparent, Color.Transparent)
-                                    )
-                                )
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSelected) Color(0xFF2563EB) else Color.Transparent)
                                 .clickable {
                                     selectedTabIndex = index
                                     if (index == 1 && statsSummary == null && !isFetchingStats) {
                                         triggerFetchStats()
                                     }
                                 }
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 5.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = title,
-                                fontSize = 13.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                fontSize = 12.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                                 color = if (isSelected) Color.White else Color.White.copy(alpha = 0.65f)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                if (selectedTabIndex == 0) {
-                    // ==================== Tab 1: 凭据配置 ====================
-                    // Project ID
-                    OutlinedTextField(
-                        value = projectId,
-                        onValueChange = {
-                            projectId = it
-                            errorMessage = null
-                            successMessage = null
-                        },
-                        label = { Text("Project ID（项目 ID）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
-                        placeholder = { Text("例如：project_123456", color = Color.White.copy(alpha = 0.3f), fontSize = 12.5.sp) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isVerifying,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF3B82F6),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
-                            cursorColor = Color(0xFF60A5FA),
-                            focusedContainerColor = Color(0x0FFFFFFF),
-                            unfocusedContainerColor = Color(0x0AFFFFFF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Key ID (kid)
-                    OutlinedTextField(
-                        value = keyId,
-                        onValueChange = {
-                            keyId = it
-                            errorMessage = null
-                            successMessage = null
-                        },
-                        label = { Text("Key ID / 凭据 ID（kid）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
-                        placeholder = { Text("例如：key_abc123", color = Color.White.copy(alpha = 0.3f), fontSize = 12.5.sp) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isVerifying,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF3B82F6),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
-                            cursorColor = Color(0xFF60A5FA),
-                            focusedContainerColor = Color(0x0FFFFFFF),
-                            unfocusedContainerColor = Color(0x0AFFFFFF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Private Key PEM
-                    OutlinedTextField(
-                        value = privateKey,
-                        onValueChange = {
-                            privateKey = it
-                            errorMessage = null
-                            successMessage = null
-                        },
-                        label = { Text("Ed25519 Private Key（私钥）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
-                        placeholder = { Text("-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----", color = Color.White.copy(alpha = 0.3f), fontSize = 11.5.sp) },
-                        minLines = 3,
-                        maxLines = 5,
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isVerifying,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF3B82F6),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
-                            cursorColor = Color(0xFF60A5FA),
-                            focusedContainerColor = Color(0x0FFFFFFF),
-                            unfocusedContainerColor = Color(0x0AFFFFFF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // API Host
-                    OutlinedTextField(
-                        value = apiHost,
-                        onValueChange = {
-                            apiHost = it
-                            errorMessage = null
-                            successMessage = null
-                        },
-                        label = { Text("API 专属域名（Host）", color = Color.White.copy(alpha = 0.75f), fontSize = 12.5.sp) },
-                        placeholder = { Text("例如：xxx.qweatherapi.com", color = Color.White.copy(alpha = 0.3f), fontSize = 12.5.sp) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isVerifying,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF3B82F6),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
-                            cursorColor = Color(0xFF60A5FA),
-                            focusedContainerColor = Color(0x0FFFFFFF),
-                            unfocusedContainerColor = Color(0x0AFFFFFF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = "提示：API Host 需与和风控制台【项目管理】分配的专属域名一致",
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
-                    )
-
-                    // 错误提示
-                    if (errorMessage != null) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                            border = BorderStroke(0.6.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
-                            modifier = Modifier.fillMaxWidth()
+                // 中间统一高度内容区（90% 高度自动铺满，消除 Tab 切换跳动）
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    if (selectedTabIndex == 0) {
+                        // ==================== Tab 1: 凭据配置 ====================
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
                         ) {
-                            Text(
-                                text = errorMessage ?: "",
-                                color = Color(0xFFFCA5A5),
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp,
-                                modifier = Modifier.padding(10.dp)
+                            // Project ID
+                            OutlinedTextField(
+                                value = projectId,
+                                onValueChange = {
+                                    projectId = it
+                                    errorMessage = null
+                                    successMessage = null
+                                },
+                                label = { Text("Project ID（项目 ID）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
+                                placeholder = { Text("例如：project_123456", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                                singleLine = true,
+                                enabled = !isVerifying,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFF60A5FA),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    cursorColor = Color(0xFF60A5FA)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
                             )
-                        }
-                    }
 
-                    // 验证成功提示
-                    if (successMessage != null) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color(0xFF10B981).copy(alpha = 0.15f),
-                            border = BorderStroke(0.6.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = successMessage ?: "",
-                                color = Color(0xFF6EE7B7),
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(10.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // 使用提示 / 凭据与权限获取指引
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.White.copy(alpha = 0.05f),
-                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(Color(0xFF60A5FA))
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "如何获取 Project ID、Key ID 与私钥？",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF93C5FD)
-                                )
-                            }
                             Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "① 登录和风开发者控制台 (console.qweather.com)\n" +
-                                        "② 进入【项目管理】创建或选择项目，获取 API Host 与 Project ID\n" +
-                                        "③ 新建凭据（推荐 Ed25519 签名），获取 Key ID 并复制私钥\n" +
-                                        "④ 凭据详情中勾选【控制台权限】下的【请求量统计】以启用查询",
-                                fontSize = 11.sp,
-                                color = Color.White.copy(alpha = 0.7f),
-                                lineHeight = 17.sp
+
+                            // Key ID (kid)
+                            OutlinedTextField(
+                                value = keyId,
+                                onValueChange = {
+                                    keyId = it
+                                    errorMessage = null
+                                    successMessage = null
+                                },
+                                label = { Text("Key ID / 凭据 ID（kid）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
+                                placeholder = { Text("例如：key_abc123", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                                singleLine = true,
+                                enabled = !isVerifying,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFF60A5FA),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    cursorColor = Color(0xFF60A5FA)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Private Key PEM
+                            OutlinedTextField(
+                                value = privateKey,
+                                onValueChange = {
+                                    privateKey = it
+                                    errorMessage = null
+                                    successMessage = null
+                                },
+                                label = { Text("Ed25519 Private Key（私钥）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
+                                placeholder = { Text("-----BEGIN PRIVATE KEY----- ...", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                                minLines = 1,
+                                maxLines = 2,
+                                enabled = !isVerifying,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFF60A5FA),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    cursorColor = Color(0xFF60A5FA)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // API Host
+                            OutlinedTextField(
+                                value = apiHost,
+                                onValueChange = {
+                                    apiHost = it
+                                    errorMessage = null
+                                    successMessage = null
+                                },
+                                label = { Text("API 专属域名（Host）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
+                                placeholder = { Text("例如：xxx.qweatherapi.com", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                                singleLine = true,
+                                enabled = !isVerifying,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFF60A5FA),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    cursorColor = Color(0xFF60A5FA)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // 错误提示
+                            if (errorMessage != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                                    border = BorderStroke(0.6.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = errorMessage ?: "",
+                                        color = Color(0xFFFCA5A5),
+                                        fontSize = 11.5.sp,
+                                        lineHeight = 15.sp,
+                                        modifier = Modifier.padding(8.dp)
+                                    )
+                                }
+                            }
+
+                            // 验证成功提示
+                            if (successMessage != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                    border = BorderStroke(0.6.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = successMessage ?: "",
+                                        color = Color(0xFF6EE7B7),
+                                        fontSize = 11.5.sp,
+                                        modifier = Modifier.padding(8.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 使用提示（与彩云风格一致的卡片）
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White.copy(alpha = 0.06f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = "如何获取凭证与开启统计？",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF60A5FA)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    val guideSteps = listOf(
+                                        "登录控制台 console.qweather.com 进入左侧【设置】获取专属 API Host",
+                                        "进入【项目管理】创建或选择项目，复制【Project ID】",
+                                        "在项目下【凭据】中新建 Ed25519 凭据，获取【Key ID】并复制【私钥】",
+                                        "点击该凭据详情，在【控制台权限】中勾选【请求量统计】开启查询"
+                                    )
+                                    guideSteps.forEachIndexed { index, step ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 1.5.dp),
+                                            verticalAlignment = Alignment.Top
+                                        ) {
+                                            Text(
+                                                text = "${index + 1}. ",
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFF60A5FA),
+                                                lineHeight = 15.sp
+                                            )
+                                            Text(
+                                                text = step,
+                                                fontSize = 10.5.sp,
+                                                color = Color.White.copy(alpha = 0.75f),
+                                                lineHeight = 15.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // ==================== Tab 2: 用量统计（内部垂直滚动布局） ====================
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            QWeatherStatsCard(
+                                statsSummary = statsSummary,
+                                isFetching = isFetchingStats,
+                                errorMessage = statsError,
+                                onRefresh = triggerFetchStats
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                    // 底部操作按钮栏
+                // 底部固定操作按钮栏（高度一致，Tab 切换不跳动）
+                if (selectedTabIndex == 0) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -470,22 +457,20 @@ fun QWeatherConfigDialog(
                                 }
                             },
                             enabled = !isVerifying,
-                            shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.25f)),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                         ) {
-                            Text("测试连接", fontSize = 12.5.sp, color = Color.White.copy(alpha = 0.9f))
+                            Text("测试连接", fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f))
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedButton(
                                 onClick = onDismiss,
                                 enabled = !isVerifying,
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                             ) {
-                                Text("取消", color = Color.White.copy(alpha = 0.85f), fontSize = 12.5.sp)
+                                Text("取消", color = Color.White.copy(alpha = 0.85f))
                             }
 
                             Spacer(modifier = Modifier.width(10.dp))
@@ -522,7 +507,8 @@ fun QWeatherConfigDialog(
                                     }
                                 },
                                 enabled = !isVerifying,
-                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.defaultMinSize(minWidth = 104.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFF2563EB),
                                     contentColor = Color.White
@@ -537,35 +523,26 @@ fun QWeatherConfigDialog(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("验证中...", fontSize = 13.sp, maxLines = 1)
                                 } else {
-                                    Text("保存配置", fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                                    Text("保存", fontSize = 13.5.sp, maxLines = 1)
                                 }
                             }
                         }
                     }
                 } else {
-                    // ==================== Tab 2: 用量统计 ====================
-                    QWeatherStatsCard(
-                        statsSummary = statsSummary,
-                        isFetching = isFetchingStats,
-                        errorMessage = statsError,
-                        onRefresh = triggerFetchStats
-                    )
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
                         Button(
                             onClick = onDismiss,
-                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.defaultMinSize(minWidth = 80.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF2563EB),
                                 contentColor = Color.White
                             )
                         ) {
-                            Text("关闭", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("关闭", fontSize = 13.sp)
                         }
                     }
                 }
@@ -590,15 +567,15 @@ fun QWeatherStatsCard(
     onRefresh: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0x12FFFFFF),
-        border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f)),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White.copy(alpha = 0.05f),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp)
+                .padding(10.dp)
         ) {
             // 头部标题与刷新操作栏
             Row(
@@ -609,14 +586,14 @@ fun QWeatherStatsCard(
                 Column {
                     Text(
                         text = "控制台 API 用量分析",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(1.dp))
                     Text(
                         text = "官方 /metrics/v1/stats 数据 (延迟约 1 小时)",
-                        fontSize = 10.5.sp,
+                        fontSize = 10.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
                 }
@@ -624,29 +601,29 @@ fun QWeatherStatsCard(
                 OutlinedButton(
                     onClick = onRefresh,
                     enabled = !isFetching,
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                     border = BorderStroke(0.6.dp, Color(0xFF60A5FA).copy(alpha = 0.6f)),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF93C5FD)),
                     modifier = Modifier
-                        .height(28.dp)
-                        .defaultMinSize(minWidth = 56.dp)
+                        .height(26.dp)
+                        .defaultMinSize(minWidth = 50.dp)
                 ) {
                     if (isFetching) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(11.dp),
+                            modifier = Modifier.size(10.dp),
                             color = Color(0xFF93C5FD),
                             strokeWidth = 1.5.dp
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("查询中", fontSize = 11.sp, maxLines = 1)
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("查询中", fontSize = 10.5.sp, maxLines = 1)
                     } else {
-                        Text("刷新", fontSize = 11.sp, maxLines = 1)
+                        Text("刷新", fontSize = 10.5.sp, maxLines = 1)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             when {
                 // 1. 权限未开通警告

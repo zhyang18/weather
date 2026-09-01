@@ -142,7 +142,7 @@ fun LocationMapScreen(
         var showLayerSelector by remember { mutableStateOf(false) }
         var webViewInstance by remember { mutableStateOf<WebView?>(null) }
 
-        // 当大地图可见或当前城市坐标/图层/雷达状态变更时，自动驱动大地图飞至最新坐标并更新标注
+        // 当大地图可见或当前城市坐标/图层/雷达状态变更时，自动驱动大地图飞至最新坐标并更新标注（默认 500m 比例尺 / Zoom 14）
         LaunchedEffect(visible, lat, lng, cityName, currentLayer, isRadarEnabled, webViewInstance) {
             if (visible && webViewInstance != null) {
                 val subtitle = "气温: ${weatherData?.current?.temperature?.toInt() ?: 0}° · ${weatherData?.getDisplayWeatherText() ?: ""}"
@@ -490,7 +490,7 @@ private fun createFullMapWebView(
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 11, '$title', '$subtitle', true, '$initialLayer', $initialRadar); window.dispatchEvent(new Event('resize')); } })()"
+                val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 14, '$title', '$subtitle', true, '$initialLayer', $initialRadar); window.dispatchEvent(new Event('resize')); } })()"
                 view?.evaluateJavascript(js, null)
             }
         }
