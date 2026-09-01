@@ -1,18 +1,23 @@
 package com.weather.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -47,27 +52,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Calendar
-import androidx.compose.foundation.clickable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlin.math.PI
 import kotlin.math.cos
 
 /**
- * 摄影级 3D 真实月相卡片组件
+ * 首页 3D 拟真月相小卡片组件
  *
- * 100% 对齐视觉设计图规范：
- * 1. 左上角展示微型月相小图标与“月相”标题；
- * 2. 左侧主区域大字展示当前月相天文学中文名称（如“渐盈凸月”、“满月”、“新月”等）；
- * 3. 左侧下方展示月出时刻与下次满月公历日期，中间附有半透明纤细分割线；
- * 4. 右侧依托 OpenGL ES 纯代码程序化渲染器 [LunarOpenGlRenderer] 渲染 3D 灰白真实月面，
- *    并依据 J2000 朔望周期结合晨昏线曲面阴影算法动态呈现真实月相盈亏形态；
- * 5. 全面使用 [Modifier.drawWithCache] 与离屏预计算数据模型 [LunarCardShadowData]，
- *    在主页上下滑动期间实现 0 内存分配与极速 60fps/120fps 满帧流畅体验；
- * 6. 统一为 152.dp 标准高度与深灰蓝毛玻璃质感，与气象指标宫格其他卡片完美等高对齐；
- * 7. 支持点击跳转月相全屏详情页面。
+ * 1. 采用与气象指标宫格一致的 152.dp 标准高度与深灰蓝毛玻璃质感基底；
+ * 2. 顶部微型月相图标 + “月相”标题 + 点击跳转详情箭头；
+ * 3. 核心区域展示：
+ *    - 左侧：大字月相名称（如“渐盈凸月”）、照明度百分比、底部“下次满月”日期提示；
+ *    - 右侧：嵌入 3D 摄影级月球动态渲染球体（基于 OpenGL ES 纹理与晨昏线物理曲面阴影）；
+ * 4. 支持点击整张卡片跳转全屏 3D 月相详情页面。
  *
  * @param city 当前城市信息对象 [CityInfo]
  * @param modifier 外部修饰符 [Modifier]
@@ -111,10 +108,10 @@ fun MoonPhaseRealCard(
     }
 
     // 获取摄影级三维月球高清纹理：优先秒开静态全局缓存，未就绪时在后台 Default 线程异步生成，零阻塞 UI 主线程
-    val moonBitmap by produceState<ImageBitmap?>(initialValue = LunarOpenGlRenderer.getPrecachedMoon(384)) {
+    val moonBitmap by produceState<ImageBitmap?>(initialValue = LunarOpenGlRenderer.getPrecachedMoon(256)) {
         if (value == null) {
             val bitmap = withContext(Dispatchers.Default) {
-                LunarOpenGlRenderer.getOrRenderMoon(384)
+                LunarOpenGlRenderer.getOrRenderMoon(256)
             }
             value = bitmap
         }
@@ -122,7 +119,6 @@ fun MoonPhaseRealCard(
 
     val boxModifier = if (onClick != null) {
         modifier
-            .fillMaxWidth()
             .height(152.dp)
             .graphicsLayer {
                 clip = true
@@ -131,10 +127,9 @@ fun MoonPhaseRealCard(
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     } else {
         modifier
-            .fillMaxWidth()
             .height(152.dp)
             .graphicsLayer {
                 clip = true
@@ -142,182 +137,127 @@ fun MoonPhaseRealCard(
             }
             .clip(RoundedCornerShape(20.dp))
             .background(Color(0x7514263A))
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     }
 
     Box(
         modifier = boxModifier
     ) {
-        // 左侧主要信息区域（占左半侧空间）
         Column(
-            modifier = Modifier
-                .fillMaxWidth(0.58f)
-                .fillMaxHeight(),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 1. 左上角：微型月相图标与标题及跳转箭头
+            // 1. 顶部标题栏（图标 + 标题 + 跳转小箭头）
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                MiniMoonPhaseIcon(
-                    phase = moonInfo.moonPhase,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "月相",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Normal
-                )
-                if (onClick != null) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.ArrowForward,
-                        contentDescription = "查看月相详情",
-                        tint = Color.White.copy(alpha = 0.45f),
-                        modifier = Modifier.size(13.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MiniMoonPhaseIcon(
+                        phase = moonInfo.moonPhase,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "月相",
+                        color = Color.White.copy(alpha = 0.70f),
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Normal
                     )
                 }
+                Icon(
+                    imageVector = Icons.Default.ArrowForward,
+                    contentDescription = "查看月相详情",
+                    tint = Color.White.copy(alpha = 0.40f),
+                    modifier = Modifier.size(13.dp)
+                )
             }
 
-            // 2. 主标题：月相名称（如“渐盈凸月”）
-            Text(
-                text = moonInfo.phaseName,
-                color = Color.White,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Normal,
-                lineHeight = 23.sp
-            )
-
-            // 3. 底部信息列表（月出月落单行展示 + 分割线 + 下次满月）
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // 月出月落单行展示
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "月出",
-                            color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = moonInfo.moonriseTimeStr,
-                            color = Color.White.copy(alpha = 0.90f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "月落",
-                            color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = moonInfo.moonsetTimeStr,
-                            color = Color.White.copy(alpha = 0.90f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 纤细半透明水平分割线
+            // 2. 中间主要区域：居中大幅 3D 拟真动态月球 (80dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(0.5.dp)
-                        .background(Color.White.copy(alpha = 0.12f))
+                        .size(80.dp)
+                        .drawWithCache {
+                            val w = size.width
+                            val h = size.height
+                            val moonCenter = Offset(w / 2f, h / 2f)
+                            val moonRadius = (minOf(w, h) / 2f) * 0.94f
+                            val currentPhase = moonInfo.moonPhase
+
+                            val shadowData = buildCardLunarShadowData(moonCenter, moonRadius, currentPhase)
+                            val dstSize = IntSize((moonRadius * 2f).toInt(), (moonRadius * 2f).toInt())
+                            val dstOffset = IntOffset((moonCenter.x - moonRadius).toInt(), (moonCenter.y - moonRadius).toInt())
+                            val baseDarkColor = Color(0xFF0F1722)
+                            val strokeRimColor = Color.White.copy(alpha = 0.15f)
+                            val rimStrokeStyle = Stroke(width = 0.8f)
+
+                            onDrawBehind {
+                                drawCircle(
+                                    color = baseDarkColor,
+                                    radius = moonRadius,
+                                    center = moonCenter
+                                )
+
+                                moonBitmap?.let { bitmap ->
+                                    drawImage(
+                                        image = bitmap,
+                                        dstOffset = dstOffset,
+                                        dstSize = dstSize
+                                    )
+                                }
+
+                                shadowData.render(this)
+
+                                drawCircle(
+                                    color = strokeRimColor,
+                                    radius = moonRadius,
+                                    center = moonCenter,
+                                    style = rimStrokeStyle
+                                )
+                            }
+                        }
+                )
+            }
+
+            // 3. 底部信息行：左右两端对齐展示【月相名称】与【月出/月落时间】（统一 11.5.sp 风格）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = moonInfo.phaseName,
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 下次满月公历日期行
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "下次满月",
-                        color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                    Text(
-                        text = moonInfo.nextFullMoonDateStr,
-                        color = Color.White.copy(alpha = 0.90f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal
-                    )
+                val rightTimeText = if (moonInfo.moonriseTimeStr.isNotEmpty() && moonInfo.moonriseTimeStr != "--:--") {
+                    "${moonInfo.moonriseTimeStr}月出"
+                } else if (moonInfo.moonsetTimeStr.isNotEmpty() && moonInfo.moonsetTimeStr != "--:--") {
+                    "${moonInfo.moonsetTimeStr}月落"
+                } else {
+                    val illumPercent = ((1f - kotlin.math.cos(moonInfo.moonPhase * 2f * Math.PI.toFloat())) * 50f).toInt().coerceIn(0, 100)
+                    "照明度 $illumPercent%"
                 }
+
+                Text(
+                    text = rightTimeText,
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1
+                )
             }
         }
-
-        // 右侧：摄影级 3D 动态月相渲染展示区（全宽卡片右侧居中展示，124dp）
-        // 核心性能优化：基于 drawWithCache 进行几何路径与着色缓存，滚动期间零对象分配，消除掉帧
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 4.dp)
-                .size(124.dp)
-                .drawWithCache {
-                    val w = size.width
-                    val h = size.height
-                    val moonCenter = Offset(w / 2f, h / 2f)
-                    val moonRadius = (minOf(w, h) / 2f) * 0.92f
-                    val currentPhase = moonInfo.moonPhase
-
-                    // 在 Cache 阶段预先构建并缓存晨昏线阴影路径数据，避免在滑动时每帧产生 GC 分配
-                    val shadowData = buildCardLunarShadowData(moonCenter, moonRadius, currentPhase)
-
-                    val dstSize = IntSize((moonRadius * 2f).toInt(), (moonRadius * 2f).toInt())
-                    val dstOffset = IntOffset((moonCenter.x - moonRadius).toInt(), (moonCenter.y - moonRadius).toInt())
-                    val baseDarkColor = Color(0xFF0F1722)
-                    val strokeRimColor = Color.White.copy(alpha = 0.12f)
-                    val rimStrokeStyle = Stroke(width = 0.8f)
-
-                    onDrawBehind {
-                        // 1. 绘制月球背面深邃球体基底（保证暗面在夜空也有微弱球体体积感）
-                        drawCircle(
-                            color = baseDarkColor,
-                            radius = moonRadius,
-                            center = moonCenter
-                        )
-
-                        // 2. 绘制 GPU OpenGL 高清程序化三维月面纹理
-                        moonBitmap?.let { bitmap ->
-                            drawImage(
-                                image = bitmap,
-                                dstOffset = dstOffset,
-                                dstSize = dstSize
-                            )
-                        }
-
-                        // 3. 极速绘制预构建的晨昏线曲面物理阴影（纯路径绘制，零分配）
-                        shadowData.render(this)
-
-                        // 4. 月球外圆周极细微柔光描边
-                        drawCircle(
-                            color = strokeRimColor,
-                            radius = moonRadius,
-                            center = moonCenter,
-                            style = rimStrokeStyle
-                        )
-                    }
-                }
-        )
     }
 }
 

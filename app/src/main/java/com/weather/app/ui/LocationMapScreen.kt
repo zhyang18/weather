@@ -146,7 +146,7 @@ fun LocationMapScreen(
         LaunchedEffect(visible, lat, lng, cityName, currentLayer, isRadarEnabled, webViewInstance) {
             if (visible && webViewInstance != null) {
                 val subtitle = "气温: ${weatherData?.current?.temperature?.toInt() ?: 0}° · ${weatherData?.getDisplayWeatherText() ?: ""}"
-                val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 11, '$cityName', '$subtitle', true, '${currentLayer.key}', $isRadarEnabled); window.dispatchEvent(new Event('resize')); } })()"
+                val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 14, '$cityName', '$subtitle', true, '${currentLayer.key}', $isRadarEnabled); window.dispatchEvent(new Event('resize')); } })()"
                 webViewInstance?.evaluateJavascript(js, null)
             }
         }
@@ -216,13 +216,17 @@ fun LocationMapScreen(
                                 text = cityName,
                                 color = Color.White,
                                 fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                             if (detailText.isNotEmpty()) {
                                 Text(
                                     text = detailText,
                                     color = Color.White.copy(alpha = 0.65f),
-                                    fontSize = 11.5.sp
+                                    fontSize = 11.5.sp,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -230,11 +234,12 @@ fun LocationMapScreen(
                 }
             }
 
-            // 3. 右侧快捷地图控制操作区 (图层切换 / 气象雷达 / 缩放 / 复位)
+            // 3. 右侧快捷地图控制操作区 (图层切换 / 气象雷达 / 缩放 / 复位，上移至顶部栏下方，彻底杜绝与底部浮窗重叠)
             Column(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp),
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 64.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // 图层切换按钮
@@ -257,7 +262,7 @@ fun LocationMapScreen(
                     }
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // 放大按钮 (+)
                 MapFloatingButton(
@@ -287,14 +292,15 @@ fun LocationMapScreen(
                 )
             }
 
-            // 4. 图层选择浮动面板 (点击图层按钮时展开)
+            // 4. 图层选择浮动面板 (点击图层按钮时在右侧弹出)
             if (showLayerSelector) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = Color(0xF0182230),
                     modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 70.dp)
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(top = 64.dp, end = 70.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp),
@@ -327,7 +333,7 @@ fun LocationMapScreen(
                 }
             }
 
-            // 5. 底部城市天气详情信息浮窗
+            // 5. 底部城市天气详情信息浮窗 (优化左右权重分配，防止长地名挤压右侧数据)
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xEB16202E),
@@ -340,37 +346,50 @@ fun LocationMapScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    // 左侧：城市地名与实时天气现象（支持长地名单行省略保护）
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 10.dp)
+                    ) {
                         Text(
-                            text = "${cityName} · 当前气象实况",
+                            text = "${cityName} · 当前实况",
                             color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(3.dp))
                         Text(
                             text = if (weatherData != null) "${weatherData.current.temperature.toInt()}°C  ${weatherData.getDisplayWeatherText()}" else "气温数据同步中...",
                             color = Color.White,
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
                         )
                     }
 
+                    // 右侧：湿度、风速与经纬度坐标（精简格式化，彻底杜绝浮点数多位尾巴和换行）
                     if (weatherData != null) {
-                        Column(horizontalAlignment = Alignment.End) {
+                        val windSpeedFormatted = String.format(java.util.Locale.CHINA, "%.1f", weatherData.current.windSpeed).removeSuffix(".0")
+                        Column(
+                            horizontalAlignment = Alignment.End
+                        ) {
                             Text(
-                                text = "湿度: ${weatherData.current.humidity.toInt()}% · 风速: ${weatherData.current.windSpeed}km/h",
-                                color = Color.White.copy(alpha = 0.75f),
-                                fontSize = 11.5.sp
+                                text = "湿度: ${weatherData.current.humidity.toInt()}% · 风速: ${windSpeedFormatted}km/h",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 11.5.sp,
+                                maxLines = 1
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = String.format(java.util.Locale.CHINA, "%.2f°%s, %.2f°%s", kotlin.math.abs(lat), if (lat>=0)"N" else "S", kotlin.math.abs(lng), if (lng>=0)"E" else "W"),
                                 color = Color(0xFF64B5F6),
-                                fontSize = 11.5.sp
+                                fontSize = 11.5.sp,
+                                maxLines = 1
                             )
                         }
                     }

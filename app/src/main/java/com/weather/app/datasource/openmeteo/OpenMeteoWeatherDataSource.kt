@@ -274,6 +274,8 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
             val windSpeed = currentData.windSpeed10m ?: 0.0
             val windPower = parseWindSpeedToPower(windSpeed)
 
+            val visibilityKm = currentData.visibility?.let { it / 1000.0 }
+            val uvIndexVal = currentData.uvIndex ?: dailyData?.uvIndexMax?.firstOrNull()
             val currentPublishTime = formatCurrentPublishTime(currentData.time)
 
             val currentWeather = CurrentWeather(
@@ -287,6 +289,8 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
                 windSpeed = windSpeed,
                 pressure = currentData.surfacePressure ?: 1013.25,
                 precipitation = currentData.precipitation ?: currentData.rain ?: 0.0,
+                uvIndex = uvIndexVal,
+                visibility = visibilityKm,
                 publishTime = currentPublishTime
             )
 
@@ -306,6 +310,9 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
                 dailyForecasts = dailyForecasts
             )
 
+            // 8. 解析生活气象指数
+            val lifeIndex = com.weather.app.datasource.LifeIndexCalculator.calculate(currentWeather, dailyForecasts)
+
             val weatherData = WeatherData(
                 city = targetCity,
                 current = currentWeather,
@@ -313,6 +320,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
                 hourlyForecasts = hourlyForecasts,
                 airQuality = airQuality,
                 alert = alert,
+                lifeIndex = lifeIndex,
                 sourceName = "Open-Meteo"
             )
 

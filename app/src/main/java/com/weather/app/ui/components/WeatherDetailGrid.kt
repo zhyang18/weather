@@ -26,7 +26,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.WaterDrop
@@ -95,7 +97,17 @@ enum class MetricCardType {
     /** 真实大气压强仪表盘卡片 */
     PRESSURE,
     /** 真实实时降水量卡片 */
-    PRECIPITATION
+    PRECIPITATION,
+    /** 真实紫外线强度卡片 */
+    UV_INDEX,
+    /** 真实水平能见度卡片 */
+    VISIBILITY,
+    /** 真实 3D 拟真月相小卡片 */
+    MOON_PHASE,
+    /** 真实生活气象指数小卡片 */
+    LIFE_INDEX,
+    /** 真实定位气象小地图卡片 */
+    LOCATION_MAP
 }
 
 /**
@@ -113,6 +125,9 @@ enum class MetricCardType {
  * @param onSunriseSunsetClick 点击日出日落卡片跳转日出日落详情页回调
  * @param onEarthDaylightClick 点击昼夜晨昏线卡片跳转地球实时日光模拟器回调
  * @param onMoonPhaseClick 点击月相卡片跳转月相全屏详情页面回调
+ * @param onLifeIndexClick 点击生活指数卡片跳转/呼出生活指数全量详情抽屉回调
+ * @param mapLayerType 定位小地图图层类型
+ * @param onLocationMapClick 点击定位小地图卡片跳转大地图页面回调
  * @param modifier 外部修饰符
  */
 @Composable
@@ -123,37 +138,69 @@ fun WeatherDetailGrid(
     onSunriseSunsetClick: () -> Unit = {},
     onEarthDaylightClick: () -> Unit = {},
     onMoonPhaseClick: () -> Unit = {},
+    onLifeIndexClick: () -> Unit = {},
+    mapLayerType: String = "dark",
+    onLocationMapClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val current = weatherData.current
     val aqi = weatherData.airQuality
 
-    // 预计算所有有效真实存在且用户已开启的指标卡片类型，避免每帧分配 Composable Lambda 列表
+    // 预计算所有有效真实存在且用户已开启的指标卡片类型，严格按用户指定顺序排序：
+    // 空气质量 -> 紫外线 -> 能见度 -> 体感温度 -> 风 -> 气压 -> 湿度 -> 降水 -> 昼夜晨昏线 -> 日出日落
     val validCardTypes = remember(cardConfig, aqi, current) {
         val types = mutableListOf<MetricCardType>()
+        // 1. 空气质量
         if (cardConfig.showAirQuality && aqi != null && aqi.aqi > 0 && aqi.aqi != 9999) {
             types.add(MetricCardType.AIR_QUALITY)
         }
-        if (cardConfig.showSunriseSunset) {
-            types.add(MetricCardType.SUNRISE_SUNSET)
+        // 2. 紫外线
+        if (cardConfig.showUvIndex && current.uvIndex != null && current.uvIndex >= 0.0 && current.uvIndex != 9999.0) {
+            types.add(MetricCardType.UV_INDEX)
         }
-        if (cardConfig.showEarthDaylight) {
-            types.add(MetricCardType.EARTH_DAYLIGHT)
+        // 3. 水平能见度 (排在体感温度之上)
+        if (cardConfig.showVisibility && current.visibility != null && current.visibility > 0.0 && current.visibility != 9999.0) {
+            types.add(MetricCardType.VISIBILITY)
         }
+        // 4. 体感温度
         if (cardConfig.showFeelsLike && current.feelsLike != null && current.feelsLike != 9999.0) {
             types.add(MetricCardType.FEELS_LIKE)
         }
+        // 5. 风向风速
         if (cardConfig.showWind && (current.windDirection.isNotEmpty() || current.windPower.isNotEmpty() || current.windSpeed > 0.0)) {
             types.add(MetricCardType.WIND)
         }
-        if (cardConfig.showHumidity && current.humidity > 0.0 && current.humidity != 9999.0) {
-            types.add(MetricCardType.HUMIDITY)
-        }
+        // 6. 大气气压
         if (cardConfig.showPressure && current.pressure > 0.0 && current.pressure != 9999.0) {
             types.add(MetricCardType.PRESSURE)
         }
+        // 7. 相对湿度
+        if (cardConfig.showHumidity && current.humidity > 0.0 && current.humidity != 9999.0) {
+            types.add(MetricCardType.HUMIDITY)
+        }
+        // 8. 实时降水量
         if (cardConfig.showPrecipitation && current.precipitation > 0.0 && current.precipitation != 9999.0) {
             types.add(MetricCardType.PRECIPITATION)
+        }
+        // 9. 昼夜晨昏线
+        if (cardConfig.showEarthDaylight) {
+            types.add(MetricCardType.EARTH_DAYLIGHT)
+        }
+        // 10. 日出日落
+        if (cardConfig.showSunriseSunset) {
+            types.add(MetricCardType.SUNRISE_SUNSET)
+        }
+        // 11. 月相
+        if (cardConfig.showMoonPhase) {
+            types.add(MetricCardType.MOON_PHASE)
+        }
+        // 12. 生活指数
+        if (cardConfig.showLifeIndex) {
+            types.add(MetricCardType.LIFE_INDEX)
+        }
+        // 13. 定位地图
+        if (cardConfig.showLocationMap) {
+            types.add(MetricCardType.LOCATION_MAP)
         }
         types
     }
@@ -164,114 +211,51 @@ fun WeatherDetailGrid(
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        if (cardConfig.showMoonPhase) {
-            // 当月相开启时：前 2 张卡片排首行，月相全宽单列居中，剩余卡片两两排布
-            val firstBatch = validCardTypes.take(2)
-            if (firstBatch.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    MetricCardSlot(
-                        type = firstBatch[0],
-                        weatherData = weatherData,
-                        onSunriseSunsetClick = onSunriseSunsetClick,
-                        onEarthDaylightClick = onEarthDaylightClick,
-                        modifier = Modifier.weight(1f)
-                    )
+        // 1. 双列自适应排列所有详细指标小卡片（包含生活指数、月相与定位地图小卡片）
+        val rowCount = (validCardTypes.size + 1) / 2
+        for (rowIndex in 0 until rowCount) {
+            val firstIdx = rowIndex * 2
+            val secondIdx = firstIdx + 1
 
-                    if (firstBatch.size > 1) {
-                        MetricCardSlot(
-                            type = firstBatch[1],
-                            weatherData = weatherData,
-                            onSunriseSunsetClick = onSunriseSunsetClick,
-                            onEarthDaylightClick = onEarthDaylightClick,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-
-            // 月相卡片：水平空间独占一整行全宽展示
-            MoonPhaseRealCard(
-                city = weatherData.city,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = onMoonPhaseClick
-            )
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                MetricCardSlot(
+                    type = validCardTypes[firstIdx],
+                    weatherData = weatherData,
+                    onSunriseSunsetClick = onSunriseSunsetClick,
+                    onEarthDaylightClick = onEarthDaylightClick,
+                    onMoonPhaseClick = onMoonPhaseClick,
+                    onLifeIndexClick = onLifeIndexClick,
+                    mapLayerType = mapLayerType,
+                    onLocationMapClick = onLocationMapClick,
+                    modifier = Modifier.weight(1f)
+                )
 
-            // 其余双列指标卡片
-            val remainingCards = validCardTypes.drop(2)
-            val remainingRowCount = (remainingCards.size + 1) / 2
-            for (rowIndex in 0 until remainingRowCount) {
-                val firstIdx = rowIndex * 2
-                val secondIdx = firstIdx + 1
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                if (secondIdx < validCardTypes.size) {
                     MetricCardSlot(
-                        type = remainingCards[firstIdx],
+                        type = validCardTypes[secondIdx],
                         weatherData = weatherData,
                         onSunriseSunsetClick = onSunriseSunsetClick,
                         onEarthDaylightClick = onEarthDaylightClick,
+                        onMoonPhaseClick = onMoonPhaseClick,
+                        onLifeIndexClick = onLifeIndexClick,
+                        mapLayerType = mapLayerType,
+                        onLocationMapClick = onLocationMapClick,
                         modifier = Modifier.weight(1f)
                     )
-
-                    if (secondIdx < remainingCards.size) {
-                        MetricCardSlot(
-                            type = remainingCards[secondIdx],
-                            weatherData = weatherData,
-                            onSunriseSunsetClick = onSunriseSunsetClick,
-                            onEarthDaylightClick = onEarthDaylightClick,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-        } else {
-            // 当月相关闭时：所有指标卡片直接自适应双列连续排列
-            val rowCount = (validCardTypes.size + 1) / 2
-            for (rowIndex in 0 until rowCount) {
-                val firstIdx = rowIndex * 2
-                val secondIdx = firstIdx + 1
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    MetricCardSlot(
-                        type = validCardTypes[firstIdx],
-                        weatherData = weatherData,
-                        onSunriseSunsetClick = onSunriseSunsetClick,
-                        onEarthDaylightClick = onEarthDaylightClick,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (secondIdx < validCardTypes.size) {
-                        MetricCardSlot(
-                            type = validCardTypes[secondIdx],
-                            weatherData = weatherData,
-                            onSunriseSunsetClick = onSunriseSunsetClick,
-                            onEarthDaylightClick = onEarthDaylightClick,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
 
-        // 底部版本号、真实数据来源、发布时刻与上次刷新时间
+        // 2. 页面最底部版本号、上次刷新时刻与真实数据来源及发布时刻说明文字
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 14.dp),
+                .padding(top = 10.dp, bottom = 0.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             val context = androidx.compose.ui.platform.LocalContext.current
@@ -291,25 +275,9 @@ fun WeatherDetailGrid(
                 fontWeight = FontWeight.Normal
             )
 
-            Spacer(modifier = Modifier.height(3.dp))
-
-            Text(
-                text = "数据源自 ${weatherData.sourceName} 官方气象实况",
-                color = Color.White.copy(alpha = 0.65f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal
-            )
-            if (current.publishTime.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "气象观测发布时间：${current.publishTime}",
-                    color = Color.White.copy(alpha = 0.65f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Normal
-                )
-            }
+            // 刷新时间移至上方
             if (lastUpdatedText.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(2.5.dp))
                 Text(
                     text = lastUpdatedText,
                     color = Color.White.copy(alpha = 0.65f),
@@ -317,6 +285,23 @@ fun WeatherDetailGrid(
                     fontWeight = FontWeight.Normal
                 )
             }
+
+            Spacer(modifier = Modifier.height(2.5.dp))
+
+            // 数据源与发布时刻（文案：数据源自：数据源名，发布时间：00:00）
+            val cleanPublishTime = current.publishTime.removeSuffix("发布").removeSuffix(" 发布").trim()
+            val sourceAndPublishText = if (cleanPublishTime.isNotEmpty()) {
+                "数据源自：${weatherData.sourceName}，发布时间：$cleanPublishTime"
+            } else {
+                "数据源自：${weatherData.sourceName}"
+            }
+
+            Text(
+                text = sourceAndPublishText,
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal
+            )
         }
     }
 }
@@ -331,6 +316,10 @@ fun WeatherDetailGrid(
  * @param weatherData 聚合天气数据模型 [WeatherData]
  * @param onSunriseSunsetClick 点击日出日落卡片跳转日出日落详情页回调
  * @param onEarthDaylightClick 点击昼夜晨昏线卡片跳转地球实时日光模拟器回调
+ * @param onMoonPhaseClick 点击月相卡片跳转月相全屏详情页面回调
+ * @param onLifeIndexClick 点击生活指数卡片呼出全量生活指数详情抽屉回调
+ * @param mapLayerType 定位小地图图层类型
+ * @param onLocationMapClick 点击定位小地图卡片跳转大地图页面回调
  * @param modifier 外部修饰符
  */
 @Composable
@@ -339,6 +328,10 @@ private fun MetricCardSlot(
     weatherData: WeatherData,
     onSunriseSunsetClick: () -> Unit,
     onEarthDaylightClick: () -> Unit,
+    onMoonPhaseClick: () -> Unit,
+    onLifeIndexClick: () -> Unit,
+    mapLayerType: String,
+    onLocationMapClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val current = weatherData.current
@@ -381,6 +374,43 @@ private fun MetricCardSlot(
         MetricCardType.PRECIPITATION -> {
             PrecipitationRealCard(precipitation = current.precipitation, modifier = modifier)
         }
+        MetricCardType.UV_INDEX -> {
+            if (current.uvIndex != null && current.uvIndex >= 0.0) {
+                UvIndexRealCard(uvIndex = current.uvIndex, modifier = modifier)
+            } else {
+                Spacer(modifier = modifier)
+            }
+        }
+        MetricCardType.VISIBILITY -> {
+            if (current.visibility != null && current.visibility > 0.0) {
+                VisibilityRealCard(visibilityKm = current.visibility, modifier = modifier)
+            } else {
+                Spacer(modifier = modifier)
+            }
+        }
+        MetricCardType.MOON_PHASE -> {
+            MoonPhaseRealCard(
+                city = weatherData.city,
+                onClick = onMoonPhaseClick,
+                modifier = modifier
+            )
+        }
+        MetricCardType.LIFE_INDEX -> {
+            LifeIndexRealCard(
+                lifeIndex = weatherData.lifeIndex,
+                onClick = onLifeIndexClick,
+                modifier = modifier
+            )
+        }
+        MetricCardType.LOCATION_MAP -> {
+            LocationMapCard(
+                city = weatherData.city,
+                weatherData = weatherData,
+                mapLayerType = mapLayerType,
+                onClick = onLocationMapClick,
+                modifier = modifier
+            )
+        }
     }
 }
 
@@ -397,65 +427,99 @@ private fun AirQualityRealCard(
     aqi: AirQuality,
     modifier: Modifier = Modifier
 ) {
+    val adviceText = when {
+        aqi.aqi <= 50 -> "健康人群无需防护"
+        aqi.aqi <= 100 -> "极少数敏感人群应减少户外活动"
+        aqi.aqi <= 150 -> "敏感人群应减少户外运动"
+        aqi.aqi <= 200 -> "敏感人群避免外出，健康人群减少外出"
+        else -> "各类人群应尽量留在室内"
+    }
+
     MetricBaseCard(
-        icon = Icons.Default.Air,
+        icon = Icons.Default.Eco,
         title = "空气质量",
         modifier = modifier
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.Bottom) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. 等级与数值（上下纵向排布）
+            Column {
                 Text(
                     text = aqi.qualityText,
                     color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Normal
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Normal,
+                    lineHeight = 28.sp
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "${aqi.aqi}",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Normal
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Normal,
+                    lineHeight = 20.sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 真实 AQI 彩虹谱条指示
-            Box(
+            // 2. 彩色渐变刻度条 + 白色滑块指示圆点
+            val aqiRatio = (aqi.aqi / 300f).coerceIn(0f, 1f)
+            Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                Color(0xFF4CAF50),
-                                Color(0xFFFFEB3B),
-                                Color(0xFFFF9800),
-                                Color(0xFFF44336),
-                                Color(0xFF9C27B0)
-                            )
+                    .height(10.dp)
+            ) {
+                val w = size.width
+                val h = size.height
+                val barHeight = 4.dp.toPx()
+                val barY = (h - barHeight) / 2f
+                val dotRadius = 4.5.dp.toPx()
+
+                // 绘制渐变色条
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF4CAF50), // 绿 (优)
+                            Color(0xFF8BC34A), // 浅绿
+                            Color(0xFFFFEB3B), // 黄 (良)
+                            Color(0xFFFF9800), // 橙 (轻度)
+                            Color(0xFFF44336), // 红 (中度)
+                            Color(0xFF9C27B0), // 紫 (重度)
+                            Color(0xFF795548)  // 褐 (严重)
                         )
                     ),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                val ratio = (aqi.aqi / 300f).coerceIn(0.05f, 0.95f)
-                Box(
-                    modifier = Modifier
-                        .padding(start = (ratio * 120).dp)
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
+                    topLeft = Offset(0f, barY),
+                    size = Size(w, barHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(barHeight / 2, barHeight / 2)
+                )
+
+                // 计算小圆点位置
+                val dotX = (dotRadius + aqiRatio * (w - 2 * dotRadius)).coerceIn(dotRadius, w - dotRadius)
+                val dotY = h / 2f
+
+                // 绘制白色小圆点滑块及其外发光投影
+                drawCircle(
+                    color = Color(0x33000000),
+                    radius = dotRadius + 1.5.dp.toPx(),
+                    center = Offset(dotX, dotY + 0.5.dp.toPx())
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = dotRadius,
+                    center = Offset(dotX, dotY)
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // 3. 底部健康防护建议说明
             Text(
-                text = aqi.getHealthAdvice(),
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 11.sp,
+                text = adviceText,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 12.5.sp,
                 fontWeight = FontWeight.Normal,
                 maxLines = 1
             )
@@ -1371,82 +1435,93 @@ private fun SunriseSunsetRealCard(
     val sunriseStr = formatMinutesToTime(celestial.sunriseMinutes)
     val sunsetStr = formatMinutesToTime(celestial.sunsetMinutes)
 
-    // 计算距离下一个事件（日落或日出）的剩余时间
     val isNight = celestial.isNight
-    val (primaryTime, remainingText) = if (!isNight) {
-        // 白天：主要聚焦今日日落时刻
-        val remaining = (celestial.sunsetMinutes - currentMinutes).coerceAtLeast(0)
-        val remH = remaining / 60
-        val remM = remaining % 60
-        val remDesc = if (remH > 0) "${remH}小时${remM}分" else "${remM}分钟"
-        Pair(sunsetStr, "距日落还有 $remDesc")
-    } else {
-        // 夜间：主要聚焦次日日出时刻
-        val remaining = if (currentMinutes >= celestial.sunsetMinutes) {
-            celestial.sunriseMinutes + 1440 - currentMinutes
-        } else {
-            celestial.sunriseMinutes - currentMinutes
-        }.coerceAtLeast(0)
-        val remH = remaining / 60
-        val remM = remaining % 60
-        val remDesc = if (remH > 0) "${remH}小时${remM}分" else "${remM}分钟"
-        Pair(sunriseStr, "距日出还有 $remDesc")
-    }
-
     val sunProgress = celestial.sunProgress.coerceIn(0f, 1f)
     val solarVisualState = remember(sunProgress, isNight) {
         calculateCardSolarVisualState(sunProgress, isNight)
     }
 
-    MetricBaseCard(
-        icon = Icons.Default.WbSunny,
-        title = "日出日落",
-        onClick = onClick,
-        modifier = modifier
+    val cardModifier = if (onClick != null) {
+        modifier
+            .fillMaxWidth()
+            .height(152.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0x7514263A))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .height(152.dp)
+            .graphicsLayer {
+                clip = true
+                shape = RoundedCornerShape(20.dp)
+            }
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0x7514263A))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    }
+
+    Column(
+        modifier = cardModifier,
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.Center
+        // 1. 顶部标题栏（微型太阳图标 + 标题 + 跳转小箭头）
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            // 1. 顶部大字展示下一个事件时刻（如 18:37）
-            Text(
-                text = primaryTime,
-                color = Color.White,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Normal,
-                lineHeight = 24.sp
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.WbSunny,
+                    contentDescription = "日出日落",
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "日出日落",
+                    color = Color.White.copy(alpha = 0.70f),
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ArrowForward,
+                contentDescription = "查看日出日落详情",
+                tint = Color.White.copy(alpha = 0.40f),
+                modifier = Modifier.size(13.dp)
             )
+        }
 
-            Spacer(modifier = Modifier.height(2.dp))
-
-            // 2. 大字下方提示小字（与其他卡片小字完全一致的统一风格：11.sp, alpha = 0.70f）
-            Text(
-                text = remainingText,
-                color = Color.White.copy(alpha = 0.70f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            // 3. 太阳天球拱形轨迹 Canvas
+        // 2. 中间主要区域：居中加大 3D 拟真太阳运行天球拱弧动效 (充满中间区域)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
             val arcPath = remember { Path() }
             val passedPath = remember { Path() }
-            val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f) }
+            val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f) }
 
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(36.dp)
+                    .height(76.dp)
             ) {
                 val w = size.width
                 val h = size.height
 
                 val startX = 6.dp.toPx()
                 val endX = w - 6.dp.toPx()
-                val horizonY = h - 2.5.dp.toPx()
-                val arcHeight = h * 0.86f
+                val horizonY = h - 6.dp.toPx()
+                val arcHeight = h * 0.78f
 
                 // 1. 绘制地平线渐变细线
                 drawLine(
@@ -1478,7 +1553,7 @@ private fun SunriseSunsetRealCard(
                 // 轨迹底虚线
                 drawPath(
                     path = arcPath,
-                    color = Color.White.copy(alpha = 0.32f),
+                    color = Color.White.copy(alpha = 0.35f),
                     style = Stroke(
                         width = 1.8f,
                         cap = StrokeCap.Round,
@@ -1518,23 +1593,23 @@ private fun SunriseSunsetRealCard(
                 // 日出锚点
                 drawCircle(
                     color = Color(0xFFFFAB91).copy(alpha = 0.45f),
-                    radius = 3.0.dp.toPx(),
+                    radius = 3.5.dp.toPx(),
                     center = Offset(startX, horizonY)
                 )
                 drawCircle(
                     color = Color.White.copy(alpha = 0.90f),
-                    radius = 1.5.dp.toPx(),
+                    radius = 1.8.dp.toPx(),
                     center = Offset(startX, horizonY)
                 )
                 // 日落锚点
                 drawCircle(
                     color = Color(0xFFFF8A65).copy(alpha = 0.45f),
-                    radius = 3.0.dp.toPx(),
+                    radius = 3.5.dp.toPx(),
                     center = Offset(endX, horizonY)
                 )
                 drawCircle(
                     color = Color.White.copy(alpha = 0.90f),
-                    radius = 1.5.dp.toPx(),
+                    radius = 1.8.dp.toPx(),
                     center = Offset(endX, horizonY)
                 )
 
@@ -1556,30 +1631,28 @@ private fun SunriseSunsetRealCard(
                     isNight = isNight
                 )
             }
+        }
 
-            // 4. 拱形轨迹与下方时间小字之间的留白间隔
-            Spacer(modifier = Modifier.height(3.dp))
-
-            // 5. 地平线两端日出日落时间标注（纯白色高保真文字）
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "日出 $sunriseStr",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Normal
-                )
-                Text(
-                    text = "日落 $sunsetStr",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Normal
-                )
-            }
+        // 3. 底部信息行：左右两端对齐展示【日出时刻】与【日落时刻】（统一 11.5.sp 风格）
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "日出 $sunriseStr",
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1
+            )
+            Text(
+                text = "日落 $sunsetStr",
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1
+            )
         }
     }
 }
@@ -1668,6 +1741,230 @@ private fun MetricBaseCard(
         }
 
         content()
+    }
+}
+
+// ==================== 9. 真实紫外线强度卡片 ====================
+
+/**
+ * 真实紫外线强度指标卡片组件
+ *
+ * 展示当前紫外线指数数值、强度级别标识、渐变刻度指示条及贴心防晒建议。
+ *
+ * @param uvIndex 紫外线指数数值 (0~11+)
+ * @param modifier 外部修饰符
+ */
+@Composable
+private fun UvIndexRealCard(
+    uvIndex: Double,
+    modifier: Modifier = Modifier
+) {
+    val uvValueInt = uvIndex.toInt()
+    val (levelText, adviceText) = when {
+        uvIndex <= 2.0 -> Pair("最弱", "几乎无晒伤风险")
+        uvIndex <= 5.0 -> Pair("弱", "外出建议涂抹防晒霜")
+        uvIndex <= 7.0 -> Pair("中等", "外出需防晒，佩戴墨镜与遮阳帽")
+        uvIndex <= 10.0 -> Pair("强", "尽量避免午后暴晒，做好全套防晒")
+        else -> Pair("极强", "极强紫外线，尽量留在室内")
+    }
+
+    MetricBaseCard(
+        icon = Icons.Default.WbSunny,
+        title = "紫外线指数",
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. 等级与数值（上下纵向排布）
+            Column {
+                Text(
+                    text = levelText,
+                    color = Color.White,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Normal,
+                    lineHeight = 28.sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "$uvValueInt",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Normal,
+                    lineHeight = 20.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 2. 彩色渐变刻度条 + 白色滑块指示圆点
+            val uvRatio = (uvIndex.toFloat() / 12f).coerceIn(0f, 1f)
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(10.dp)
+            ) {
+                val w = size.width
+                val h = size.height
+                val barHeight = 4.dp.toPx()
+                val barY = (h - barHeight) / 2f
+                val dotRadius = 4.5.dp.toPx()
+
+                // 绘制底色/渐变色条
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF4CAF50), // 绿 (最弱 0-2)
+                            Color(0xFF8BC34A), // 浅绿 (弱 3-5)
+                            Color(0xFFFFEB3B), // 黄 (中等 6-7)
+                            Color(0xFFFF9800), // 橙 (强 8-10)
+                            Color(0xFFF44336), // 红
+                            Color(0xFFE91E63)  // 粉紫 (极强 11+)
+                        )
+                    ),
+                    topLeft = Offset(0f, barY),
+                    size = Size(w, barHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(barHeight / 2, barHeight / 2)
+                )
+
+                // 计算小圆点位置
+                val dotX = (dotRadius + uvRatio * (w - 2 * dotRadius)).coerceIn(dotRadius, w - dotRadius)
+                val dotY = h / 2f
+
+                // 绘制白色小圆点滑块及其外发光投影
+                drawCircle(
+                    color = Color(0x33000000),
+                    radius = dotRadius + 1.5.dp.toPx(),
+                    center = Offset(dotX, dotY + 0.5.dp.toPx())
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = dotRadius,
+                    center = Offset(dotX, dotY)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 3. 底部防晒建议说明
+            Text(
+                text = adviceText,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+// ==================== 10. 真实水平能见度卡片 ====================
+
+/**
+ * 真实水平能见度指标卡片组件
+ *
+ * 展示观测站测得的水平能见度距离（公里）、能见度状况评级及出行指引。
+ *
+ * @param visibilityKm 水平能见度距离（单位：公里 km）
+ * @param modifier 外部修饰符
+ */
+@Composable
+private fun VisibilityRealCard(
+    visibilityKm: Double,
+    modifier: Modifier = Modifier
+) {
+    val (statusText, statusColor, guideText) = when {
+        visibilityKm >= 10.0 -> Triple("极佳", Color(0xFF4CAF50), "视野清晰，适宜出行与户外活动")
+        visibilityKm >= 5.0 -> Triple("良好", Color(0xFF81C784), "视线良好，交通通畅")
+        visibilityKm >= 2.0 -> Triple("中等", Color(0xFFFBC02D), "视线一般，注意车距")
+        visibilityKm >= 1.0 -> Triple("轻雾", Color(0xFFFF9800), "轻雾天气，开启雾灯小心驾驶")
+        else -> Triple("大雾", Color(0xFFF44336), "浓雾笼罩，能见度低请减速慢行")
+    }
+
+    MetricBaseCard(
+        icon = Icons.Default.Public,
+        title = "能见度",
+        modifier = modifier
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = if (visibilityKm >= 10.0) "${visibilityKm.toInt()}" else String.format(Locale.US, "%.1f", visibilityKm),
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Normal,
+                        lineHeight = 24.sp
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "公里",
+                        color = Color.White.copy(alpha = 0.80f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = statusText,
+                        color = statusColor,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 能见度刻度条
+            val progress = (visibilityKm.toFloat() / 20f).coerceIn(0.05f, 1f)
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+            ) {
+                val w = size.width
+                val h = size.height
+
+                // 底色条
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.15f),
+                    size = Size(w, h),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2, h / 2)
+                )
+
+                // 蓝色视距进度条
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF64B5F6),
+                            Color(0xFF42A5F5),
+                            Color(0xFF2196F3)
+                        )
+                    ),
+                    size = Size(w * progress, h),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2, h / 2)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = guideText,
+                color = Color.White.copy(alpha = 0.70f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                lineHeight = 15.sp,
+                maxLines = 2
+            )
+        }
     }
 }
 

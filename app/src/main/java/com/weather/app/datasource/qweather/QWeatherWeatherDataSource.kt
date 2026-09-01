@@ -257,14 +257,16 @@ class QWeatherWeatherDataSource(
                     try {
                         val body = apiService.getAirQualityCurrent(lat = latStr, lon = lonStr).string()
                         log("【空气质量 V1 返回结果】: $body")
-                        customGson.fromJson(body, QWeatherAirResponse::class.java)
+                        val resp = try { customGson.fromJson(body, QWeatherAirResponse::class.java) } catch (e: Exception) { null }
+                        Pair(resp, body)
                     } catch (e1: Exception) {
                         val err1 = extractHttpErrorBody(e1)
                         log("【空气质量 V1 接口异常，尝试旧版 V7 降级】: $err1")
                         try {
                             val body = apiService.getAirNow(location = locationParam).string()
                             log("【空气质量 V7 降级返回结果】: $body")
-                            customGson.fromJson(body, QWeatherAirResponse::class.java)
+                            val resp = try { customGson.fromJson(body, QWeatherAirResponse::class.java) } catch (e: Exception) { null }
+                            Pair(resp, body)
                         } catch (e2: Exception) {
                             val err2 = extractHttpErrorBody(e2)
                             logError("【空气质量 请求失败】: $err2", e2)
@@ -278,14 +280,16 @@ class QWeatherWeatherDataSource(
                     try {
                         val body = apiService.getWeatherAlertCurrent(lat = latStr, lon = lonStr).string()
                         log("【灾害预警 V1 返回结果】: $body")
-                        customGson.fromJson(body, QWeatherWarningResponse::class.java)
+                        val resp = try { customGson.fromJson(body, QWeatherWarningResponse::class.java) } catch (e: Exception) { null }
+                        Pair(resp, body)
                     } catch (e1: Exception) {
                         val err1 = extractHttpErrorBody(e1)
                         log("【灾害预警 V1 接口异常，尝试旧版 V7 降级】: $err1")
                         try {
                             val body = apiService.getWarningNow(location = locationParam).string()
                             log("【灾害预警 V7 降级返回结果】: $body")
-                            customGson.fromJson(body, QWeatherWarningResponse::class.java)
+                            val resp = try { customGson.fromJson(body, QWeatherWarningResponse::class.java) } catch (e: Exception) { null }
+                            Pair(resp, body)
                         } catch (e2: Exception) {
                             val err2 = extractHttpErrorBody(e2)
                             logError("【灾害预警 请求失败】: $err2", e2)
@@ -328,6 +332,8 @@ class QWeatherWeatherDataSource(
             val windSpeedMs = (windSpeedKmh / 3.6).coerceAtLeast(0.0)
             val pressure = now.pressure?.toDoubleOrNull() ?: 1013.0
             val precipitation = now.precip?.toDoubleOrNull() ?: 0.0
+            val visibility = now.vis?.toDoubleOrNull()
+            val uvIndex = dailyResp?.daily?.firstOrNull()?.uvIndex?.toDoubleOrNull()
 
             val publishTime = formatIsoToTime(now.obsTime ?: nowResp.updateTime ?: "")
 
@@ -342,6 +348,8 @@ class QWeatherWeatherDataSource(
                 windSpeed = windSpeedMs,
                 pressure = pressure,
                 precipitation = precipitation,
+                uvIndex = uvIndex,
+                visibility = visibility,
                 publishTime = publishTime
             )
 
@@ -351,11 +359,14 @@ class QWeatherWeatherDataSource(
             // 逐小时预报解析
             val hourlyForecasts = parseHourlyForecasts(hourlyResp?.hourly)
 
-            // 空气质量解析（支持 V1 与 V7 兼容）
-            val airQuality = parseAirQuality(airResp)
+            // 空气质量解析（支持 V1 与 V7 兼容以及原始 JSON 宽松深度容错）
+            val airQuality = parseAirQuality(airResp?.first, airResp?.second)
 
-            // 灾害预警解析（支持 V1 与 V7 兼容）
-            val alert = parseWeatherAlert(targetCity.name, warningResp)
+            // 灾害预警解析（支持 V1 与 V7 兼容以及原始 JSON 宽松深度容错）
+            val alert = parseWeatherAlert(targetCity.name, warningResp?.first, warningResp?.second)
+
+            // 生活气象指数
+            val lifeIndex = com.weather.app.datasource.LifeIndexCalculator.calculate(currentWeather, dailyForecasts)
 
             val weatherData = WeatherData(
                 city = targetCity,
@@ -364,6 +375,7 @@ class QWeatherWeatherDataSource(
                 hourlyForecasts = hourlyForecasts,
                 airQuality = airQuality,
                 alert = alert,
+                lifeIndex = lifeIndex,
                 sourceName = "和风天气"
             )
 
@@ -704,49 +716,120 @@ class QWeatherWeatherDataSource(
     /**
      * 解析和风天气空气质量指标（全面支持 AirQuality V1 新协议与 V7 旧协议）
      *
-     * 优先提取 V1 规范中的各 AQI 指数列表（优先选取 "qaqi"、"cn-aqi" 或首项），未命中时降级解析 V7 的 now 实体。
+     * 优先提取 V1 规范中的各 AQI 指数列表（优先选取 "qaqi"、"cn-aqi" 或首项），未命中时降级解析 V7 的 now 实体或从原始 JSON 字符串中兜底提取。
      *
      * @param airResp 空气质量响应模型 [QWeatherAirResponse]
+     * @param rawJson 原始响应 JSON 字符串（可选，用于模型反序列化不全时的宽松兜底解析）
      * @return 映射后的空气质量模型 [AirQuality]，无有效数据时返回 null
      */
-    private fun parseAirQuality(airResp: QWeatherAirResponse?): AirQuality? {
-        if (airResp == null) return null
+    private fun parseAirQuality(airResp: QWeatherAirResponse?, rawJson: String? = null): AirQuality? {
+        // 1. 优先解析模型实例中的 indexes 列表 (V1)
+        if (airResp != null) {
+            val indexes = airResp.indexes
+            if (!indexes.isNullOrEmpty()) {
+                val selectedIndex = indexes.firstOrNull { 
+                    val code = it.code?.lowercase() ?: ""
+                    code == "qaqi" || code == "cn-aqi" || code == "aqi"
+                } ?: indexes.first()
 
-        // 1. 优先解析 V1 规范的 indexes 列表
-        val indexes = airResp.indexes
-        if (!indexes.isNullOrEmpty()) {
-            val selectedIndex = indexes.firstOrNull { 
-                val code = it.code?.lowercase() ?: ""
-                code == "qaqi" || code == "cn-aqi" || code == "aqi"
-            } ?: indexes.first()
+                val aqiValue = selectedIndex.aqi?.toIntOrNull()
+                if (aqiValue != null && aqiValue > 0) {
+                    val levelValue = selectedIndex.level?.toIntOrNull() ?: calculateLevelByAqi(aqiValue)
+                    val qualityText = selectedIndex.category ?: calculateCategoryByAqi(aqiValue)
+                    val pubTime = formatIsoToTime(airResp.updateTime ?: "")
+                    return AirQuality(
+                        aqi = aqiValue,
+                        level = levelValue,
+                        qualityText = qualityText,
+                        updateTime = pubTime
+                    )
+                }
+            }
 
-            val aqiValue = selectedIndex.aqi?.toIntOrNull()
-            if (aqiValue != null) {
-                val levelValue = selectedIndex.level?.toIntOrNull() ?: 1
-                val qualityText = selectedIndex.category ?: "优"
-                val pubTime = formatIsoToTime(airResp.updateTime ?: "")
-                return AirQuality(
-                    aqi = aqiValue,
-                    level = levelValue,
-                    qualityText = qualityText,
-                    updateTime = pubTime
-                )
+            // 2. 降级解析模型实例中的 now 对象 (V7)
+            val airNow = airResp.now
+            if (airNow != null) {
+                val aqiValue = airNow.aqi?.toIntOrNull()
+                if (aqiValue != null && aqiValue > 0) {
+                    val levelValue = airNow.level?.toIntOrNull() ?: calculateLevelByAqi(aqiValue)
+                    val qualityText = airNow.category ?: calculateCategoryByAqi(aqiValue)
+                    val pubTime = airNow.pubTime ?: ""
+                    return AirQuality(
+                        aqi = aqiValue,
+                        level = levelValue,
+                        qualityText = qualityText,
+                        updateTime = pubTime
+                    )
+                }
             }
         }
 
-        // 2. 降级解析 V7 旧版 now 对象
-        val airNow = airResp.now ?: return null
-        val aqiValue = airNow.aqi?.toIntOrNull() ?: return null
-        val levelValue = airNow.level?.toIntOrNull() ?: 1
-        val qualityText = airNow.category ?: "优"
-        val pubTime = airNow.pubTime ?: ""
+        // 3. 宽松深度兜底：直接从原始 JSON 字符串解析任意格式的 aqi
+        if (!rawJson.isNullOrBlank()) {
+            try {
+                val root = org.json.JSONObject(rawJson)
+                val code = root.optString("code", "")
+                if (code == "200" || code.isEmpty()) {
+                    // 探测 indexes
+                    val indexesArray = root.optJSONArray("indexes")
+                    if (indexesArray != null && indexesArray.length() > 0) {
+                        var targetObj: org.json.JSONObject? = null
+                        for (i in 0 until indexesArray.length()) {
+                            val obj = indexesArray.optJSONObject(i) ?: continue
+                            val c = obj.optString("code", "").lowercase()
+                            if (c == "qaqi" || c == "cn-aqi" || c == "aqi") {
+                                targetObj = obj
+                                break
+                            }
+                        }
+                        if (targetObj == null) {
+                            targetObj = indexesArray.optJSONObject(0)
+                        }
+                        if (targetObj != null) {
+                            val aqiInt = targetObj.optInt("aqi", -1).takeIf { it > 0 }
+                                ?: targetObj.optString("aqi", "").toIntOrNull()
+                            if (aqiInt != null && aqiInt > 0) {
+                                val levelInt = targetObj.optInt("level", -1).takeIf { it > 0 }
+                                    ?: targetObj.optString("level", "").toIntOrNull()
+                                    ?: calculateLevelByAqi(aqiInt)
+                                val categoryStr = targetObj.optString("category", "").ifEmpty { calculateCategoryByAqi(aqiInt) }
+                                val updateTimeStr = formatIsoToTime(root.optString("updateTime", ""))
+                                return AirQuality(
+                                    aqi = aqiInt,
+                                    level = levelInt,
+                                    qualityText = categoryStr,
+                                    updateTime = updateTimeStr
+                                )
+                            }
+                        }
+                    }
 
-        return AirQuality(
-            aqi = aqiValue,
-            level = levelValue,
-            qualityText = qualityText,
-            updateTime = pubTime
-        )
+                    // 探测 now
+                    val nowObj = root.optJSONObject("now")
+                    if (nowObj != null) {
+                        val aqiInt = nowObj.optInt("aqi", -1).takeIf { it > 0 }
+                            ?: nowObj.optString("aqi", "").toIntOrNull()
+                        if (aqiInt != null && aqiInt > 0) {
+                            val levelInt = nowObj.optInt("level", -1).takeIf { it > 0 }
+                                ?: nowObj.optString("level", "").toIntOrNull()
+                                ?: calculateLevelByAqi(aqiInt)
+                            val categoryStr = nowObj.optString("category", "").ifEmpty { calculateCategoryByAqi(aqiInt) }
+                            val pubTimeStr = nowObj.optString("pubTime", "")
+                            return AirQuality(
+                                aqi = aqiInt,
+                                level = levelInt,
+                                qualityText = categoryStr,
+                                updateTime = pubTimeStr
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logError("宽松解析空气质量 JSON 兜底异常: ${e.message}", e)
+            }
+        }
+
+        return null
     }
 
     /**
@@ -756,46 +839,113 @@ class QWeatherWeatherDataSource(
      *
      * @param cityName 城市名称
      * @param warningResp 预警响应数据模型 [QWeatherWarningResponse]
+     * @param rawJson 原始响应 JSON 字符串（可选）
      * @return 提取出的首条有效灾害预警 [WeatherAlert]，若无预警则返回 null
      */
-    private fun parseWeatherAlert(cityName: String, warningResp: QWeatherWarningResponse?): WeatherAlert? {
-        if (warningResp == null) return null
+    private fun parseWeatherAlert(cityName: String, warningResp: QWeatherWarningResponse?, rawJson: String? = null): WeatherAlert? {
+        if (warningResp != null) {
+            // 1. 优先解析 V1 新版 alerts 列表
+            val alertItem = warningResp.alerts?.firstOrNull()
+            if (alertItem != null) {
+                val title = alertItem.headline ?: alertItem.title 
+                    ?: "${cityName}发布${alertItem.event ?: alertItem.typeName ?: "气象"}${alertItem.level ?: ""}预警"
+                val content = alertItem.instruction ?: alertItem.description ?: alertItem.text 
+                    ?: "请有关单位和人员做好防范准备。"
+                val level = alertItem.level ?: mapSeverityToLevel(alertItem.severity)
+                val publisher = alertItem.sender ?: "预警信息发布中心"
+                val pubTime = formatIsoToTime(alertItem.issuedTime ?: alertItem.pubTime ?: alertItem.effectiveTime ?: "")
 
-        // 1. 优先解析 V1 新版 alerts 列表
-        val alertItem = warningResp.alerts?.firstOrNull()
-        if (alertItem != null) {
-            val title = alertItem.headline ?: alertItem.title 
-                ?: "${cityName}发布${alertItem.event ?: alertItem.typeName ?: "气象"}${alertItem.level ?: ""}预警"
-            val content = alertItem.instruction ?: alertItem.description ?: alertItem.text 
-                ?: "请有关单位和人员做好防范准备。"
-            val level = alertItem.level ?: mapSeverityToLevel(alertItem.severity)
-            val publisher = alertItem.sender ?: "预警信息发布中心"
-            val pubTime = formatIsoToTime(alertItem.issuedTime ?: alertItem.pubTime ?: alertItem.effectiveTime ?: "")
+                return WeatherAlert(
+                    title = title,
+                    level = level,
+                    content = content,
+                    publisher = publisher,
+                    publishTime = pubTime
+                )
+            }
 
-            return WeatherAlert(
-                title = title,
-                level = level,
-                content = content,
-                publisher = publisher,
-                publishTime = pubTime
-            )
+            // 2. 降级解析 V7 旧版 warning 列表
+            val warnItem = warningResp.warning?.firstOrNull()
+            if (warnItem != null) {
+                val title = warnItem.title ?: "${cityName}发布${warnItem.typeName ?: "气象"}${warnItem.level ?: ""}预警"
+                val content = warnItem.text ?: "请有关单位和人员做好防范准备。"
+                val level = warnItem.level ?: "黄色"
+                val publisher = warnItem.sender ?: "预警信息发布中心"
+                val pubTime = formatIsoToTime(warnItem.pubTime ?: "")
+
+                return WeatherAlert(
+                    title = title,
+                    level = level,
+                    content = content,
+                    publisher = publisher,
+                    publishTime = pubTime
+                )
+            }
         }
 
-        // 2. 降级解析 V7 旧版 warning 列表
-        val warnItem = warningResp.warning?.firstOrNull() ?: return null
-        val title = warnItem.title ?: "${cityName}发布${warnItem.typeName ?: "气象"}${warnItem.level ?: ""}预警"
-        val content = warnItem.text ?: "请有关单位和人员做好防范准备。"
-        val level = warnItem.level ?: "黄色"
-        val publisher = warnItem.sender ?: "预警信息发布中心"
-        val pubTime = formatIsoToTime(warnItem.pubTime ?: "")
+        // 3. 原始 JSON 宽松兜底解析
+        if (!rawJson.isNullOrBlank()) {
+            try {
+                val root = org.json.JSONObject(rawJson)
+                val alertsArray = root.optJSONArray("alerts") ?: root.optJSONArray("warning")
+                if (alertsArray != null && alertsArray.length() > 0) {
+                    val item = alertsArray.optJSONObject(0)
+                    if (item != null) {
+                        val headline = item.optString("headline", "")
+                        val title = item.optString("title", "").ifEmpty { headline }.ifEmpty { "${cityName}发布气象灾害预警" }
+                        val content = item.optString("instruction", "").ifEmpty { item.optString("description", "") }.ifEmpty { item.optString("text", "请有关单位和人员做好防范准备。") }
+                        val level = item.optString("level", "").ifEmpty { mapSeverityToLevel(item.optString("severity", "")) }
+                        val sender = item.optString("sender", "预警信息发布中心")
+                        val timeStr = formatIsoToTime(item.optString("issuedTime", "").ifEmpty { item.optString("pubTime", "") })
+                        return WeatherAlert(
+                            title = title,
+                            level = level,
+                            content = content,
+                            publisher = sender,
+                            publishTime = timeStr
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                logError("宽松解析灾害预警 JSON 兜底异常: ${e.message}", e)
+            }
+        }
 
-        return WeatherAlert(
-            title = title,
-            level = level,
-            content = content,
-            publisher = publisher,
-            publishTime = pubTime
-        )
+        return null
+    }
+
+    /**
+     * 根据 AQI 数值推算对应等级 (1~6)
+     *
+     * @param aqi 空气质量指数数值
+     * @return 对应的等级序号（1-优, 2-良, 3-轻度, 4-中度, 5-重度, 6-严重）
+     */
+    private fun calculateLevelByAqi(aqi: Int): Int {
+        return when {
+            aqi <= 50 -> 1
+            aqi <= 100 -> 2
+            aqi <= 150 -> 3
+            aqi <= 200 -> 4
+            aqi <= 300 -> 5
+            else -> 6
+        }
+    }
+
+    /**
+     * 根据 AQI 数值推算对应描述文本
+     *
+     * @param aqi 空气质量指数数值
+     * @return 对应的描述文本（如 "优", "良", "轻度污染"）
+     */
+    private fun calculateCategoryByAqi(aqi: Int): String {
+        return when {
+            aqi <= 50 -> "优"
+            aqi <= 100 -> "良"
+            aqi <= 150 -> "轻度污染"
+            aqi <= 200 -> "中度污染"
+            aqi <= 300 -> "重度污染"
+            else -> "严重污染"
+        }
     }
 
     /**

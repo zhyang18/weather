@@ -18,7 +18,8 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #030710;
+            background-color: transparent;
+            background: transparent;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             touch-action: none;
         }
@@ -101,16 +102,17 @@
         // Three.js 场景初始化
         const container = document.getElementById('canvas-container');
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x030710);
+        scene.background = null;
 
         const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
         camera.position.set(0, 0, CAMERA_DIST);
 
         const renderer = new THREE.WebGLRenderer({
             antialias: true,
-            alpha: false,
+            alpha: true,
             powerPreference: "high-performance"
         });
+        renderer.setClearColor(0x000000, 0);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
         container.appendChild(renderer.domElement);
 

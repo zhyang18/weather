@@ -17,6 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CenterFocusStrong
@@ -215,8 +217,20 @@ private fun EarthDaylightContent(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF030710))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF060A12),
+                        Color(0xFF0D1524),
+                        Color(0xFF131F33),
+                        Color(0xFF090E18)
+                    )
+                )
+            )
     ) {
+        // 背景星空粒子装饰 (与月相详情页完全一致)
+        EarthStarlightBackgroundCanvas(modifier = Modifier.fillMaxSize())
+
         // 1. 硬件加速 WebGL 离线视图容器
         AndroidView(
             factory = { context ->
@@ -718,7 +732,7 @@ private fun createEarthWebView(context: Context): WebView {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-        setBackgroundColor(android.graphics.Color.BLACK)
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
         setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
 
         webChromeClient = object : WebChromeClient() {
@@ -743,6 +757,47 @@ private fun createEarthWebView(context: Context): WebView {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
                 mediaPlaybackRequiresUserGesture = false
             }
+        }
+    }
+}
+
+/**
+ * 昼夜晨昏线沉浸式星空微光背景画布（与月相详情页星空体系完全一致）
+ *
+ * @param modifier 外部修饰符 [Modifier]
+ */
+@Composable
+private fun EarthStarlightBackgroundCanvas(
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        // 静态伪随机星芒粒子（固定种子保持稳定，无动态重绘开销）
+        val starCoords = listOf(
+            Triple(0.12f, 0.08f, 1.2f),
+            Triple(0.35f, 0.04f, 0.8f),
+            Triple(0.78f, 0.07f, 1.4f),
+            Triple(0.90f, 0.15f, 0.9f),
+            Triple(0.08f, 0.22f, 0.7f),
+            Triple(0.85f, 0.28f, 1.1f),
+            Triple(0.24f, 0.38f, 1.3f),
+            Triple(0.68f, 0.42f, 0.8f),
+            Triple(0.15f, 0.55f, 1.0f),
+            Triple(0.92f, 0.62f, 1.2f),
+            Triple(0.40f, 0.70f, 0.7f),
+            Triple(0.75f, 0.80f, 1.5f),
+            Triple(0.18f, 0.88f, 0.9f),
+            Triple(0.88f, 0.92f, 1.1f)
+        )
+
+        starCoords.forEach { (rx, ry, r) ->
+            drawCircle(
+                color = Color.White.copy(alpha = 0.40f),
+                radius = r.dp.toPx(),
+                center = Offset(w * rx, h * ry)
+            )
         }
     }
 }

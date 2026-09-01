@@ -21,6 +21,8 @@ import androidx.compose.runtime.Immutable
  * @property showHumidity 是否展示相对湿度卡片（默认 true）
  * @property showPressure 是否展示大气压强卡片（默认 true）
  * @property showPrecipitation 是否展示实时降水量卡片（默认 true）
+ * @property showUvIndex 是否展示紫外线强度卡片（默认 true）
+ * @property showVisibility 是否展示水平能见度卡片（默认 true）
  * @property showLocationMap 是否展示定位小地图卡片（默认 true）
  */
 @Immutable
@@ -38,7 +40,10 @@ data class CardDisplayConfig(
     val showHumidity: Boolean = true,
     val showPressure: Boolean = true,
     val showPrecipitation: Boolean = true,
-    val showLocationMap: Boolean = true
+    val showUvIndex: Boolean = true,
+    val showVisibility: Boolean = true,
+    val showLocationMap: Boolean = true,
+    val showLifeIndex: Boolean = true
 ) {
 
     companion object {
@@ -68,7 +73,10 @@ data class CardDisplayConfig(
             showHumidity = false,
             showPressure = false,
             showPrecipitation = false,
-            showLocationMap = false
+            showUvIndex = false,
+            showVisibility = false,
+            showLocationMap = false,
+            showLifeIndex = false
         )
     }
 
@@ -94,7 +102,10 @@ data class CardDisplayConfig(
             KEY_HUMIDITY -> copy(showHumidity = enabled)
             KEY_PRESSURE -> copy(showPressure = enabled)
             KEY_PRECIPITATION -> copy(showPrecipitation = enabled)
+            KEY_UV_INDEX -> copy(showUvIndex = enabled)
+            KEY_VISIBILITY -> copy(showVisibility = enabled)
             KEY_LOCATION_MAP -> copy(showLocationMap = enabled)
+            KEY_LIFE_INDEX -> copy(showLifeIndex = enabled)
             else -> this
         }
     }
@@ -126,5 +137,11 @@ const val KEY_HUMIDITY = "humidity"
 const val KEY_PRESSURE = "pressure"
 /** 实时降水量卡片键名 */
 const val KEY_PRECIPITATION = "precipitation"
+/** 紫外线强度卡片键名 */
+const val KEY_UV_INDEX = "uv_index"
+/** 水平能见度卡片键名 */
+const val KEY_VISIBILITY = "visibility"
 /** 定位地图卡片键名 */
 const val KEY_LOCATION_MAP = "location_map"
+/** 生活指数卡片键名 */
+const val KEY_LIFE_INDEX = "life_index"

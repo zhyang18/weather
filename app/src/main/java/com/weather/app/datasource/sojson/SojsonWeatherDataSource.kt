@@ -228,6 +228,17 @@ class SojsonWeatherDataSource : WeatherDataSource {
                 dailyForecasts = dailyForecasts
             )
 
+            // 8. 解析生活气象指数
+            val calculatedIndex = com.weather.app.datasource.LifeIndexCalculator.calculate(currentWeather, dailyForecasts)
+            val lifeItems = calculatedIndex.items.toMutableList()
+            if (!data.ganmao.isNullOrEmpty()) {
+                val coldIdx = lifeItems.indexOfFirst { it.category == "cold" }
+                if (coldIdx >= 0) {
+                    lifeItems[coldIdx] = lifeItems[coldIdx].copy(advice = data.ganmao)
+                }
+            }
+            val lifeIndex = com.weather.app.model.LifeIndex(items = lifeItems)
+
             val finalCity = targetCity.copy(
                 name = targetCity.name.ifEmpty { cityInfoResp?.city ?: "未知" },
                 province = if (targetCity.province.isEmpty()) (cityInfoResp?.parent ?: "") else targetCity.province
@@ -240,6 +251,7 @@ class SojsonWeatherDataSource : WeatherDataSource {
                 hourlyForecasts = hourlyForecasts,
                 airQuality = airQuality,
                 alert = alert,
+                lifeIndex = lifeIndex,
                 sourceName = "SOJSON 天气"
             )
 

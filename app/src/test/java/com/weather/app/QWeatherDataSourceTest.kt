@@ -254,7 +254,7 @@ class QWeatherDataSourceTest {
         assertEquals("42", airRespV7.now?.aqi)
         assertEquals("优", airRespV7.now?.category)
 
-        // 5. 空气质量 JSON (全新 AirQuality V1 格式)
+        // 5. 空气质量 JSON (全新 AirQuality V1 真实嵌套格式)
         val airJsonV1 = """
             {
               "code": "200",
@@ -267,15 +267,21 @@ class QWeatherDataSourceTest {
                   "level": "1",
                   "category": "优",
                   "color": "#00E400",
-                  "primaryPollutant": "PM2.5"
+                  "primaryPollutant": {
+                    "code": "pm2p5",
+                    "name": "PM2.5",
+                    "fullName": "细颗粒物"
+                  }
                 }
               ],
               "pollutants": [
                 {
                   "code": "pm2p5",
                   "name": "PM2.5",
-                  "value": "12",
-                  "unit": "μg/m³"
+                  "concentration": {
+                    "value": "12",
+                    "unit": "μg/m³"
+                  }
                 },
                 {
                   "code": "pm10",
@@ -292,6 +298,7 @@ class QWeatherDataSourceTest {
         assertEquals(1, airRespV1.indexes?.size)
         assertEquals("35", airRespV1.indexes?.first()?.aqi)
         assertEquals("优", airRespV1.indexes?.first()?.category)
+        assertEquals("pm2p5", airRespV1.indexes?.first()?.primaryPollutant?.code)
         assertEquals(2, airRespV1.pollutants?.size)
         assertEquals("pm2p5", airRespV1.pollutants?.first()?.code)
 

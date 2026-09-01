@@ -199,7 +199,15 @@ class CaiyunWeatherDataSource(
             val pressureHpa = (realtime.pressure ?: 101325.0) / 100.0 // Pa 换算为 hPa
 
             val sdfTime = SimpleDateFormat("HH:mm", Locale.CHINA)
-            val publishTime = sdfTime.format(Date())
+            val publishTime = if (response.serverTime != null && response.serverTime > 0) {
+                sdfTime.format(Date(response.serverTime * 1000L))
+            } else {
+                sdfTime.format(Date())
+            }
+
+            val visibility = realtime.visibility
+            val uvIndex = realtime.lifeIndex?.ultraviolet?.index?.toString()?.toDoubleOrNull()
+                ?: result.daily?.lifeIndex?.ultraviolet?.firstOrNull()?.index?.toString()?.toDoubleOrNull()
 
             val currentWeather = CurrentWeather(
                 temperature = realtime.temperature ?: 20.0,
@@ -212,6 +220,8 @@ class CaiyunWeatherDataSource(
                 windSpeed = windSpeedMs,
                 pressure = pressureHpa,
                 precipitation = realtime.precipitation?.local?.intensity ?: 0.0,
+                uvIndex = uvIndex,
+                visibility = visibility,
                 publishTime = publishTime
             )
 
@@ -232,6 +242,48 @@ class CaiyunWeatherDataSource(
                 dailyForecasts = dailyForecasts
             )
 
+            // 8. 解析生活气象指数
+            val calculatedIndex = com.weather.app.datasource.LifeIndexCalculator.calculate(currentWeather, dailyForecasts)
+            val lifeIndexItems = mutableListOf<com.weather.app.model.LifeIndexItem>()
+            val dailyLife = result.daily?.lifeIndex
+
+            // 穿衣
+            val dressingItem = dailyLife?.dressing?.firstOrNull()
+            if (dressingItem != null && !dressingItem.desc.isNullOrEmpty()) {
+                lifeIndexItems.add(com.weather.app.model.LifeIndexItem(name = "穿衣指数", level = dressingItem.desc ?: "舒适", category = "dressing", advice = "建议穿${dressingItem.desc}"))
+            } else {
+                calculatedIndex.getDressing()?.let { lifeIndexItems.add(it) }
+            }
+
+            // 感冒
+            val coldItem = dailyLife?.coldRisk?.firstOrNull()
+            if (coldItem != null && !coldItem.desc.isNullOrEmpty()) {
+                lifeIndexItems.add(com.weather.app.model.LifeIndexItem(name = "感冒指数", level = coldItem.desc ?: "少发", category = "cold", advice = "感冒${coldItem.desc}"))
+            } else {
+                calculatedIndex.getColdRisk()?.let { lifeIndexItems.add(it) }
+            }
+
+            // 洗车
+            val carItem = dailyLife?.carWashing?.firstOrNull()
+            if (carItem != null && !carItem.desc.isNullOrEmpty()) {
+                lifeIndexItems.add(com.weather.app.model.LifeIndexItem(name = "洗车指数", level = carItem.desc ?: "适宜", category = "carWash", advice = "${carItem.desc}洗车"))
+            } else {
+                calculatedIndex.getCarWashing()?.let { lifeIndexItems.add(it) }
+            }
+
+            // 舒适度
+            val comfortItem = dailyLife?.comfort?.firstOrNull()
+            if (comfortItem != null && !comfortItem.desc.isNullOrEmpty()) {
+                lifeIndexItems.add(com.weather.app.model.LifeIndexItem(name = "舒适度", level = comfortItem.desc ?: "舒适", category = "comfort", advice = "体感${comfortItem.desc}"))
+            } else {
+                calculatedIndex.getComfort()?.let { lifeIndexItems.add(it) }
+            }
+
+            // 运动
+            calculatedIndex.getSport()?.let { lifeIndexItems.add(it) }
+
+            val lifeIndex = com.weather.app.model.LifeIndex(items = lifeIndexItems)
+
             val weatherData = WeatherData(
                 city = targetCity,
                 current = currentWeather,
@@ -239,6 +291,7 @@ class CaiyunWeatherDataSource(
                 hourlyForecasts = hourlyForecasts,
                 airQuality = airQuality,
                 alert = alert,
+                lifeIndex = lifeIndex,
                 sourceName = "彩云天气"
             )
 
@@ -587,7 +640,6 @@ class CaiyunWeatherDataSource(
         val skyconDailyList = daily.skycon ?: emptyList()
         val windDailyList = daily.wind ?: emptyList()
         val precipDailyList = daily.precipitation ?: emptyList()
-        val astroDailyList = daily.astro ?: emptyList()
 
         val count = maxOf(tempDailyList.size, skyconDailyList.size)
         if (count == 0) return emptyList()

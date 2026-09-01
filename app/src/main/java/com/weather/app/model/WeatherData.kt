@@ -14,6 +14,7 @@ import androidx.compose.runtime.Immutable
  * @property hourlyForecasts 24小时历史与走势列表
  * @property airQuality 空气质量信息 (可选)
  * @property alert 官方气象预警数据 (可选)
+ * @property lifeIndex 生活气象指数数据 (可选)
  * @property sourceName 提供本条数据的天气源名称
  * @property updateTimestamp 数据获取时间戳 (毫秒)
  */
@@ -25,6 +26,7 @@ data class WeatherData(
     val hourlyForecasts: List<HourlyForecast> = emptyList(),
     val airQuality: AirQuality? = null,
     val alert: WeatherAlert? = null,
+    val lifeIndex: LifeIndex? = null,
     val sourceName: String = "中央气象台",
     val updateTimestamp: Long = System.currentTimeMillis()
 ) {

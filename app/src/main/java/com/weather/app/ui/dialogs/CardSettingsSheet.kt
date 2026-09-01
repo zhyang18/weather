@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Opacity
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbCloudy
 import androidx.compose.material.icons.filled.WbSunny
+import com.weather.app.model.KEY_LIFE_INDEX
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -64,6 +66,8 @@ import com.weather.app.model.KEY_MOON_PHASE
 import com.weather.app.model.KEY_PRECIPITATION
 import com.weather.app.model.KEY_PRESSURE
 import com.weather.app.model.KEY_SUNRISE_SUNSET
+import com.weather.app.model.KEY_UV_INDEX
+import com.weather.app.model.KEY_VISIBILITY
 import com.weather.app.model.KEY_WEATHER_ALERT
 import com.weather.app.model.KEY_WIND
 
@@ -169,6 +173,55 @@ fun CardSettingsSheet(
                     isEnabled = config.showAirQuality
                 ),
                 CardOptionItem(
+                    key = KEY_UV_INDEX,
+                    title = "紫外线强度",
+                    description = "实时紫外线等级指数（0~11+）与户外防晒建议",
+                    icon = Icons.Default.WbSunny,
+                    isEnabled = config.showUvIndex
+                ),
+                CardOptionItem(
+                    key = KEY_VISIBILITY,
+                    title = "水平能见度",
+                    description = "气象观测的实时水平视线距离公里数与出行参考",
+                    icon = Icons.Default.Public,
+                    isEnabled = config.showVisibility
+                ),
+                CardOptionItem(
+                    key = KEY_FEELS_LIKE,
+                    title = "体感温度",
+                    description = "结合气温、湿度与风速综合计算的人体体表真实感受",
+                    icon = Icons.Default.Thermostat,
+                    isEnabled = config.showFeelsLike
+                ),
+                CardOptionItem(
+                    key = KEY_WIND,
+                    title = "风向风速",
+                    description = "实时气象风力等级、风向罗盘与适宜度提醒",
+                    icon = Icons.Default.Air,
+                    isEnabled = config.showWind
+                ),
+                CardOptionItem(
+                    key = KEY_PRESSURE,
+                    title = "大气压强",
+                    description = "实时百帕 (hPa) 气压读数与圆弧刻度仪表盘",
+                    icon = Icons.Default.Speed,
+                    isEnabled = config.showPressure
+                ),
+                CardOptionItem(
+                    key = KEY_HUMIDITY,
+                    title = "相对湿度",
+                    description = "当前空气相对湿度百分比与人体舒适度参考",
+                    icon = Icons.Default.Opacity,
+                    isEnabled = config.showHumidity
+                ),
+                CardOptionItem(
+                    key = KEY_PRECIPITATION,
+                    title = "实时降水量",
+                    description = "气象台观测的实时降水量毫米数与雨情提示",
+                    icon = Icons.Default.WaterDrop,
+                    isEnabled = config.showPrecipitation
+                ),
+                CardOptionItem(
                     key = KEY_SUNRISE_SUNSET,
                     title = "日出日落",
                     description = "太阳实时升降时刻、天文学弧形日光轨迹与倒计时",
@@ -190,39 +243,11 @@ fun CardSettingsSheet(
                     isEnabled = config.showMoonPhase
                 ),
                 CardOptionItem(
-                    key = KEY_FEELS_LIKE,
-                    title = "体感温度",
-                    description = "结合气温、湿度与风速综合计算的人体体表真实感受",
-                    icon = Icons.Default.Thermostat,
-                    isEnabled = config.showFeelsLike
-                ),
-                CardOptionItem(
-                    key = KEY_WIND,
-                    title = "风向风速",
-                    description = "实时气象风力等级、风向罗盘与适宜度提醒",
-                    icon = Icons.Default.Air,
-                    isEnabled = config.showWind
-                ),
-                CardOptionItem(
-                    key = KEY_HUMIDITY,
-                    title = "相对湿度",
-                    description = "当前空气相对湿度百分比与人体舒适度参考",
-                    icon = Icons.Default.Opacity,
-                    isEnabled = config.showHumidity
-                ),
-                CardOptionItem(
-                    key = KEY_PRESSURE,
-                    title = "大气压强",
-                    description = "实时百帕 (hPa) 气压读数与圆弧刻度仪表盘",
-                    icon = Icons.Default.Speed,
-                    isEnabled = config.showPressure
-                ),
-                CardOptionItem(
-                    key = KEY_PRECIPITATION,
-                    title = "实时降水量",
-                    description = "气象台观测的实时降水量毫米数与雨情提示",
-                    icon = Icons.Default.WaterDrop,
-                    isEnabled = config.showPrecipitation
+                    key = KEY_LIFE_INDEX,
+                    title = "生活指数",
+                    description = "穿衣、感冒、洗车、运动、舒适度等日常气象指南",
+                    icon = Icons.Default.Checkroom,
+                    isEnabled = config.showLifeIndex
                 )
             )
         )

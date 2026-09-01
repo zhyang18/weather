@@ -170,6 +170,10 @@ class WttrInWeatherDataSource : WeatherDataSource {
             val windPower = parseWindSpeedKmphToPower(windSpeedKmph)
             val publishTimeStr = formatObservationTime(currentCondition.observationTime)
 
+            val visibility = currentCondition.visibility?.toDoubleOrNull()
+            val uvIndex = currentCondition.uvIndex?.toDoubleOrNull()
+                ?: wttrResp.weather?.firstOrNull()?.uvIndex?.toDoubleOrNull()
+
             val currentWeather = CurrentWeather(
                 temperature = tempVal,
                 feelsLike = feelsLikeVal,
@@ -181,6 +185,8 @@ class WttrInWeatherDataSource : WeatherDataSource {
                 windSpeed = windSpeedMs,
                 pressure = pressureVal,
                 precipitation = precipVal,
+                uvIndex = uvIndex,
+                visibility = visibility,
                 publishTime = publishTimeStr
             )
 
@@ -200,6 +206,9 @@ class WttrInWeatherDataSource : WeatherDataSource {
                 dailyForecasts = dailyForecasts
             )
 
+            // 8. 解析生活气象指数
+            val lifeIndex = com.weather.app.datasource.LifeIndexCalculator.calculate(currentWeather, dailyForecasts)
+
             val weatherData = WeatherData(
                 city = targetCity,
                 current = currentWeather,
@@ -207,6 +216,7 @@ class WttrInWeatherDataSource : WeatherDataSource {
                 hourlyForecasts = hourlyForecasts,
                 airQuality = airQuality,
                 alert = alert,
+                lifeIndex = lifeIndex,
                 sourceName = "wttr.in"
             )
 

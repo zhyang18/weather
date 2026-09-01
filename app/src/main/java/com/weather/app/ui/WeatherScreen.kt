@@ -78,6 +78,8 @@ import com.weather.app.ui.components.MinutelyPrecipitationCard
 import com.weather.app.ui.components.WeatherAlertCard
 import com.weather.app.ui.components.WeatherDetailGrid
 import com.weather.app.ui.components.WeatherSkyBackground
+import com.weather.app.ui.components.LifeIndexDetailSheet
+import com.weather.app.model.LifeIndex
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -215,6 +217,8 @@ fun WeatherScreen(
         }
     }
 
+    var currentLifeIndexSheet by remember { mutableStateOf<LifeIndex?>(null) }
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -305,6 +309,9 @@ fun WeatherScreen(
                     },
                     onMoonPhaseClick = { targetCity ->
                         viewModel.setShowMoonPhaseScreen(true, targetCity)
+                    },
+                    onLifeIndexClick = { lifeIndex ->
+                        currentLifeIndexSheet = lifeIndex
                     }
                 )
             }
@@ -377,6 +384,14 @@ fun WeatherScreen(
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+
+    // 全量生活气象指数详情抽屉
+    currentLifeIndexSheet?.let { lifeIndex ->
+        LifeIndexDetailSheet(
+            lifeIndex = lifeIndex,
+            onDismiss = { currentLifeIndexSheet = null }
         )
     }
 
@@ -654,12 +669,17 @@ private fun TopImmersiveWeatherBar(
         // 中间：居中当前城市名称 + 下方指示器 / 折叠时显现的固定【温度 | 天气】
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 8.dp)
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 6.dp)
         ) {
+            val titleFontSize = if (currentCityName.length > 9) 17.sp else if (currentCityName.length > 6) 18.5.sp else 20.sp
             Text(
                 text = currentCityName,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 style = TextStyle(
-                    fontSize = 20.sp,
+                    fontSize = titleFontSize,
                     fontWeight = FontWeight.Medium,
                     color = Color.White,
                     shadow = Shadow(
@@ -809,7 +829,8 @@ private fun CityWeatherPageContent(
     onSunriseSunsetClick: (CityInfo) -> Unit = {},
     onEarthDaylightClick: () -> Unit = {},
     onLocationMapClick: (CityInfo) -> Unit = {},
-    onMoonPhaseClick: (CityInfo) -> Unit = {}
+    onMoonPhaseClick: (CityInfo) -> Unit = {},
+    onLifeIndexClick: (LifeIndex?) -> Unit = {}
 ) {
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isRefreshing,
@@ -932,28 +953,20 @@ private fun CityWeatherPageContent(
                     Spacer(modifier = Modifier.height(2.dp))
                 }
 
-                // 6. 定位气象小地图卡片 (用户开启时展示)
-                if (cardConfig.showLocationMap) {
-                    LocationMapCard(
-                        city = city,
-                        weatherData = weatherData,
-                        mapLayerType = mapLayerType,
-                        onClick = { onLocationMapClick(city) }
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                }
-
-                // 7. 详细气象指标指标宫格 (由内部 cardConfig 进一步过滤各项详细指标卡片与月相卡片)
+                // 6. 详细气象指标详情宫格 (空气质量、紫外线、体感、风、气压、能见度、湿度、日出日落、月相、生活指数、地图，及底部说明文字)
                 WeatherDetailGrid(
                     weatherData = weatherData,
                     cardConfig = cardConfig,
                     lastUpdatedText = if (isRefreshing) "正在刷新天气数据..." else lastUpdatedTimeText,
                     onSunriseSunsetClick = { onSunriseSunsetClick(city) },
                     onEarthDaylightClick = onEarthDaylightClick,
-                    onMoonPhaseClick = { onMoonPhaseClick(city) }
+                    onMoonPhaseClick = { onMoonPhaseClick(city) },
+                    onLifeIndexClick = { onLifeIndexClick(weatherData.lifeIndex) },
+                    mapLayerType = mapLayerType,
+                    onLocationMapClick = { onLocationMapClick(city) }
                 )
 
-                Spacer(modifier = Modifier.height(36.dp))
+                Spacer(modifier = Modifier.height(20.dp))
             }
         }
 

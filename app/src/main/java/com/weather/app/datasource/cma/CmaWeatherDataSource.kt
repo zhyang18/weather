@@ -557,6 +557,9 @@ class CmaWeatherDataSource : WeatherDataSource {
                 dailyForecasts = dailyForecasts
             )
 
+            // 解析生活气象指数
+            val lifeIndex = com.weather.app.datasource.LifeIndexCalculator.calculate(currentWeather, dailyForecasts)
+
             val weatherData = WeatherData(
                 city = targetCity.copy(
                     province = real?.station?.province ?: data.predict?.station?.province ?: targetCity.province,
@@ -567,6 +570,7 @@ class CmaWeatherDataSource : WeatherDataSource {
                 hourlyForecasts = hourlyForecasts,
                 airQuality = airQuality,
                 alert = alert,
+                lifeIndex = lifeIndex,
                 sourceName = "中央气象台"
             )
 

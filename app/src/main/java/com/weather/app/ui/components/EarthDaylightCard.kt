@@ -140,7 +140,7 @@ fun EarthDaylightRealCard(
         modifier = cardModifier,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // 1. 顶部栏：微型地球图标 + 标题 + 提示小箭头
+        // 1. 顶部标题栏（微型地球图标 + 标题 + 跳转小箭头）
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -151,13 +151,13 @@ fun EarthDaylightRealCard(
                     imageVector = Icons.Default.Public,
                     contentDescription = "昼夜晨昏线",
                     tint = Color.White.copy(alpha = 0.85f),
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "昼夜晨昏线",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.70f),
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Normal
                 )
             }
@@ -166,65 +166,47 @@ fun EarthDaylightRealCard(
                 Icon(
                     imageVector = Icons.Default.ArrowForward,
                     contentDescription = "查看全球昼夜详情",
-                    tint = Color.White.copy(alpha = 0.45f),
+                    tint = Color.White.copy(alpha = 0.40f),
                     modifier = Modifier.size(13.dp)
                 )
             }
         }
 
-        // 2. 中间主要内容：左侧文字指标 + 右侧精致微缩地球球体 (50dp)
+        // 2. 中间主要区域：居中大幅 3D 拟真地球晨昏圈模型 (80dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            EarthTerminatorMiniCanvas(
+                declinationDeg = declination,
+                isDaytime = isSunUp,
+                modifier = Modifier.size(80.dp)
+            )
+        }
+
+        // 3. 底部信息行：左右两端对齐展示【昼夜状态】与【太阳直射点纬度】（统一 11.5.sp 风格）
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // 左侧状态与数据
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = statusTitle,
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1
-                )
+            Text(
+                text = statusTitle,
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1
+            )
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = declinationValStr,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "地轴 23.44°",
-                    color = Color.White.copy(alpha = 0.60f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1
-                )
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            // 右侧拟真地球晨昏圈微缩图 (50dp，精致不遮挡)
-            Box(
-                modifier = Modifier.size(50.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                EarthTerminatorMiniCanvas(
-                    declinationDeg = declination,
-                    isDaytime = isSunUp,
-                    modifier = Modifier.size(50.dp)
-                )
-            }
+            Text(
+                text = declinationValStr.replace(" ", ""),
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1
+            )
         }
     }
 }

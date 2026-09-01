@@ -38,6 +38,8 @@ data class OpenMeteoForecastResponse(
  * @property surfacePressure 地表气压 (hPa)
  * @property windSpeed10m 10米高度风速 (m/s)
  * @property windDirection10m 10米高度风向角度 (0°~360°)
+ * @property visibility 水平能见度 (米 m)
+ * @property uvIndex 紫外线指数 (0~11+)
  */
 data class OpenMeteoCurrent(
     val time: String? = null,
@@ -56,7 +58,11 @@ data class OpenMeteoCurrent(
     @SerializedName("wind_speed_10m")
     val windSpeed10m: Double? = null,
     @SerializedName("wind_direction_10m")
-    val windDirection10m: Double? = null
+    val windDirection10m: Double? = null,
+    @SerializedName("visibility")
+    val visibility: Double? = null,
+    @SerializedName("uv_index")
+    val uvIndex: Double? = null
 )
 
 /**
@@ -104,6 +110,7 @@ data class OpenMeteoHourly(
  * @property precipitationSum 每日降水总量数组 (mm)
  * @property windSpeed10mMax 每日最大风速数组 (m/s)
  * @property windDirection10mDominant 每日主导风向角度数组 (0°~360°)
+ * @property uvIndexMax 每日最大紫外线指数数组
  */
 data class OpenMeteoDaily(
     val time: List<String>? = null,
@@ -118,7 +125,9 @@ data class OpenMeteoDaily(
     @SerializedName("wind_speed_10m_max")
     val windSpeed10mMax: List<Double>? = null,
     @SerializedName("wind_direction_10m_dominant")
-    val windDirection10mDominant: List<Double>? = null
+    val windDirection10mDominant: List<Double>? = null,
+    @SerializedName("uv_index_max")
+    val uvIndexMax: List<Double>? = null
 )
 
 /**

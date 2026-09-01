@@ -189,7 +189,7 @@ data class QWeatherAirResponse(
  * @property level 空气质量等级（如 "1", "2"）
  * @property category 空气质量分类描述（如 "优", "良", "轻度污染"）
  * @property color 空气质量对应色值（十六进制色码）
- * @property primaryPollutant 首要污染物（如 "PM2.5"）
+ * @property primaryPollutant 首要污染物信息对象（可选）
  */
 data class QWeatherAirIndexItem(
     @SerializedName("code") val code: String? = null,
@@ -198,7 +198,20 @@ data class QWeatherAirIndexItem(
     @SerializedName("level") val level: String? = null,
     @SerializedName("category") val category: String? = null,
     @SerializedName("color") val color: String? = null,
-    @SerializedName("primaryPollutant") val primaryPollutant: String? = null
+    @SerializedName("primaryPollutant") val primaryPollutant: QWeatherPrimaryPollutant? = null
+)
+
+/**
+ * 首要污染物详情实体
+ *
+ * @property code 污染物代码（如 "pm2p5", "pm10"）
+ * @property name 污染物显示名称（如 "PM2.5"）
+ * @property fullName 污染物完整官方名称
+ */
+data class QWeatherPrimaryPollutant(
+    @SerializedName("code") val code: String? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("fullName") val fullName: String? = null
 )
 
 /**
@@ -206,12 +219,27 @@ data class QWeatherAirIndexItem(
  *
  * @property code 污染物标识代码（如 "pm2p5", "pm10", "no2", "so2", "co", "o3"）
  * @property name 污染物名称
- * @property value 浓度数值
- * @property unit 浓度单位（如 "μg/m³", "mg/m³"）
+ * @property fullName 污染物全称
+ * @property value 浓度数值（兼容扁平格式）
+ * @property unit 浓度单位（兼容扁平格式）
+ * @property concentration 嵌套浓度对象（兼容标准结构）
  */
 data class QWeatherAirPollutantItem(
     @SerializedName("code") val code: String? = null,
     @SerializedName("name") val name: String? = null,
+    @SerializedName("fullName") val fullName: String? = null,
+    @SerializedName("value") val value: String? = null,
+    @SerializedName("unit") val unit: String? = null,
+    @SerializedName("concentration") val concentration: QWeatherPollutantConcentration? = null
+)
+
+/**
+ * 污染物浓度与单位数据项
+ *
+ * @property value 浓度数值
+ * @property unit 浓度单位
+ */
+data class QWeatherPollutantConcentration(
     @SerializedName("value") val value: String? = null,
     @SerializedName("unit") val unit: String? = null
 )

@@ -4,8 +4,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -334,6 +336,8 @@ fun QWeatherConfigDialog(
                                 }
                             },
                             enabled = !isVerifying,
+                            modifier = Modifier.defaultMinSize(minWidth = 104.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF2563EB),
                                 contentColor = Color.White
@@ -341,14 +345,14 @@ fun QWeatherConfigDialog(
                         ) {
                             if (isVerifying) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
+                                    modifier = Modifier.size(14.dp),
                                     color = Color.White,
                                     strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("验证中...")
+                                Text("验证中...", fontSize = 13.sp, maxLines = 1)
                             } else {
-                                Text("保存")
+                                Text("保存", fontSize = 13.5.sp, maxLines = 1)
                             }
                         }
                     }

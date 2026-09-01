@@ -28,9 +28,9 @@ interface OpenMeteoApiService {
     suspend fun getForecast(
         @Query("latitude") latitude: Double,
         @Query("longitude") longitude: Double,
-        @Query("current") current: String = "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m",
+        @Query("current") current: String = "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,visibility,uv_index",
         @Query("hourly") hourly: String = "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m",
-        @Query("daily") daily: String = "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_direction_10m_dominant",
+        @Query("daily") daily: String = "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_direction_10m_dominant,uv_index_max",
         @Query("timezone") timezone: String = "auto",
         @Query("forecast_days") forecastDays: Int = 7,
         @Query("wind_speed_unit") windSpeedUnit: String = "ms"

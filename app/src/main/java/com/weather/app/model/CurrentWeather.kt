@@ -18,6 +18,8 @@ import androidx.compose.runtime.Immutable
  * @property windSpeed 风速，单位为 m/s
  * @property pressure 气压值，单位为 hPa
  * @property precipitation 降水量，单位为 mm
+ * @property uvIndex 紫外线指数数值（0~11+，可选）
+ * @property visibility 能见度距离，单位为公里 (km)（可选）
  * @property publishTime 气象中心数据发布时间（如 "2026-08-21 14:00"）
  */
 @Immutable
@@ -32,6 +34,8 @@ data class CurrentWeather(
     val windSpeed: Double = 0.0,
     val pressure: Double = 0.0,
     val precipitation: Double = 0.0,
+    val uvIndex: Double? = null,
+    val visibility: Double? = null,
     val publishTime: String = ""
 ) {
     /**
