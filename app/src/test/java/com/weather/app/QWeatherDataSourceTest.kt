@@ -234,8 +234,8 @@ class QWeatherDataSourceTest {
         assertEquals(1, hourlyResp.hourly?.size)
         assertEquals("29", hourlyResp.hourly?.first()?.temp)
 
-        // 4. 空气质量 JSON
-        val airJson = """
+        // 4. 空气质量 JSON (旧版 V7 格式)
+        val airJsonV7 = """
             {
               "code": "200",
               "now": {
@@ -249,13 +249,54 @@ class QWeatherDataSourceTest {
             }
         """.trimIndent()
 
-        val airResp = gson.fromJson(airJson, QWeatherAirResponse::class.java)
-        assertEquals("200", airResp.code)
-        assertEquals("42", airResp.now?.aqi)
-        assertEquals("优", airResp.now?.category)
+        val airRespV7 = gson.fromJson(airJsonV7, QWeatherAirResponse::class.java)
+        assertEquals("200", airRespV7.code)
+        assertEquals("42", airRespV7.now?.aqi)
+        assertEquals("优", airRespV7.now?.category)
 
-        // 5. 灾害预警 JSON
-        val warningJson = """
+        // 5. 空气质量 JSON (全新 AirQuality V1 格式)
+        val airJsonV1 = """
+            {
+              "code": "200",
+              "updateTime": "2026-08-28T14:00+08:00",
+              "indexes": [
+                {
+                  "code": "qaqi",
+                  "name": "QAQI",
+                  "aqi": "35",
+                  "level": "1",
+                  "category": "优",
+                  "color": "#00E400",
+                  "primaryPollutant": "PM2.5"
+                }
+              ],
+              "pollutants": [
+                {
+                  "code": "pm2p5",
+                  "name": "PM2.5",
+                  "value": "12",
+                  "unit": "μg/m³"
+                },
+                {
+                  "code": "pm10",
+                  "name": "PM10",
+                  "value": "28",
+                  "unit": "μg/m³"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val airRespV1 = gson.fromJson(airJsonV1, QWeatherAirResponse::class.java)
+        assertEquals("200", airRespV1.code)
+        assertEquals(1, airRespV1.indexes?.size)
+        assertEquals("35", airRespV1.indexes?.first()?.aqi)
+        assertEquals("优", airRespV1.indexes?.first()?.category)
+        assertEquals(2, airRespV1.pollutants?.size)
+        assertEquals("pm2p5", airRespV1.pollutants?.first()?.code)
+
+        // 6. 灾害预警 JSON (旧版 V7 格式)
+        val warningJsonV7 = """
             {
               "code": "200",
               "warning": [
@@ -270,10 +311,39 @@ class QWeatherDataSourceTest {
             }
         """.trimIndent()
 
-        val warningResp = gson.fromJson(warningJson, QWeatherWarningResponse::class.java)
-        assertEquals("200", warningResp.code)
-        assertEquals(1, warningResp.warning?.size)
-        assertEquals("黄色", warningResp.warning?.first()?.level)
+        val warningRespV7 = gson.fromJson(warningJsonV7, QWeatherWarningResponse::class.java)
+        assertEquals("200", warningRespV7.code)
+        assertEquals(1, warningRespV7.warning?.size)
+        assertEquals("黄色", warningRespV7.warning?.first()?.level)
+
+        // 7. 灾害预警 JSON (全新 WeatherAlert V1 格式)
+        val warningJsonV1 = """
+            {
+              "code": "200",
+              "updateTime": "2026-08-28T14:30+08:00",
+              "alerts": [
+                {
+                  "id": "2001",
+                  "headline": "暴雨橙色预警信号",
+                  "title": "北京市气象台发布暴雨橙色预警",
+                  "severity": "severe",
+                  "severityColor": "#FFA500",
+                  "level": "橙色",
+                  "event": "暴雨",
+                  "instruction": "请停止户外作业并防范地质灾害",
+                  "sender": "北京市气象局",
+                  "issuedTime": "2026-08-28T14:20+08:00"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val warningRespV1 = gson.fromJson(warningJsonV1, QWeatherWarningResponse::class.java)
+        assertEquals("200", warningRespV1.code)
+        assertEquals(1, warningRespV1.alerts?.size)
+        assertEquals("暴雨橙色预警信号", warningRespV1.alerts?.first()?.headline)
+        assertEquals("橙色", warningRespV1.alerts?.first()?.level)
+        assertEquals("北京市气象局", warningRespV1.alerts?.first()?.sender)
     }
 
     /**

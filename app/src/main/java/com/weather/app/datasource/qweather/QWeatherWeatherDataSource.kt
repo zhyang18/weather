@@ -202,15 +202,18 @@ class QWeatherWeatherDataSource(
 
             var targetCity = city.sanitize()
             val locationParam = resolveLocationParam(targetCity)
+            val coords = resolveCoordinates(targetCity)
+            val latStr = String.format(Locale.US, "%.2f", coords.first)
+            val lonStr = String.format(Locale.US, "%.2f", coords.second)
             val apiBaseUrl = config.getFormattedApiBaseUrl()
 
-            log("【和风天气】准备获取城市【${targetCity.name}】天气，LocationParam=$locationParam，ApiBaseUrl=$apiBaseUrl")
+            log("【和风天气】准备获取城市【${targetCity.name}】天气，LocationParam=$locationParam，Coords=($latStr,$lonStr)，ApiBaseUrl=$apiBaseUrl")
 
             val apiService = getApiService(apiBaseUrl)
 
             var lastErrorMessage: String? = null
 
-            // 并发请求：实时天气、7日预报、24小时逐时、空气质量、灾害预警
+            // 并发请求：实时天气、7日预报、24小时逐时、空气质量 (V1)、灾害预警 (V1)
             val (nowResp, dailyResp, hourlyResp, airResp, warningResp) = coroutineScope {
                 val nowDeferred = async {
                     try {
@@ -250,26 +253,44 @@ class QWeatherWeatherDataSource(
                 }
 
                 val airDeferred = async {
+                    // 1. 优先使用和风最新 AirQuality V1 API (按经纬度路径请求)
                     try {
-                        val body = apiService.getAirNow(location = locationParam).string()
-                        log("【空气质量 返回结果】: $body")
+                        val body = apiService.getAirQualityCurrent(lat = latStr, lon = lonStr).string()
+                        log("【空气质量 V1 返回结果】: $body")
                         customGson.fromJson(body, QWeatherAirResponse::class.java)
-                    } catch (e: Exception) {
-                        val err = extractHttpErrorBody(e)
-                        logError("【空气质量 请求失败】: $err", e)
-                        null
+                    } catch (e1: Exception) {
+                        val err1 = extractHttpErrorBody(e1)
+                        log("【空气质量 V1 接口异常，尝试旧版 V7 降级】: $err1")
+                        try {
+                            val body = apiService.getAirNow(location = locationParam).string()
+                            log("【空气质量 V7 降级返回结果】: $body")
+                            customGson.fromJson(body, QWeatherAirResponse::class.java)
+                        } catch (e2: Exception) {
+                            val err2 = extractHttpErrorBody(e2)
+                            logError("【空气质量 请求失败】: $err2", e2)
+                            null
+                        }
                     }
                 }
 
                 val warningDeferred = async {
+                    // 1. 优先使用和风最新 WeatherAlert V1 API (按经纬度路径请求)
                     try {
-                        val body = apiService.getWarningNow(location = locationParam).string()
-                        log("【灾害预警 返回结果】: $body")
+                        val body = apiService.getWeatherAlertCurrent(lat = latStr, lon = lonStr).string()
+                        log("【灾害预警 V1 返回结果】: $body")
                         customGson.fromJson(body, QWeatherWarningResponse::class.java)
-                    } catch (e: Exception) {
-                        val err = extractHttpErrorBody(e)
-                        logError("【灾害预警 请求失败】: $err", e)
-                        null
+                    } catch (e1: Exception) {
+                        val err1 = extractHttpErrorBody(e1)
+                        log("【灾害预警 V1 接口异常，尝试旧版 V7 降级】: $err1")
+                        try {
+                            val body = apiService.getWarningNow(location = locationParam).string()
+                            log("【灾害预警 V7 降级返回结果】: $body")
+                            customGson.fromJson(body, QWeatherWarningResponse::class.java)
+                        } catch (e2: Exception) {
+                            val err2 = extractHttpErrorBody(e2)
+                            logError("【灾害预警 请求失败】: $err2", e2)
+                            null
+                        }
                     }
                 }
 
@@ -330,11 +351,11 @@ class QWeatherWeatherDataSource(
             // 逐小时预报解析
             val hourlyForecasts = parseHourlyForecasts(hourlyResp?.hourly)
 
-            // 空气质量解析
-            val airQuality = parseAirQuality(airResp?.now)
+            // 空气质量解析（支持 V1 与 V7 兼容）
+            val airQuality = parseAirQuality(airResp)
 
-            // 灾害预警解析
-            val alert = parseWeatherAlert(targetCity.name, warningResp?.warning)
+            // 灾害预警解析（支持 V1 与 V7 兼容）
+            val alert = parseWeatherAlert(targetCity.name, warningResp)
 
             val weatherData = WeatherData(
                 city = targetCity,
@@ -391,6 +412,51 @@ class QWeatherWeatherDataSource(
 
         // 5. 兜底返回城市名称由 GeoAPI 处理
         return city.name.removeSuffix("市").removeSuffix("区").removeSuffix("县")
+    }
+
+    /**
+     * 解析城市对应的经纬度坐标（格式为 Pair(纬度, 经度)）
+     *
+     * 优先提取城市实体自带坐标，其次查询本地行政区划坐标库，再次从城市编码尝试解析，最后降级使用默认省会/北京坐标。
+     *
+     * @param city 待解析的城市信息实体 [CityInfo]
+     * @return 包含 (纬度, 经度) 的坐标对 [Pair]
+     */
+    private suspend fun resolveCoordinates(city: CityInfo): Pair<Double, Double> {
+        val lat = city.latitude
+        val lon = city.longitude
+        if (lat != null && lon != null && (lat != 0.0 || lon != 0.0)) {
+            return Pair(lat, lon)
+        }
+
+        val localCoords = ChinaCityCoordinates.findCoordinates(
+            name = city.name,
+            province = city.province,
+            district = city.district,
+            parentCity = city.parentCity
+        )
+        if (localCoords != null) {
+            return localCoords
+        }
+
+        if (city.code.contains(",")) {
+            val parts = city.code.split(",")
+            if (parts.size == 2) {
+                val d1 = parts[0].trim().toDoubleOrNull()
+                val d2 = parts[1].trim().toDoubleOrNull()
+                if (d1 != null && d2 != null) {
+                    return if (d1 < 60 && d2 > 60) {
+                        Pair(d1, d2)
+                    } else if (d2 < 60 && d1 > 60) {
+                        Pair(d2, d1)
+                    } else {
+                        Pair(d1, d2)
+                    }
+                }
+            }
+        }
+
+        return Pair(39.90, 116.40)
     }
 
     /**
@@ -636,45 +702,116 @@ class QWeatherWeatherDataSource(
     }
 
     /**
-     * 解析和风天气空气质量指标
+     * 解析和风天气空气质量指标（全面支持 AirQuality V1 新协议与 V7 旧协议）
      *
-     * @param airNow 实时空气质量数据项
+     * 优先提取 V1 规范中的各 AQI 指数列表（优先选取 "qaqi"、"cn-aqi" 或首项），未命中时降级解析 V7 的 now 实体。
+     *
+     * @param airResp 空气质量响应模型 [QWeatherAirResponse]
      * @return 映射后的空气质量模型 [AirQuality]，无有效数据时返回 null
      */
-    private fun parseAirQuality(airNow: QWeatherAirNow?): AirQuality? {
-        if (airNow == null) return null
+    private fun parseAirQuality(airResp: QWeatherAirResponse?): AirQuality? {
+        if (airResp == null) return null
+
+        // 1. 优先解析 V1 规范的 indexes 列表
+        val indexes = airResp.indexes
+        if (!indexes.isNullOrEmpty()) {
+            val selectedIndex = indexes.firstOrNull { 
+                val code = it.code?.lowercase() ?: ""
+                code == "qaqi" || code == "cn-aqi" || code == "aqi"
+            } ?: indexes.first()
+
+            val aqiValue = selectedIndex.aqi?.toIntOrNull()
+            if (aqiValue != null) {
+                val levelValue = selectedIndex.level?.toIntOrNull() ?: 1
+                val qualityText = selectedIndex.category ?: "优"
+                val pubTime = formatIsoToTime(airResp.updateTime ?: "")
+                return AirQuality(
+                    aqi = aqiValue,
+                    level = levelValue,
+                    qualityText = qualityText,
+                    updateTime = pubTime
+                )
+            }
+        }
+
+        // 2. 降级解析 V7 旧版 now 对象
+        val airNow = airResp.now ?: return null
         val aqiValue = airNow.aqi?.toIntOrNull() ?: return null
         val levelValue = airNow.level?.toIntOrNull() ?: 1
         val qualityText = airNow.category ?: "优"
+        val pubTime = airNow.pubTime ?: ""
 
         return AirQuality(
             aqi = aqiValue,
             level = levelValue,
             qualityText = qualityText,
-            updateTime = airNow.pubTime ?: ""
+            updateTime = pubTime
         )
     }
 
     /**
-     * 解析和风天气灾害预警列表
+     * 解析和风天气灾害预警列表（全面支持 WeatherAlert V1 新协议与 V7 旧协议）
+     *
+     * 优先提取 V1 新版 alerts 列表中的第一条有效预警，未命中时降级解析 V7 的 warning 列表。
      *
      * @param cityName 城市名称
-     * @param warningList 预警数据项列表
+     * @param warningResp 预警响应数据模型 [QWeatherWarningResponse]
      * @return 提取出的首条有效灾害预警 [WeatherAlert]，若无预警则返回 null
      */
-    private fun parseWeatherAlert(cityName: String, warningList: List<QWeatherWarningItem>?): WeatherAlert? {
-        val item = warningList?.firstOrNull() ?: return null
-        val title = item.title ?: "${cityName}发布${item.typeName ?: "气象"}${item.level ?: ""}预警"
-        val content = item.text ?: "请有关单位和人员做好防范准备。"
-        val level = item.level ?: "黄色"
-        val pubTime = formatIsoToTime(item.pubTime ?: "")
+    private fun parseWeatherAlert(cityName: String, warningResp: QWeatherWarningResponse?): WeatherAlert? {
+        if (warningResp == null) return null
+
+        // 1. 优先解析 V1 新版 alerts 列表
+        val alertItem = warningResp.alerts?.firstOrNull()
+        if (alertItem != null) {
+            val title = alertItem.headline ?: alertItem.title 
+                ?: "${cityName}发布${alertItem.event ?: alertItem.typeName ?: "气象"}${alertItem.level ?: ""}预警"
+            val content = alertItem.instruction ?: alertItem.description ?: alertItem.text 
+                ?: "请有关单位和人员做好防范准备。"
+            val level = alertItem.level ?: mapSeverityToLevel(alertItem.severity)
+            val publisher = alertItem.sender ?: "预警信息发布中心"
+            val pubTime = formatIsoToTime(alertItem.issuedTime ?: alertItem.pubTime ?: alertItem.effectiveTime ?: "")
+
+            return WeatherAlert(
+                title = title,
+                level = level,
+                content = content,
+                publisher = publisher,
+                publishTime = pubTime
+            )
+        }
+
+        // 2. 降级解析 V7 旧版 warning 列表
+        val warnItem = warningResp.warning?.firstOrNull() ?: return null
+        val title = warnItem.title ?: "${cityName}发布${warnItem.typeName ?: "气象"}${warnItem.level ?: ""}预警"
+        val content = warnItem.text ?: "请有关单位和人员做好防范准备。"
+        val level = warnItem.level ?: "黄色"
+        val publisher = warnItem.sender ?: "预警信息发布中心"
+        val pubTime = formatIsoToTime(warnItem.pubTime ?: "")
 
         return WeatherAlert(
             title = title,
             level = level,
             content = content,
+            publisher = publisher,
             publishTime = pubTime
         )
+    }
+
+    /**
+     * 将预警严重程度标识映射为标准中文颜色等级
+     *
+     * @param severity 英文严重程度字符串（如 "minor", "moderate", "severe", "extreme"）
+     * @return 映射后的中文预警等级（如 "蓝色", "黄色", "橙色", "红色"）
+     */
+    private fun mapSeverityToLevel(severity: String?): String {
+        return when (severity?.lowercase()) {
+            "minor" -> "蓝色"
+            "moderate" -> "黄色"
+            "severe" -> "橙色"
+            "extreme" -> "红色"
+            else -> "黄色"
+        }
     }
 
     /**

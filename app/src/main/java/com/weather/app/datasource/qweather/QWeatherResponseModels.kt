@@ -168,16 +168,56 @@ data class QWeatherHourlyItem(
 )
 
 /**
- * 实时空气质量响应模型
+ * 实时空气质量响应模型（兼容 V1 新接口与 V7 旧接口）
  *
- * @property now 实时空气质量数据项
+ * @property indexes 包含各标准 AQI 指标的列表（新版 AirQuality V1 接口）
+ * @property pollutants 污染物浓度数据列表（新版 AirQuality V1 接口）
+ * @property now 实时空气质量数据项（旧版 V7 接口兼容）
  */
 data class QWeatherAirResponse(
+    @SerializedName("indexes") val indexes: List<QWeatherAirIndexItem>? = null,
+    @SerializedName("pollutants") val pollutants: List<QWeatherAirPollutantItem>? = null,
     @SerializedName("now") val now: QWeatherAirNow? = null
 ) : QWeatherBaseResponse()
 
 /**
- * 实时空气质量数据项
+ * 空气质量指数指标项（AirQuality V1 接口）
+ *
+ * @property code 指标标识代码（如 "qaqi", "cn-aqi", "aqi"）
+ * @property name 指标显示名称
+ * @property aqi 空气质量指数 AQI 数值
+ * @property level 空气质量等级（如 "1", "2"）
+ * @property category 空气质量分类描述（如 "优", "良", "轻度污染"）
+ * @property color 空气质量对应色值（十六进制色码）
+ * @property primaryPollutant 首要污染物（如 "PM2.5"）
+ */
+data class QWeatherAirIndexItem(
+    @SerializedName("code") val code: String? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("aqi") val aqi: String? = null,
+    @SerializedName("level") val level: String? = null,
+    @SerializedName("category") val category: String? = null,
+    @SerializedName("color") val color: String? = null,
+    @SerializedName("primaryPollutant") val primaryPollutant: String? = null
+)
+
+/**
+ * 空气污染物浓度项（AirQuality V1 接口）
+ *
+ * @property code 污染物标识代码（如 "pm2p5", "pm10", "no2", "so2", "co", "o3"）
+ * @property name 污染物名称
+ * @property value 浓度数值
+ * @property unit 浓度单位（如 "μg/m³", "mg/m³"）
+ */
+data class QWeatherAirPollutantItem(
+    @SerializedName("code") val code: String? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("value") val value: String? = null,
+    @SerializedName("unit") val unit: String? = null
+)
+
+/**
+ * 实时空气质量数据项（旧版 V7 接口兼容）
  *
  * @property pubTime 数据发布时间
  * @property aqi 空气质量指数 (AQI)
@@ -206,16 +246,67 @@ data class QWeatherAirNow(
 )
 
 /**
- * 气象灾害预警响应模型
+ * 气象灾害预警响应模型（兼容 V1 新接口与 V7 旧接口）
  *
- * @property warning 预警列表
+ * @property alerts 新版预警列表（WeatherAlert V1 接口）
+ * @property warning 旧版预警列表（旧版 V7 接口兼容）
  */
 data class QWeatherWarningResponse(
+    @SerializedName("alerts") val alerts: List<QWeatherAlertItem>? = null,
     @SerializedName("warning") val warning: List<QWeatherWarningItem>? = null
 ) : QWeatherBaseResponse()
 
 /**
- * 灾害预警详细数据项
+ * 新版灾害预警详细数据项（WeatherAlert V1 接口）
+ *
+ * @property id 预警唯一 ID
+ * @property sender 预警发布机构单位
+ * @property pubTime 预警发布时间
+ * @property issuedTime 预警发布时间（V1 标准字段）
+ * @property title 预警信息标题
+ * @property headline 预警简短概要标题
+ * @property startTime 预警开始时间
+ * @property effectiveTime 预警生效时间
+ * @property endTime 预警结束时间
+ * @property expireTime 预警过期时间
+ * @property status 预警状态（如 "active"）
+ * @property level 预警级别（如 "白色", "蓝色", "黄色", "橙色", "红色"）
+ * @property severity 预警严重程度（如 "minor", "moderate", "severe", "extreme"）
+ * @property severityColor 预警级别对应颜色
+ * @property type 预警类型代码
+ * @property event 预警事件名称（如 "雷电", "暴雨", "大风"）
+ * @property eventType 预警事件类型代码
+ * @property typeName 预警类型名称
+ * @property text 预警详细正文描述
+ * @property description 预警详细正文内容
+ * @property instruction 官方防御与避险指南
+ */
+data class QWeatherAlertItem(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("sender") val sender: String? = null,
+    @SerializedName("pubTime") val pubTime: String? = null,
+    @SerializedName("issuedTime") val issuedTime: String? = null,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("headline") val headline: String? = null,
+    @SerializedName("startTime") val startTime: String? = null,
+    @SerializedName("effectiveTime") val effectiveTime: String? = null,
+    @SerializedName("endTime") val endTime: String? = null,
+    @SerializedName("expireTime") val expireTime: String? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("level") val level: String? = null,
+    @SerializedName("severity") val severity: String? = null,
+    @SerializedName("severityColor") val severityColor: String? = null,
+    @SerializedName("type") val type: String? = null,
+    @SerializedName("event") val event: String? = null,
+    @SerializedName("eventType") val eventType: String? = null,
+    @SerializedName("typeName") val typeName: String? = null,
+    @SerializedName("text") val text: String? = null,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("instruction") val instruction: String? = null
+)
+
+/**
+ * 灾害预警详细数据项（旧版 V7 接口兼容）
  *
  * @property id 预警唯一 ID
  * @property sender 预警发布单位

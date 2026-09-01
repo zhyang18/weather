@@ -44,7 +44,22 @@ interface QWeatherApiService {
     ): ResponseBody
 
     /**
-     * 获取实时空气质量指数与污染物数据
+     * 获取指定经纬度的实时空气质量指数与污染物数据 (全新 AirQuality V1 API)
+     *
+     * @param lat 纬度坐标（例如 "39.90"）
+     * @param lon 经度坐标（例如 "116.40"）
+     * @param lang 多语言选项（默认 "zh"）
+     * @return 包含空气质量 JSON 的 [ResponseBody]
+     */
+    @GET("airquality/v1/current/{lat}/{lon}")
+    suspend fun getAirQualityCurrent(
+        @retrofit2.http.Path("lat") lat: String,
+        @retrofit2.http.Path("lon") lon: String,
+        @Query("lang") lang: String = "zh"
+    ): ResponseBody
+
+    /**
+     * 获取实时空气质量指数与污染物数据（旧版 V7 API，用于兼容降级）
      *
      * @param location 城市 LocationID 或经纬度坐标
      * @return 包含空气质量 JSON 的 [ResponseBody]
@@ -55,7 +70,22 @@ interface QWeatherApiService {
     ): ResponseBody
 
     /**
-     * 获取指定城市的实时气象灾害预警
+     * 获取指定经纬度的实时气象灾害预警 (全新 WeatherAlert V1 API)
+     *
+     * @param lat 纬度坐标（例如 "39.90"）
+     * @param lon 经度坐标（例如 "116.40"）
+     * @param lang 多语言选项（默认 "zh"）
+     * @return 包含灾害预警 JSON 的 [ResponseBody]
+     */
+    @GET("weatheralert/v1/current/{lat}/{lon}")
+    suspend fun getWeatherAlertCurrent(
+        @retrofit2.http.Path("lat") lat: String,
+        @retrofit2.http.Path("lon") lon: String,
+        @Query("lang") lang: String = "zh"
+    ): ResponseBody
+
+    /**
+     * 获取指定城市的实时气象灾害预警（旧版 V7 API，用于兼容降级）
      *
      * @param location 城市 LocationID 或经纬度坐标
      * @return 包含灾害预警 JSON 的 [ResponseBody]
