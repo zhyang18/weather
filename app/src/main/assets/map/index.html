@@ -42,9 +42,9 @@
             background-color: transparent !important;
         }
 
-        /* 暗色主题图层滤镜：将国内高速瓦片优雅反相为气象深色主题 */
+        /* 暗色主题图层滤镜：将国内高清瓦片反相为气象深色主题，提升文字与地标对比度 */
         .dark-tiles {
-            filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(110%) saturate(80%);
+            filter: invert(100%) hue-rotate(180deg) brightness(92%) contrast(115%) saturate(85%);
         }
 
         /* 定位脉冲标记样式 */
@@ -272,30 +272,30 @@
                     boxZoom: false
                 });
 
-                // 1. 暗色夜景底图 (高德瓦片 + 深色滤镜)
-                baseLayers.dark = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+                // 1. 暗色夜景底图 (高德 2x 高清全要素瓦片 + 深色滤镜，包含路网、地标与 POI)
+                baseLayers.dark = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}', {
                     subdomains: '1234',
                     maxZoom: 18,
                     minZoom: 3,
                     className: 'dark-tiles'
                 });
 
-                // 2. 标准中文街景底图
-                baseLayers.standard = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+                // 2. 标准中文街景底图 (高德 2x 高清全要素瓦片，包含详细路网、地标建筑、学校、商圈、医院等 POI)
+                baseLayers.standard = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}', {
                     subdomains: '1234',
                     maxZoom: 18,
                     minZoom: 3
                 });
 
-                // 3. 卫星影像底图
+                // 3. 卫星影像底图 (高德影像底图)
                 baseLayers.satellite = L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', {
                     subdomains: '1234',
                     maxZoom: 18,
                     minZoom: 3
                 });
 
-                // 卫星路网路名覆盖层
-                satelliteLabelLayer = L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=8&x={x}&y={y}&z={z}', {
+                // 卫星路网与地标 POI 覆盖层 (高德 2x 高清标注图层)
+                satelliteLabelLayer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}', {
                     subdomains: '1234',
                     maxZoom: 18,
                     minZoom: 3
