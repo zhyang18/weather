@@ -54,7 +54,7 @@ data class WeatherUiState(
     val currentSource: WeatherSourceInfo = WeatherSourceInfo(
         id = "cma",
         name = "中央气象台",
-        description = "国家气象中心官方，不支持精确定位查询",
+        description = "中国气象局官方数据源，支持全国省市区县站点精准气象",
         isDefault = true,
         isAvailable = true
     ),

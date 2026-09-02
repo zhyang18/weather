@@ -521,8 +521,11 @@ class WeatherRepository(
                 name = if (targetCity.name == "当前位置" && data.city.name.isNotEmpty()) data.city.name else targetCity.name,
                 province = data.city.province.ifEmpty { targetCity.province }
             )
+            com.weather.app.util.AppLog.d("WeatherLocation", "自动定位天气拉取成功: 城市='${finalAutoCity.name}', 区县='${finalAutoCity.district}', 省份='${finalAutoCity.province}', 气象站点编码='${finalAutoCity.code}', 数据源='${currentSource.getSourceInfo().name}'")
             updateAutoLocatedCity(finalAutoCity)
             saveCachedWeatherData(finalAutoCity, data)
+        }.onFailure { err ->
+            com.weather.app.util.AppLog.w("WeatherLocation", "自动定位天气拉取失败: 城市='${targetCity.name}', 原因=${err.message}")
         }
         weatherResult
     }

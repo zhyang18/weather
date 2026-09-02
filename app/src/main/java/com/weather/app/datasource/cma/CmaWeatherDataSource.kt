@@ -379,6 +379,34 @@ class CmaWeatherDataSource : WeatherDataSource {
     }
 
     /**
+     * 清除地名中的行政区划后缀（如“省”、“市”、“区”、“县”、“旗”、“特别行政区”、“自治区”等）
+     *
+     * @param name 原始地名文本
+     * @return 移除后缀后的纯净地名文本
+     */
+    private fun cleanSuffix(name: String): String {
+        return name.trim()
+            .removeSuffix("特别行政区")
+            .removeSuffix("壮族自治区")
+            .removeSuffix("回族自治区")
+            .removeSuffix("维吾尔自治区")
+            .removeSuffix("自治区")
+            .removeSuffix("自治州")
+            .removeSuffix("自治县")
+            .removeSuffix("自治旗")
+            .removeSuffix("地区")
+            .removeSuffix("林区")
+            .removeSuffix("特区")
+            .removeSuffix("新区")
+            .removeSuffix("省")
+            .removeSuffix("市")
+            .removeSuffix("区")
+            .removeSuffix("县")
+            .removeSuffix("旗")
+            .trim()
+    }
+
+    /**
      * 获取数据源元数据描述
      *
      * @return 数据源元信息对象 [WeatherSourceInfo]
@@ -387,8 +415,8 @@ class CmaWeatherDataSource : WeatherDataSource {
         return WeatherSourceInfo(
             id = "cma",
             name = "中央气象台",
-            description = "国家气象中心官方接口",
-            isDefault = false,
+            description = "中国气象局官方数据源，支持全国省市区县站点精准气象",
+            isDefault = true,
             isAvailable = true
         )
     }
@@ -396,22 +424,32 @@ class CmaWeatherDataSource : WeatherDataSource {
     /**
      * 根据城市信息获取完整天气数据
      *
-     * 自动校验与补全城市站点编码，支持 9999 无效占位符的过滤与实况补位。
+     * 自动校验与补全城市或区县站点编码，支持 9999 无效占位符的过滤与实况补位。
+     * 优先采用区县精准全等匹配机制，确保定位在具体区县（如江宁区）时精准命中区县气象站，而切换至地级市（如南京市）时命中市级主站。
      *
-     * @param city 目标城市信息 [CityInfo]
+     * @param city 目标城市或区县信息 [CityInfo]
      * @return 包含聚合天气数据 [WeatherData] 的结果 [Result]
      */
     override suspend fun getWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
         try {
             var targetCity = city.sanitize()
 
-            // 1. 若城市缺少编码，尝试自动检索补全 (支持 地标/街道 -> 区县 -> 地级市 -> 省份逐级智能匹配，终极回退至省会/主站)
+            // 1. 若城市缺少编码，智能解析补全站点编码 (按层级优先级：区县精准全等 -> 城市名精准全等 -> 复合地名区县提取 -> 地级市精准匹配 -> 模糊降级 -> 省会兜底)
             if (targetCity.code.isEmpty()) {
-                val resolved = resolveCityByName(targetCity.name, targetCity.province)
+                val resolved = 
+                    // 1.1 优先以明确的区县 (district) 进行精准全等匹配（例如 "江宁区" -> 江宁站 Dfezs，杜绝被上级地级市南京站误拦截）
+                    (if (targetCity.district.isNotEmpty()) resolveCityByName(targetCity.district, targetCity.province, exactOnly = true) else null)
+                    // 1.2 其次以城市名称 (name) 进行精准全等匹配（例如 "海淀区" -> 海淀站 fElIR，"昆山市" -> 昆山站 OxFhx）
+                    ?: resolveCityByName(targetCity.name, targetCity.province, exactOnly = true)
+                    // 1.3 从复合地名文本中提取省内区县站点（例如 name 为 "南京市江宁区龙港科技园" 时提取出江宁站）
+                    ?: resolveDistrictFromCompoundName(targetCity.name, targetCity.province)
+                    ?: (if (targetCity.landmark.isNotEmpty()) resolveDistrictFromCompoundName(targetCity.landmark, targetCity.province) else null)
+                    // 1.4 若均无区县独立站点，再降级至所属地级市 (parentCity) 精准匹配（例如 "南京市" -> 南京站 CxOWZ）
+                    ?: (if (targetCity.parentCity.isNotEmpty()) resolveCityByName(targetCity.parentCity, targetCity.province, exactOnly = true) else null)
+                    // 1.5 宽松多级模糊查找与兜底
                     ?: (if (targetCity.district.isNotEmpty()) resolveCityByName(targetCity.district, targetCity.province) else null)
-                    ?: (if (targetCity.parentCity.isNotEmpty()) resolveCityByName(targetCity.parentCity, targetCity.province) else null)
+                    ?: resolveCityByName(targetCity.name, targetCity.province)
                     ?: resolveCityByName(targetCity.province, targetCity.province, fallbackToProvinceCapital = true)
-                    ?: resolveCityByName(targetCity.name, fallbackToProvinceCapital = false)
 
                 if (resolved != null) {
                     targetCity = targetCity.copy(
@@ -422,6 +460,8 @@ class CmaWeatherDataSource : WeatherDataSource {
                     return@withContext Result.failure(Exception("未能找到【${city.name}】对应的中央气象台站点编码"))
                 }
             }
+
+            com.weather.app.util.AppLog.d("CmaWeather", "CMA天气请求: 目标地名='${targetCity.name}', 区县='${targetCity.district}', 地级市='${targetCity.parentCity}', 省份='${targetCity.province}' -> 命中站点编码='${targetCity.code}', 请求URL='http://www.nmc.cn/rest/weather?stationid=${targetCity.code}'")
 
             // 2. 发起请求并读取原始报文
             val rawBody = apiService.getWeather(targetCity.code).string()
@@ -582,6 +622,10 @@ class CmaWeatherDataSource : WeatherDataSource {
 
     /**
      * 文本过滤辅助函数，剔除 "9999"、"-"、"无" 等占位符
+     *
+     * @param value 待清洗的原始文本字符串
+     * @param fallback 出现占位符或空值时的默认回退值
+     * @return 过滤清洗后的纯净文本
      */
     private fun sanitizeText(value: String?, fallback: String = ""): String {
         if (value.isNullOrEmpty() || value == "9999" || value == "9999.0" || value == "null" || value == "-" || value == "无" || value == "N/A") {
@@ -592,6 +636,10 @@ class CmaWeatherDataSource : WeatherDataSource {
 
     /**
      * 数值过滤辅助函数，剔除 9999.0 等占位符
+     *
+     * @param value 待过滤的数值
+     * @param fallback 出现无效值时的默认数值
+     * @return 过滤清洗后的有效数值
      */
     private fun sanitizeDouble(value: Double?, fallback: Double = 0.0): Double {
         if (value == null || value == 9999.0 || value == 99999.0) {
@@ -601,32 +649,52 @@ class CmaWeatherDataSource : WeatherDataSource {
     }
 
     /**
-     * 关键字模糊搜索城市
+     * 关键字模糊搜索城市与区县（支持全称、纯净名与双向包含检索）
      *
-     * @param keyword 搜索关键字（支持中文城市名与拼音）
-     * @return 匹配到的城市列表 [CityInfo] 的结果 [Result]
+     * @param keyword 搜索关键字（支持中文城市名、区县名与带区/县/市后缀的名称）
+     * @return 匹配到的城市与区县列表 [CityInfo] 的结果 [Result]
      */
     override suspend fun searchCities(keyword: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val cleanKey = keyword.trim()
-            if (cleanKey.isEmpty()) {
+            val rawKey = keyword.trim()
+            if (rawKey.isEmpty()) {
                 return@withContext Result.success(emptyList())
             }
 
             // 确保城市库已加载
             ensureAllCitiesLoaded()
 
+            val cleanKey = cleanSuffix(rawKey)
+
             val matches = synchronized(cachedCities) {
-                cachedCities.filter {
-                    it.name.contains(cleanKey, ignoreCase = true) ||
-                            it.province.contains(cleanKey, ignoreCase = true)
-                }.sortedBy {
-                    when {
-                        it.name == cleanKey -> 0
-                        it.name.startsWith(cleanKey) -> 1
-                        else -> 2
-                    }
-                }
+                cachedCities.filter { city ->
+                    val cityName = city.name.trim()
+                    val cityClean = cleanSuffix(cityName)
+                    val provName = city.province.trim()
+                    val provClean = cleanSuffix(provName)
+
+                    cityName.equals(rawKey, ignoreCase = true) ||
+                            (cleanKey.isNotEmpty() && cityClean.equals(cleanKey, ignoreCase = true)) ||
+                            cityName.contains(rawKey, ignoreCase = true) ||
+                            (cleanKey.isNotEmpty() && cityName.contains(cleanKey, ignoreCase = true)) ||
+                            (cleanKey.isNotEmpty() && cityClean.contains(cleanKey, ignoreCase = true)) ||
+                            (cleanKey.isNotEmpty() && rawKey.contains(cityClean, ignoreCase = true)) ||
+                            provName.contains(rawKey, ignoreCase = true) ||
+                            (cleanKey.isNotEmpty() && provClean.contains(cleanKey, ignoreCase = true))
+                }.sortedWith(
+                    compareBy<CityInfo> { city ->
+                        val cityName = city.name.trim()
+                        val cityClean = cleanSuffix(cityName)
+                        when {
+                            cityName.equals(rawKey, ignoreCase = true) -> 0
+                            cleanKey.isNotEmpty() && cityClean.equals(cleanKey, ignoreCase = true) -> 1
+                            cityName.startsWith(rawKey, ignoreCase = true) -> 2
+                            cleanKey.isNotEmpty() && cityClean.startsWith(cleanKey, ignoreCase = true) -> 3
+                            cleanKey.isNotEmpty() && cityName.contains(cleanKey, ignoreCase = true) -> 4
+                            else -> 5
+                        }
+                    }.thenBy { it.name.length }
+                )
             }
 
             Result.success(matches)
@@ -636,33 +704,37 @@ class CmaWeatherDataSource : WeatherDataSource {
     }
 
     /**
-     * 根据城市名称与所属省份智能解析并匹配对应的中央气象台城市实体与站点编码
+     * 根据城市或区县名称与所属省份智能解析并匹配对应的中央气象台城市实体与站点编码
      *
      * 极速多级查找机制：
      * 1. 优先在内存已加载缓存中查找（0 网络开销，0ms 瞬间命中）；
      * 2. 若未命中且指定了所属省份，精准按需加载该省的真实站点列表（仅 1 个网络请求，~50ms 响应，绝不并发加载其它 33 省）；
-     * 3. 拉取失败时安全撤销标记支持后续重试；
-     * 4. 严格按城市名或纯净名匹配；若启用 [fallbackToProvinceCapital] 且未匹配到具体站点，安全回退到该省份省会/首府主站（列表第 1 项）。
+     * 3. 支持 [exactOnly] 模式，仅执行精确全等匹配，避免地标误命中上级地级市；
+     * 4. 若未指定省份且缓存未命中，自动补全全省站点后全局匹配；
+     * 5. 若启用 [fallbackToProvinceCapital] 且未匹配到具体站点，安全回退到该省份省会/首府主站。
      *
-     * @param cityName 目标城市名称（如 "南京", "西安", "深圳", "武侯", "浦仪公路"）
-     * @param provinceName 目标省份名称（可选，如 "广东省", "四川省", "江苏省"）
+     * @param cityName 目标城市或区县名称（如 "海淀区", "朝阳", "南京", "江宁", "武侯区"）
+     * @param provinceName 目标省份名称（可选，如 "北京市", "广东省", "四川省", "江苏省"）
      * @param fallbackToProvinceCapital 当在指定省份内未匹配到具体站点时是否安全回退至省会/主站（默认 false）
-     * @return 匹配到的城市信息 [CityInfo]，未找到则返回 null
+     * @param exactOnly 是否仅允许全名或纯净名精准全等匹配（默认 false）
+     * @return 匹配到的城市或区县信息 [CityInfo]，未找到则返回 null
      */
     private suspend fun resolveCityByName(
         cityName: String,
         provinceName: String? = null,
-        fallbackToProvinceCapital: Boolean = false
+        fallbackToProvinceCapital: Boolean = false,
+        exactOnly: Boolean = false
     ): CityInfo? {
-        val cleanName = cityName.trim().removeSuffix("省").removeSuffix("市").removeSuffix("区").removeSuffix("县")
+        if (cityName.isBlank()) return null
+        val cleanName = cleanSuffix(cityName)
 
         // 1. 优先在已加载的内存缓存中匹配
         synchronized(cachedCities) {
-            val match = findCityInList(cachedCities, cityName, cleanName, provinceName)
+            val match = findCityInList(cachedCities, cityName, cleanName, provinceName, exactOnly)
             if (match != null) return match
         }
 
-        // 2. 若指定了省份且内存中未找到，按需加载该省份的城市列表（仅 1 次网络请求）
+        // 2. 若指定了省份且内存中未找到，按需加载该省份的城市与区县列表（仅 1 次网络请求）
         val targetProvinceCode = findProvinceCodeByName(provinceName)
         if (targetProvinceCode != null) {
             val shouldLoad = synchronized(loadedProvinces) {
@@ -680,17 +752,27 @@ class CmaWeatherDataSource : WeatherDataSource {
                 }
             }
             synchronized(cachedCities) {
-                val match = findCityInList(cachedCities, cityName, cleanName, provinceName)
+                val match = findCityInList(cachedCities, cityName, cleanName, provinceName, exactOnly)
                 if (match != null) return match
 
                 // 3. 省会/首府站点安全保底（如道路/园区未能匹配到独立站时，回退到所属省份主站，如南京站）
-                if (fallbackToProvinceCapital) {
-                    val cleanProv = (provinceName ?: "").removeSuffix("省").removeSuffix("市").removeSuffix("自治区").removeSuffix("特别行政区")
-                    val inProvince = cachedCities.filter { it.province.contains(cleanProv) || cleanProv.contains(it.province) }
+                if (fallbackToProvinceCapital && !exactOnly) {
+                    val cleanProv = cleanSuffix(provinceName ?: "")
+                    val inProvince = cachedCities.filter {
+                        val itemProvClean = cleanSuffix(it.province)
+                        itemProvClean.contains(cleanProv) || cleanProv.contains(itemProvClean)
+                    }
                     if (inProvince.isNotEmpty()) {
                         return inProvince.first()
                     }
                 }
+            }
+        } else {
+            // 2.1 若未指定省份，但内存中未匹配到，按需加载全国各省站点后全局匹配
+            ensureAllCitiesLoaded()
+            synchronized(cachedCities) {
+                val match = findCityInList(cachedCities, cityName, cleanName, null, exactOnly)
+                if (match != null) return match
             }
         }
 
@@ -698,44 +780,138 @@ class CmaWeatherDataSource : WeatherDataSource {
     }
 
     /**
-     * 根据省份名称查找中央气象台对应的省份代码
+     * 从复合地名文本中（如“南京市江宁区龙港科技园”、“北京市海淀区中关村南大街”）提取并匹配省内的区县气象站点
      *
-     * @param provinceName 省份名称（如 "四川省", "广东省"）
-     * @return 省份代码（如 "ASC", "AGD"），未找到返回 null
+     * 自动遍历该省的所有下属站点，按站点纯净名称长度降序优先匹配地名中出现的具体区县站点（例如命中“江宁”站，绝不被“南京”站拦截）。
+     *
+     * @param compoundName 复合地名文本
+     * @param provinceName 所属省份名称
+     * @return 匹配到的区县站点实体 [CityInfo]，未找到返回 null
      */
-    private fun findProvinceCodeByName(provinceName: String?): String? {
-        if (provinceName.isNullOrEmpty()) return null
-        val clean = provinceName.removeSuffix("省").removeSuffix("市").removeSuffix("自治区").removeSuffix("特别行政区").removeSuffix("壮族自治区").removeSuffix("回族自治区").removeSuffix("维吾尔自治区")
-        return STATIC_PROVINCES.firstOrNull { it.name.contains(clean) || clean.contains(it.name) }?.code
+    private suspend fun resolveDistrictFromCompoundName(
+        compoundName: String,
+        provinceName: String?
+    ): CityInfo? {
+        if (compoundName.isBlank()) return null
+        val targetProvinceCode = findProvinceCodeByName(provinceName)
+        if (targetProvinceCode != null) {
+            val shouldLoad = synchronized(loadedProvinces) {
+                if (!loadedProvinces.contains(targetProvinceCode)) {
+                    loadedProvinces.add(targetProvinceCode)
+                    true
+                } else false
+            }
+            if (shouldLoad) {
+                val loadResult = getCitiesInProvince(targetProvinceCode)
+                if (loadResult.isFailure || loadResult.getOrNull().isNullOrEmpty()) {
+                    synchronized(loadedProvinces) {
+                        loadedProvinces.remove(targetProvinceCode)
+                    }
+                }
+            }
+            synchronized(cachedCities) {
+                val cleanProv = cleanSuffix(provinceName ?: "")
+                val inProvince = cachedCities.filter {
+                    val itemProvClean = cleanSuffix(it.province)
+                    itemProvClean.contains(cleanProv) || cleanProv.contains(itemProvClean)
+                }
+
+                // 筛选地名中包含的站点（长度 >= 2 字符）
+                val matches = inProvince.filter {
+                    val itemClean = cleanSuffix(it.name)
+                    itemClean.length >= 2 && (compoundName.contains(itemClean) || compoundName.contains(it.name))
+                }.sortedByDescending { cleanSuffix(it.name).length }
+
+                if (matches.isNotEmpty()) {
+                    // 若存在多个站点（例如既包含地级市名“南京”，又包含区县名“江宁”），优先选择非地级市前缀的下属区县站点
+                    val districtMatches = matches.filter {
+                        val itemClean = cleanSuffix(it.name)
+                        !compoundName.startsWith(itemClean) || matches.size == 1
+                    }
+                    return districtMatches.firstOrNull() ?: matches.first()
+                }
+            }
+        }
+        return null
     }
 
     /**
-     * 在城市列表中按城市名、纯净名与省份匹配城市实体
+     * 根据省份名称查找中央气象台对应的省份代码
+     *
+     * @param provinceName 省份名称（如 "四川省", "广东省", "北京市"）
+     * @return 省份代码（如 "ASC", "AGD", "ABJ"），未找到返回 null
+     */
+    private fun findProvinceCodeByName(provinceName: String?): String? {
+        if (provinceName.isNullOrEmpty()) return null
+        val clean = cleanSuffix(provinceName)
+        if (clean.isEmpty()) return null
+        return STATIC_PROVINCES.firstOrNull {
+            val staticClean = cleanSuffix(it.name)
+            staticClean.contains(clean) || clean.contains(staticClean)
+        }?.code
+    }
+
+    /**
+     * 在城市与区县列表中按全名、纯净名与省份匹配站点实体
      *
      * @param list 待检索城市列表
-     * @param cityName 原始城市名称
+     * @param cityName 原始城市或区县名称
      * @param cleanName 移除市/区/县后的纯净名称
      * @param provinceName 省份名称过滤条件（可选）
-     * @return 匹配到的城市实体 [CityInfo]，未找到返回 null
+     * @param exactOnly 是否仅允许全名或纯净名精准全等匹配
+     * @return 匹配到的城市或区县实体 [CityInfo]，未找到返回 null
      */
     private fun findCityInList(
         list: List<CityInfo>,
         cityName: String,
         cleanName: String,
-        provinceName: String?
+        provinceName: String?,
+        exactOnly: Boolean = false
     ): CityInfo? {
-        if (!provinceName.isNullOrEmpty()) {
-            val cleanProv = provinceName.removeSuffix("省").removeSuffix("市").removeSuffix("自治区").removeSuffix("特别行政区")
-            val inProvince = list.filter { it.province.contains(cleanProv) || cleanProv.contains(it.province) }
-            val match = inProvince.firstOrNull { it.name == cityName || it.name == cleanName }
-                ?: inProvince.firstOrNull { it.name.startsWith(cleanName) || cleanName.startsWith(it.name) }
-                ?: inProvince.firstOrNull { it.name.contains(cleanName) || cleanName.contains(it.name) }
-            if (match != null) return match
+        val searchList = if (!provinceName.isNullOrEmpty()) {
+            val cleanProv = cleanSuffix(provinceName)
+            list.filter {
+                val itemProvClean = cleanSuffix(it.province)
+                itemProvClean.contains(cleanProv) || cleanProv.contains(itemProvClean)
+            }
+        } else {
+            list
         }
 
-        return list.firstOrNull { it.name == cityName || it.name == cleanName }
-            ?: list.firstOrNull { it.name.startsWith(cleanName) || cleanName.startsWith(it.name) }
-            ?: list.firstOrNull { it.name.contains(cleanName) || cleanName.contains(it.name) }
+        // 优先级 1：全名完全相等（如 "江宁" == "江宁"）
+        searchList.firstOrNull { it.name.equals(cityName, ignoreCase = true) }?.let { return it }
+
+        // 优先级 2：纯净名完全相等（如 cleanSuffix("江宁区") == cleanSuffix("江宁") -> "江宁" == "江宁"）
+        if (cleanName.isNotEmpty()) {
+            searchList.firstOrNull { cleanSuffix(it.name).equals(cleanName, ignoreCase = true) }?.let { return it }
+        }
+
+        if (exactOnly) {
+            return null
+        }
+
+        // 优先级 3：前缀或包含（按匹配长度从长到短排序，优先匹配更具体的区县名）
+        if (cleanName.isNotEmpty()) {
+            val containingMatches = searchList.filter {
+                val itemClean = cleanSuffix(it.name)
+                itemClean.isNotEmpty() && (cleanName.contains(itemClean, ignoreCase = true) || cityName.contains(it.name, ignoreCase = true))
+            }.sortedByDescending { cleanSuffix(it.name).length }
+
+            if (containingMatches.isNotEmpty()) {
+                return containingMatches.first()
+            }
+
+            val containedMatches = searchList.filter {
+                val itemClean = cleanSuffix(it.name)
+                itemClean.isNotEmpty() && (itemClean.contains(cleanName, ignoreCase = true) || it.name.contains(cityName, ignoreCase = true))
+            }.sortedBy { cleanSuffix(it.name).length }
+
+            if (containedMatches.isNotEmpty()) {
+                return containedMatches.first()
+            }
+        }
+
+        return null
     }
 
     /**

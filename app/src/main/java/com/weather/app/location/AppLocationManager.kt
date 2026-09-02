@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.weather.app.model.CityInfo
+import com.weather.app.util.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -215,7 +216,10 @@ class AppLocationManager(private val context: Context) {
         displayMode: com.weather.app.model.LocationDisplayMode = com.weather.app.model.LocationDisplayMode.LANDMARK
     ): CityInfo? = withContext(Dispatchers.IO) {
         try {
-            if (!Geocoder.isPresent()) return@withContext null
+            if (!Geocoder.isPresent()) {
+                AppLog.w("WeatherLocation", "系统 Geocoder 逆地理服务不可用 (Geocoder.isPresent() == false)")
+                return@withContext null
+            }
 
             val geocoder = Geocoder(context, Locale.CHINA)
             @Suppress("DEPRECATION")
@@ -223,6 +227,7 @@ class AppLocationManager(private val context: Context) {
 
             if (!addresses.isNullOrEmpty()) {
                 val address = addresses[0]
+                val fullAddressLine = if (address.maxAddressLineIndex >= 0) address.getAddressLine(0) ?: "" else ""
                 val province = address.adminArea ?: ""
                 var locality = (address.locality ?: address.subAdminArea ?: "").removeSuffix("市").removeSuffix("地区")
                 if (locality.isEmpty() && (province.contains("北京") || province.contains("上海") || province.contains("天津") || province.contains("重庆"))) {
@@ -230,9 +235,21 @@ class AppLocationManager(private val context: Context) {
                 }
                 val subLocality = address.subLocality ?: ""
                 val thoroughfare = address.thoroughfare ?: ""
+                val subThoroughfare = address.subThoroughfare ?: ""
                 val featureName = address.featureName ?: ""
 
-                // 提取纯净区县名（如“雨花台区”、“雁塔区”）
+                // 打印详细逆地理编码源数据 Log
+                AppLog.d("WeatherLocation", "========== 逆地理编码详细地址信息 ==========")
+                AppLog.d("WeatherLocation", "GPS坐标: 纬度=$latitude, 经度=$longitude")
+                AppLog.d("WeatherLocation", "完整地址描述(AddressLine): $fullAddressLine")
+                AppLog.d("WeatherLocation", "国家(Country): ${address.countryName ?: ""}, 国家代码: ${address.countryCode ?: ""}")
+                AppLog.d("WeatherLocation", "省级行政区(adminArea): $province")
+                AppLog.d("WeatherLocation", "地级市(locality): ${address.locality ?: ""}, 二级行政区(subAdminArea): ${address.subAdminArea ?: ""}")
+                AppLog.d("WeatherLocation", "区县(subLocality): $subLocality")
+                AppLog.d("WeatherLocation", "主干道路/街道(thoroughfare): $thoroughfare, 门牌号(subThoroughfare): $subThoroughfare")
+                AppLog.d("WeatherLocation", "地标/建筑名称(featureName): $featureName")
+
+                // 提取纯净区县名（如“江宁区”、“雨花台区”、“海淀区”）
                 val districtName = when {
                     subLocality.isNotEmpty() -> extractLastLevelName(subLocality, province, locality, "")
                     address.subAdminArea?.isNotEmpty() == true -> extractLastLevelName(address.subAdminArea, province, locality, "")
@@ -272,6 +289,9 @@ class AppLocationManager(private val context: Context) {
                     districtName.ifEmpty { locality.ifEmpty { "当前位置" } }
                 }
 
+                AppLog.d("WeatherLocation", "--> 解析输出: 界面展示名='$displayCityName', 所属区县='$districtName', 地标='$pureLandmarkName', 所属市='$locality', 省份='$province'")
+                AppLog.d("WeatherLocation", "===========================================")
+
                 CityInfo(
                     code = "", // 由数据源依据地标/区县/所属地级市智能解析对应中央气象台站点编码
                     name = displayCityName,
@@ -284,9 +304,11 @@ class AppLocationManager(private val context: Context) {
                     parentCity = locality
                 )
             } else {
+                AppLog.w("WeatherLocation", "逆地理编码返回空地址列表 (addresses.isNullOrEmpty())")
                 null
             }
         } catch (e: Exception) {
+            AppLog.e("WeatherLocation", "逆地理编码异常: ${e.message}", e)
             null
         }
     }

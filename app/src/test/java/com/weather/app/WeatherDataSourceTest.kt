@@ -378,6 +378,109 @@ class WeatherDataSourceTest {
         val outsideCelestial = com.weather.app.ui.components.SunMoonCalculator.calculateCelestialTimes(beijing, outsideCalendar)
         assertTrue("When moon is below horizon, isMoonVisible should be false", !outsideCelestial.isMoonVisible)
     }
+
+    /**
+     * 测试中央气象台数据源对区、县关键词（如“海淀区”、“朝阳区”、“江宁区”、“顺德区”）的模糊与纯净名搜索匹配
+     */
+    @Test
+    fun testCmaDistrictSearchAndMatch() = runBlocking {
+        val dataSource = CmaWeatherDataSource()
+
+        // 1. 搜索“海淀区”应成功匹配到“海淀”（北京市）
+        val haidianResult = dataSource.searchCities("海淀区")
+        assertTrue("Search for '海淀区' should succeed", haidianResult.isSuccess)
+        val haidianMatches = haidianResult.getOrNull() ?: emptyList()
+        assertTrue("Should contain Haidian in results: $haidianMatches", haidianMatches.any { it.name == "海淀" && it.province.contains("北京") })
+
+        // 2. 搜索“朝阳区”应匹配到“朝阳”
+        val chaoyangResult = dataSource.searchCities("朝阳区")
+        assertTrue("Search for '朝阳区' should succeed", chaoyangResult.isSuccess)
+        val chaoyangMatches = chaoyangResult.getOrNull() ?: emptyList()
+        assertTrue("Should contain Chaoyang in results", chaoyangMatches.any { it.name == "朝阳" })
+
+        // 3. 搜索“江宁区”应匹配到“江宁”
+        val jiangningResult = dataSource.searchCities("江宁区")
+        assertTrue("Search for '江宁区' should succeed", jiangningResult.isSuccess)
+        val jiangningMatches = jiangningResult.getOrNull() ?: emptyList()
+        assertTrue("Should contain Jiangning in results", jiangningMatches.any { it.name == "江宁" && it.province.contains("江苏") })
+    }
+
+    /**
+     * 测试中央气象台数据源根据区县名称（不带编码或带“区/县”后缀）自动解析站点编码并拉取真实天气
+     */
+    @Test
+    fun testCmaDistrictWeatherFetch() = runBlocking {
+        val dataSource = CmaWeatherDataSource()
+
+        // 1. 传入名称为“海淀区”且无站点编码的 CityInfo
+        val haidianCity = CityInfo(
+            code = "",
+            name = "海淀区",
+            province = "北京市"
+        )
+        val haidianWeatherResult = dataSource.getWeather(haidianCity)
+        if (haidianWeatherResult.isSuccess) {
+            val data = haidianWeatherResult.getOrNull()
+            assertNotNull(data)
+            assertNotNull(data?.current)
+            assertEquals("海淀区", data?.city?.name)
+            assertTrue("Code should be resolved for Haidian", data!!.city.code.isNotEmpty())
+        }
+
+        // 2. 传入名称为“江宁区”且无站点编码的 CityInfo
+        val jiangningCity = CityInfo(
+            code = "",
+            name = "江宁区",
+            province = "江苏省"
+        )
+        val jiangningWeatherResult = dataSource.getWeather(jiangningCity)
+        if (jiangningWeatherResult.isSuccess) {
+            val data = jiangningWeatherResult.getOrNull()
+            assertNotNull(data)
+            assertNotNull(data?.current)
+            assertEquals("江宁区", data?.city?.name)
+            assertEquals("Dfezs", data!!.city.code) // 确保精准命中江宁站 Dfezs
+        }
+    }
+
+    /**
+     * 测试定位到“南京市龙港科技园”（所属江宁区）与切换到“南京市”主站时，分别命中不同的气象站点编码
+     */
+    @Test
+    fun testLonggangParkVsNanjingCityDistinctStations() = runBlocking {
+        val dataSource = CmaWeatherDataSource()
+
+        // 1. 模拟定位到南京市江宁区龙港科技园
+        val longgangCity = CityInfo(
+            code = "",
+            name = "龙港科技园",
+            province = "江苏省",
+            district = "江宁区",
+            parentCity = "南京市",
+            landmark = "龙港科技园",
+            isAutoLocated = true
+        )
+        val longgangResult = dataSource.getWeather(longgangCity)
+        assertTrue("Fetch for Longgang Park should succeed", longgangResult.isSuccess)
+        val longgangData = longgangResult.getOrNull()
+        assertNotNull(longgangData)
+        assertEquals("Dfezs", longgangData!!.city.code) // 必须精准命中江宁区气象站 (Dfezs)
+
+        // 2. 模拟切换至南京市地级市主站
+        val nanjingCity = CityInfo(
+            code = "",
+            name = "南京市",
+            province = "江苏省"
+        )
+        val nanjingResult = dataSource.getWeather(nanjingCity)
+        assertTrue("Fetch for Nanjing city should succeed", nanjingResult.isSuccess)
+        val nanjingData = nanjingResult.getOrNull()
+        assertNotNull(nanjingData)
+        assertEquals("CxOWZ", nanjingData!!.city.code) // 必须精准命中南京市主站 (CxOWZ)
+
+        // 3. 验证两个站点的编码严格不同
+        org.junit.Assert.assertNotEquals(longgangData.city.code, nanjingData.city.code)
+    }
 }
 
 
