@@ -59,6 +59,7 @@ class BackupManager(
             activeSourceId = repository.getActiveDataSource().getSourceInfo().id,
             qWeatherConfig = repository.getQWeatherConfig(),
             caiyunConfig = repository.getCaiyunConfig(),
+            seniverseConfig = repository.getSeniverseConfig(),
             autoUpdateIntervalMinutes = repository.getAutoUpdateIntervalMinutes(),
             locationDisplayMode = repository.getLocationDisplayMode(),
             isDailyChartMode = repository.isDailyChartMode()
@@ -184,9 +185,10 @@ class BackupManager(
             // 2. 恢复卡片配置
             repository.setCardDisplayConfig(backupData.cardDisplayConfig)
 
-            // 3. 恢复和风与彩云天气凭据
+            // 3. 恢复和风、彩云与心知天气凭据
             repository.saveQWeatherConfig(backupData.qWeatherConfig)
             repository.saveCaiyunConfig(backupData.caiyunConfig)
+            repository.saveSeniverseConfig(backupData.seniverseConfig)
 
             // 4. 恢复自动更新间隔
             repository.setAutoUpdateIntervalMinutes(backupData.autoUpdateIntervalMinutes)

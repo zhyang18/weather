@@ -435,6 +435,9 @@ fun WeatherScreen(
             onConfigureCaiyunClick = {
                 viewModel.setShowCaiyunConfigDialog(true)
             },
+            onConfigureSeniverseClick = {
+                viewModel.setShowSeniverseConfigDialog(true)
+            },
             onDismiss = { viewModel.setShowSourceDialog(false) }
         )
     }
@@ -466,6 +469,19 @@ fun WeatherScreen(
         )
     }
 
+    // 心知天气 API 凭据配置对话框
+    if (uiState.showSeniverseConfigDialog) {
+        com.weather.app.ui.dialogs.SeniverseConfigDialog(
+            config = uiState.seniverseConfig,
+            onSave = { config ->
+                viewModel.saveSeniverseConfig(config)
+            },
+            onDismiss = {
+                viewModel.setShowSeniverseConfigDialog(false)
+            }
+        )
+    }
+
     // 请求失败或数据不符合弹框提示
     uiState.errorMessage?.let { errorMsg ->
         com.weather.app.ui.dialogs.WeatherErrorDialog(
@@ -480,6 +496,9 @@ fun WeatherScreen(
             },
             onConfigureCaiyunClick = {
                 viewModel.setShowCaiyunConfigDialog(true)
+            },
+            onConfigureSeniverseClick = {
+                viewModel.setShowSeniverseConfigDialog(true)
             },
             onDismiss = {
                 viewModel.clearErrorMessage()

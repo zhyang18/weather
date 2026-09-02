@@ -95,6 +95,8 @@ data class WeatherUiState(
     val qWeatherStatsError: String? = null,
     val showCaiyunConfigDialog: Boolean = false,
     val caiyunConfig: com.weather.app.datasource.caiyun.CaiyunConfig = com.weather.app.datasource.caiyun.CaiyunConfig(),
+    val showSeniverseConfigDialog: Boolean = false,
+    val seniverseConfig: com.weather.app.datasource.seniverse.SeniverseConfig = com.weather.app.datasource.seniverse.SeniverseConfig(),
     val showBackupRestoreDialog: Boolean = false,
     val pendingRestoreData: com.weather.app.model.AppBackupData? = null
 ) {
@@ -163,6 +165,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         val isMapRadarEnabled = repository.isMapRadarEnabled()
         val qWeatherConfig = repository.getQWeatherConfig()
         val caiyunConfig = repository.getCaiyunConfig()
+        val seniverseConfig = repository.getSeniverseConfig()
 
         // 预加载各城市持久化天气快照缓存，保障冷启动秒开
         val initialCache = mutableMapOf<String, WeatherData>()
@@ -192,6 +195,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 isMapRadarEnabled = isMapRadarEnabled,
                 qWeatherConfig = qWeatherConfig,
                 caiyunConfig = caiyunConfig,
+                seniverseConfig = seniverseConfig,
                 weatherCache = initialCache,
                 isLoading = initialCache.isEmpty() && isPrivacyAgreed
             )
@@ -490,7 +494,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
         val isQWeatherUnconfigured = sourceId == "qweather" && !_uiState.value.qWeatherConfig.isConfigured()
         val isCaiyunUnconfigured = sourceId == "caiyun" && !_uiState.value.caiyunConfig.isConfigured()
-        val needsConfig = isQWeatherUnconfigured || isCaiyunUnconfigured
+        val isSeniverseUnconfigured = sourceId == "seniverse" && !_uiState.value.seniverseConfig.isConfigured()
+        val needsConfig = isQWeatherUnconfigured || isCaiyunUnconfigured || isSeniverseUnconfigured
 
         _uiState.update {
             it.copy(
@@ -498,6 +503,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 showSourceDialog = false,
                 showQWeatherConfigDialog = isQWeatherUnconfigured,
                 showCaiyunConfigDialog = isCaiyunUnconfigured,
+                showSeniverseConfigDialog = isSeniverseUnconfigured,
                 isRefreshing = !needsConfig,
                 currentCityIndex = safeIndex
             )
@@ -1118,6 +1124,33 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * 控制心知天气 API 凭据配置对话框的显示状态
+     *
+     * @param show 是否显示对话框
+     */
+    fun setShowSeniverseConfigDialog(show: Boolean) {
+        _uiState.update { it.copy(showSeniverseConfigDialog = show) }
+    }
+
+    /**
+     * 保存心知天气 API 凭据配置并在当前激活时立即重新拉取天气
+     *
+     * @param config 待保存的心知天气配置实体 [com.weather.app.datasource.seniverse.SeniverseConfig]
+     */
+    fun saveSeniverseConfig(config: com.weather.app.datasource.seniverse.SeniverseConfig) {
+        repository.saveSeniverseConfig(config)
+        _uiState.update {
+            it.copy(
+                seniverseConfig = config,
+                showSeniverseConfigDialog = false
+            )
+        }
+        if (_uiState.value.currentSource.id == "seniverse") {
+            refreshCurrentCity()
+        }
+    }
+
+    /**
      * 清除当前异常错误提示
      */
     fun clearErrorMessage() {
@@ -1271,6 +1304,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                         val restoredIntervalMinutes = repository.getAutoUpdateIntervalMinutes()
                         val restoredQWeather = repository.getQWeatherConfig()
                         val restoredCaiyun = repository.getCaiyunConfig()
+                        val restoredSeniverse = repository.getSeniverseConfig()
 
                         // 预热缓存
                         val refreshedCache = mutableMapOf<String, WeatherData>()
@@ -1296,6 +1330,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                                 autoUpdateIntervalHours = (restoredIntervalMinutes / 60).coerceAtLeast(0),
                                 qWeatherConfig = restoredQWeather,
                                 caiyunConfig = restoredCaiyun,
+                                seniverseConfig = restoredSeniverse,
                                 weatherCache = refreshedCache,
                                 showBackupRestoreDialog = false,
                                 pendingRestoreData = null

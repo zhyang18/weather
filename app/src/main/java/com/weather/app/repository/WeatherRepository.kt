@@ -17,6 +17,8 @@ import com.weather.app.datasource.caiyun.CaiyunConfigManager
 import com.weather.app.datasource.qweather.QWeatherConfig
 import com.weather.app.datasource.qweather.QWeatherConfigManager
 import com.weather.app.datasource.qweather.QWeatherJwtGenerator
+import com.weather.app.datasource.seniverse.SeniverseConfig
+import com.weather.app.datasource.seniverse.SeniverseConfigManager
 import com.weather.app.model.WeatherSourceInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,6 +31,7 @@ import kotlinx.coroutines.withContext
  * @property context Android 应用上下文
  * @property qWeatherConfigManager 和风天气配置管理器 [QWeatherConfigManager]
  * @property caiyunConfigManager 彩云天气配置管理器 [CaiyunConfigManager]
+ * @property seniverseConfigManager 心知天气配置管理器 [SeniverseConfigManager]
  * @property dataSourceManager 天气数据源统一管理器 [WeatherDataSourceManager]
  * @property locationManager 定位管理器 [AppLocationManager]
  */
@@ -36,7 +39,8 @@ class WeatherRepository(
     private val context: Context,
     private val qWeatherConfigManager: QWeatherConfigManager = QWeatherConfigManager(context),
     private val caiyunConfigManager: CaiyunConfigManager = CaiyunConfigManager(context),
-    private val dataSourceManager: WeatherDataSourceManager = WeatherDataSourceManager(qWeatherConfigManager, caiyunConfigManager),
+    private val seniverseConfigManager: SeniverseConfigManager = SeniverseConfigManager(context),
+    private val dataSourceManager: WeatherDataSourceManager = WeatherDataSourceManager(qWeatherConfigManager, caiyunConfigManager, seniverseConfigManager),
     private val locationManager: AppLocationManager = AppLocationManager(context)
 ) {
 
@@ -86,6 +90,24 @@ class WeatherRepository(
      */
     fun saveCaiyunConfig(config: CaiyunConfig) {
         caiyunConfigManager.saveConfig(config)
+    }
+
+    /**
+     * 获取心知天气 API 凭据与网络配置
+     *
+     * @return 当前持久化的心知天气配置实体 [SeniverseConfig]
+     */
+    fun getSeniverseConfig(): SeniverseConfig {
+        return seniverseConfigManager.getConfig()
+    }
+
+    /**
+     * 保存心知天气 API 凭据与网络配置
+     *
+     * @param config 待保存的心知天气配置实体 [SeniverseConfig]
+     */
+    fun saveSeniverseConfig(config: SeniverseConfig) {
+        seniverseConfigManager.saveConfig(config)
     }
 
     companion object {

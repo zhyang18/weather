@@ -46,6 +46,7 @@ import com.weather.app.model.WeatherSourceInfo
  * @param onSelectSource 用户选择目标天气源时的回调函数
  * @param onConfigureQWeatherClick 点击配置和风天气凭据时的回调函数
  * @param onConfigureCaiyunClick 点击配置彩云天气凭据时的回调函数
+ * @param onConfigureSeniverseClick 点击配置心知天气凭据时的回调函数
  * @param onDismiss 关闭底部面板时的回调函数
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +57,7 @@ fun SourceSelectionSheet(
     onSelectSource: (String) -> Unit,
     onConfigureQWeatherClick: () -> Unit = {},
     onConfigureCaiyunClick: () -> Unit = {},
+    onConfigureSeniverseClick: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -85,15 +87,15 @@ fun SourceSelectionSheet(
                 color = Color.White
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
             Text(
                 text = "系统采用多源架构设计，切换不同气象服务提供商",
-                fontSize = 13.sp,
+                fontSize = 12.5.sp,
                 color = Color.White.copy(alpha = 0.65f)
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // 数据源列表
             availableSources.forEach { source ->
@@ -108,7 +110,7 @@ fun SourceSelectionSheet(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp)
+                        .padding(vertical = 3.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(enabled = source.isAvailable) {
                             onSelectSource(source.id)
@@ -117,7 +119,7 @@ fun SourceSelectionSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -125,7 +127,7 @@ fun SourceSelectionSheet(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = source.name,
-                                    fontSize = 16.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Normal,
                                     color = if (source.isAvailable) Color.White else Color.White.copy(alpha = 0.4f)
                                 )
@@ -136,22 +138,22 @@ fun SourceSelectionSheet(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(4.dp))
                                             .background(Color.Gray.copy(alpha = 0.2f))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .padding(horizontal = 5.dp, vertical = 1.5.dp)
                                     ) {
                                         Text(
                                             text = "扩展中",
                                             color = Color.Gray,
-                                            fontSize = 10.sp
+                                            fontSize = 9.5.sp
                                         )
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
 
                             Text(
                                 text = source.description,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 color = Color.White.copy(alpha = 0.65f),
                                 maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -165,8 +167,8 @@ fun SourceSelectionSheet(
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(Color.White.copy(alpha = 0.15f))
                                         .clickable { onConfigureQWeatherClick() }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                 ) {
+                                        .padding(horizontal = 7.dp, vertical = 3.5.dp)
+                                ) {
                                     Text(
                                         text = "设置凭据",
                                         color = Color.White,
@@ -180,7 +182,22 @@ fun SourceSelectionSheet(
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(Color.White.copy(alpha = 0.15f))
                                         .clickable { onConfigureCaiyunClick() }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .padding(horizontal = 7.dp, vertical = 3.5.dp)
+                                ) {
+                                    Text(
+                                        text = "设置凭据",
+                                        color = Color.White,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            } else if (source.id == "seniverse") {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color.White.copy(alpha = 0.15f))
+                                        .clickable { onConfigureSeniverseClick() }
+                                        .padding(horizontal = 7.dp, vertical = 3.5.dp)
                                 ) {
                                     Text(
                                         text = "设置凭据",
@@ -194,7 +211,7 @@ fun SourceSelectionSheet(
                             if (isSelected) {
                                 Box(
                                     modifier = Modifier
-                                        .size(24.dp)
+                                        .size(22.dp)
                                         .clip(CircleShape)
                                         .background(Color(0xFF2563EB)),
                                     contentAlignment = Alignment.Center
@@ -203,7 +220,7 @@ fun SourceSelectionSheet(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "当前选中",
                                         tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(15.dp)
                                     )
                                 }
                             }
@@ -212,7 +229,7 @@ fun SourceSelectionSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

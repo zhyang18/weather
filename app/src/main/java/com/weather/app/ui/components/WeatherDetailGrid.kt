@@ -267,10 +267,10 @@ fun WeatherDetailGrid(
                 }
             }
 
-            // 版本号展示 (取值 versionName，颜色与数据源自一致)
+            // 版本号展示 (取值 versionName，颜色调整为纯白色)
             Text(
                 text = "版本号 v$versionName",
-                color = Color.White.copy(alpha = 0.65f),
+                color = Color.White,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Normal
             )
@@ -280,7 +280,7 @@ fun WeatherDetailGrid(
                 Spacer(modifier = Modifier.height(2.5.dp))
                 Text(
                     text = lastUpdatedText,
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Normal
                 )
@@ -288,20 +288,25 @@ fun WeatherDetailGrid(
 
             Spacer(modifier = Modifier.height(2.5.dp))
 
-            // 数据源与发布时刻（文案：数据源自：数据源名，发布时间：00:00）
-            val cleanPublishTime = current.publishTime.removeSuffix("发布").removeSuffix(" 发布").trim()
-            val sourceAndPublishText = if (cleanPublishTime.isNotEmpty()) {
-                "数据源自：${weatherData.sourceName}，发布时间：$cleanPublishTime"
-            } else {
-                "数据源自：${weatherData.sourceName}"
-            }
-
+            // 数据源展示（文案：数据源自：数据源名）
             Text(
-                text = sourceAndPublishText,
-                color = Color.White.copy(alpha = 0.65f),
+                text = "数据源自：${weatherData.sourceName}",
+                color = Color.White,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Normal
             )
+
+            // 发布时刻另起一行展示（文案：发布时间：00:00）
+            val cleanPublishTime = current.publishTime.removeSuffix("发布").removeSuffix(" 发布").trim()
+            if (cleanPublishTime.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.5.dp))
+                Text(
+                    text = "发布时间：$cleanPublishTime",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
         }
     }
 }

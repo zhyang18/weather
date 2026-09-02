@@ -41,6 +41,7 @@ import com.weather.app.ui.components.getWeatherMenuBackgroundColor
  * @param onRetry 点击重试时的回调函数（可选）
  * @param onConfigureQWeatherClick 点击去配置和风天气凭据时的回调函数
  * @param onConfigureCaiyunClick 点击去配置彩云天气凭据时的回调函数
+ * @param onConfigureSeniverseClick 点击去配置心知天气凭据时的回调函数
  * @param onDismiss 点击确认或关闭弹窗时的回调函数
  */
 @Composable
@@ -51,12 +52,15 @@ fun WeatherErrorDialog(
     onRetry: (() -> Unit)? = null,
     onConfigureQWeatherClick: () -> Unit = {},
     onConfigureCaiyunClick: () -> Unit = {},
+    onConfigureSeniverseClick: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val isQWeatherAuthError = currentSourceId == "qweather" &&
             (errorMessage.contains("401") || errorMessage.contains("JWT") || errorMessage.contains("Authentication failed") || errorMessage.contains("未配置"))
     val isCaiyunAuthError = currentSourceId == "caiyun" &&
             (errorMessage.contains("401") || errorMessage.contains("403") || errorMessage.contains("Token") || errorMessage.contains("token") || errorMessage.contains("未配置") || errorMessage.contains("invalid token"))
+    val isSeniverseAuthError = currentSourceId == "seniverse" &&
+            (errorMessage.contains("401") || errorMessage.contains("403") || errorMessage.contains("Key") || errorMessage.contains("key") || errorMessage.contains("私钥") || errorMessage.contains("未配置") || errorMessage.contains("AP010003") || errorMessage.contains("Invalid key"))
 
     val dialogBackgroundColor = remember(weatherText) {
         if (weatherText.isNotBlank()) {
@@ -97,6 +101,7 @@ fun WeatherErrorDialog(
                         text = when {
                             isQWeatherAuthError -> "和风天气身份认证失败"
                             isCaiyunAuthError -> "彩云天气 API 凭据认证失败"
+                            isSeniverseAuthError -> "心知天气 API 凭据认证失败"
                             else -> "请求失败或数据异常"
                         },
                         fontSize = 18.sp,
@@ -194,6 +199,29 @@ fun WeatherErrorDialog(
                             onClick = {
                                 onDismiss()
                                 onConfigureCaiyunClick()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF2563EB),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("设置凭据")
+                        }
+                    } else if (isSeniverseAuthError) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        ) {
+                            Text("关闭", color = Color.White.copy(alpha = 0.85f))
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onConfigureSeniverseClick()
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF2563EB),
