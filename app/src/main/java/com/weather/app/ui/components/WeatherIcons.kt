@@ -10,6 +10,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.weather.app.R
+import com.weather.app.model.normalizeWeatherText
 
 /**
  * 气象动态与高保真矢量图标组件
@@ -87,16 +88,17 @@ object WeatherIcons {
      */
     @DrawableRes
     fun getWeatherIconRes(weatherText: String): Int {
+        val norm = weatherText.normalizeWeatherText()
         return when {
             // 1. 晴天
-            weatherText.contains("晴") && !weatherText.contains("多云") && !weatherText.contains("雨") && !weatherText.contains("雪") -> {
+            norm.contains("晴") && !norm.contains("多云") && !norm.contains("雨") && !norm.contains("雪") -> {
                 R.drawable.ic_weather_sunny
             }
             // 2. 多云 / 阴天
-            weatherText.contains("多云") -> {
+            norm.contains("多云") -> {
                 R.drawable.ic_weather_cloudy
             }
-            weatherText.contains("阴") -> {
+            norm.contains("阴") -> {
                 R.drawable.ic_weather_overcast
             }
             // 3. 雷电 / 雷阵雨
@@ -168,25 +170,26 @@ object WeatherIcons {
      * @return 对应的天气 Emoji 符号
      */
     fun getWeatherEmoji(weatherText: String): String {
+        val norm = weatherText.normalizeWeatherText()
         return when {
-            weatherText.contains("晴") && !weatherText.contains("多云") -> "☀️"
-            weatherText.contains("雷") -> "⛈️"
-            weatherText.contains("暴雨") -> "🌊"
-            weatherText.contains("大雨") -> "🌧️"
-            weatherText.contains("中雨") -> "🌧️"
-            weatherText.contains("阵雨") -> "🌦️"
-            weatherText.contains("雨夹雪") -> "🌨️"
-            weatherText.contains("雨") -> "🌦️"
-            weatherText.contains("暴雪") || weatherText.contains("大雪") -> "❄️"
-            weatherText.contains("雪") -> "🌨️"
-            weatherText.contains("阴") -> "☁️"
-            weatherText.contains("多云") -> "⛅"
-            weatherText.contains("雾") -> "🌫️"
-            weatherText.contains("霾") -> "🌫️"
-            weatherText.contains("沙") -> "🏜️"
-            weatherText.contains("尘") -> "🌪️"
-            weatherText.contains("风") -> "💨"
-            weatherText.contains("冰雹") -> "🌨️"
+            norm.contains("晴") && !norm.contains("多云") -> "☀️"
+            norm.contains("雷") -> "⛈️"
+            norm.contains("暴雨") -> "🌊"
+            norm.contains("大雨") -> "🌧️"
+            norm.contains("中雨") -> "🌧️"
+            norm.contains("阵雨") -> "🌦️"
+            norm.contains("雨夹雪") -> "🌨️"
+            norm.contains("雨") -> "🌦️"
+            norm.contains("暴雪") || norm.contains("大雪") -> "❄️"
+            norm.contains("雪") -> "🌨️"
+            norm.contains("阴") -> "☁️"
+            norm.contains("多云") -> "⛅"
+            norm.contains("雾") -> "🌫️"
+            norm.contains("霾") -> "🌫️"
+            norm.contains("沙") -> "🏜️"
+            norm.contains("尘") -> "🌪️"
+            norm.contains("风") -> "💨"
+            norm.contains("冰雹") -> "🌨️"
             else -> "🌤️"
         }
     }

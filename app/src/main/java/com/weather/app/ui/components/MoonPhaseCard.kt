@@ -226,31 +226,44 @@ fun MoonPhaseRealCard(
                 )
             }
 
-            // 3. 底部信息行：左右两端对齐展示【月相名称】与【月出/月落时间】（统一 11.5.sp 风格）
+            // 3. 底部信息行：左侧上方为【月相名称】、下方为【月出 时间】，右侧展示【月落 时间】
+            val riseText = if (moonInfo.moonriseTimeStr.isNotEmpty() && moonInfo.moonriseTimeStr != "--:--") {
+                "月出 ${moonInfo.moonriseTimeStr}"
+            } else {
+                "月出 --:--"
+            }
+
+            val setText = if (moonInfo.moonsetTimeStr.isNotEmpty() && moonInfo.moonsetTimeStr != "--:--") {
+                "月落 ${moonInfo.moonsetTimeStr}"
+            } else {
+                "月落 --:--"
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Bottom
             ) {
-                Text(
-                    text = moonInfo.phaseName,
-                    color = Color.White.copy(alpha = 0.75f),
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1
-                )
-
-                val rightTimeText = if (moonInfo.moonriseTimeStr.isNotEmpty() && moonInfo.moonriseTimeStr != "--:--") {
-                    "${moonInfo.moonriseTimeStr}月出"
-                } else if (moonInfo.moonsetTimeStr.isNotEmpty() && moonInfo.moonsetTimeStr != "--:--") {
-                    "${moonInfo.moonsetTimeStr}月落"
-                } else {
-                    val illumPercent = ((1f - kotlin.math.cos(moonInfo.moonPhase * 2f * Math.PI.toFloat())) * 50f).toInt().coerceIn(0, 100)
-                    "照明度 $illumPercent%"
+                Column {
+                    Text(
+                        text = moonInfo.phaseName,
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = riseText,
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1
+                    )
                 }
 
                 Text(
-                    text = rightTimeText,
+                    text = setText,
                     color = Color.White.copy(alpha = 0.75f),
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Normal,

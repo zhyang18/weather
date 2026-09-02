@@ -20,6 +20,7 @@ import com.weather.app.model.HourlyForecast
 import com.weather.app.model.WeatherAlert
 import com.weather.app.model.WeatherData
 import com.weather.app.model.WeatherSourceInfo
+import com.weather.app.model.normalizeWeatherText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -321,7 +322,7 @@ class QWeatherWeatherDataSource(
             }
 
             val now = nowResp.now
-            val weatherText = now.text ?: "晴"
+            val weatherText = (now.text ?: "晴").normalizeWeatherText()
             val weatherIconCode = mapQWeatherIconToCode(now.icon, weatherText)
             val currentTemp = now.temp?.toDoubleOrNull() ?: 20.0
             val feelsLikeTemp = now.feelsLike?.toDoubleOrNull() ?: currentTemp
@@ -657,8 +658,8 @@ class QWeatherWeatherDataSource(
                 DailyForecast(
                     date = dateStr,
                     dayOfWeek = dayOfWeekText,
-                    dayWeatherText = textDay,
-                    nightWeatherText = textNight,
+                    dayWeatherText = (textDay ?: "晴").normalizeWeatherText(),
+                    nightWeatherText = (textNight ?: "晴").normalizeWeatherText(),
                     dayIconCode = iconDayCode,
                     nightIconCode = iconNightCode,
                     maxTemperature = maxT,
@@ -1019,13 +1020,14 @@ class QWeatherWeatherDataSource(
             "500", "501", "502" -> "18" // 雾/霾
             "503", "504", "507", "508" -> "20" // 沙尘暴
             else -> {
+                val normText = weatherText.normalizeWeatherText()
                 when {
-                    weatherText.contains("晴") -> "0"
-                    weatherText.contains("多云") -> "1"
-                    weatherText.contains("阴") -> "2"
-                    weatherText.contains("雷") -> "4"
-                    weatherText.contains("雨") -> "7"
-                    weatherText.contains("雪") -> "14"
+                    normText.contains("晴") -> "0"
+                    normText.contains("多云") -> "1"
+                    normText.contains("阴") -> "2"
+                    normText.contains("雷") -> "4"
+                    normText.contains("雨") -> "7"
+                    normText.contains("雪") -> "14"
                     else -> "1"
                 }
             }

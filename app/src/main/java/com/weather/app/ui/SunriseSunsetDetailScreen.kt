@@ -10,6 +10,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +70,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -245,15 +249,15 @@ private fun SunriseSunsetDetailContent(
                     onNextDayClick = { selectedDayOffset += 1 }
                 )
 
-                // 2.2 关键太阳运行四节点卡片
-                MajorSolarEventsSection(detail = solarDetail)
-
-                // 2.3 30 天日照周期变化轮播时间轴
+                // 2.2 30 天日照周期变化轮播时间轴（移至今日关键天体时刻上方）
                 SolarCycleCarouselSection(
                     sequence = solarSequence,
                     selectedOffset = selectedDayOffset,
                     onSelectDayOffset = { offset -> selectedDayOffset = offset }
                 )
+
+                // 2.3 关键太阳运行四节点卡片（今日关键天体时刻）
+                MajorSolarEventsSection(detail = solarDetail)
 
                 // 2.4 太阳天文详细物理指标网格 (2x3 矩阵，彻底消除截断)
                 SolarAstrometricsGrid(detail = solarDetail)
@@ -383,12 +387,35 @@ private fun HeroInteractiveSolarStage(
     onPrevDayClick: () -> Unit,
     onNextDayClick: () -> Unit
 ) {
+    val density = LocalDensity.current
+    val stepThresholdPx = remember(density) { with(density) { 24.dp.toPx() } }
+    var dragAccumulator by remember { mutableFloatStateOf(0f) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
             .background(Color(0x6014263D))
             .border(0.8.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(24.dp))
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragAccumulator = 0f },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        dragAccumulator += dragAmount
+                        while (dragAccumulator <= -stepThresholdPx) {
+                            onNextDayClick() // 向左滑动，切换至后一天
+                            dragAccumulator += stepThresholdPx
+                        }
+                        while (dragAccumulator >= stepThresholdPx) {
+                            onPrevDayClick() // 向右滑动，切换至前一天
+                            dragAccumulator -= stepThresholdPx
+                        }
+                    },
+                    onDragEnd = { dragAccumulator = 0f },
+                    onDragCancel = { dragAccumulator = 0f }
+                )
+            }
             .padding(vertical = 18.dp, horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -612,6 +639,15 @@ private fun SolarCycleCarouselSection(
     onSelectDayOffset: (Int) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+
+    // 当选中的日期偏移改变时，自动平滑滚动并将当前项定位到可见/居中区域
+    LaunchedEffect(selectedOffset) {
+        val index = (selectedOffset + 3).coerceIn(0, (sequence.size - 1).coerceAtLeast(0))
+        val itemWidthPx = with(density) { 64.dp.toPx() }
+        val targetScrollPx = (index * itemWidthPx - itemWidthPx * 1.8f).coerceAtLeast(0f).toInt()
+        scrollState.animateScrollTo(targetScrollPx)
+    }
 
     Column(
         modifier = Modifier

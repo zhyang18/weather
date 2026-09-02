@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.weather.app.model.normalizeWeatherText
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -796,17 +797,18 @@ internal fun isCurrentlyNight(): Boolean {
  * @return 对应的天气分类 [WeatherCategory]
  */
 internal fun resolveWeatherCategory(text: String, isNight: Boolean): WeatherCategory {
+    val normText = text.normalizeWeatherText()
     return when {
-        text.contains("雷") -> WeatherCategory.THUNDERSTORM
-        text.contains("暴雨") || text.contains("大雨") -> WeatherCategory.RAIN_HEAVY
-        text.contains("雨") -> WeatherCategory.RAIN_LIGHT
-        text.contains("暴雪") || text.contains("大雪") -> WeatherCategory.SNOW_HEAVY
-        text.contains("雪") -> WeatherCategory.SNOW_LIGHT
-        text.contains("沙") || text.contains("尘") -> WeatherCategory.SANDSTORM
-        text.contains("雾") || text.contains("霾") -> WeatherCategory.FOG
-        text.contains("风") && !text.contains("微风") -> WeatherCategory.WINDY
-        text.contains("阴") -> if (isNight) WeatherCategory.OVERCAST_NIGHT else WeatherCategory.OVERCAST
-        text.contains("云") -> if (isNight) WeatherCategory.CLOUDY_NIGHT else WeatherCategory.CLOUDY
+        normText.contains("雷") -> WeatherCategory.THUNDERSTORM
+        normText.contains("暴雨") || normText.contains("大雨") -> WeatherCategory.RAIN_HEAVY
+        normText.contains("雨") -> WeatherCategory.RAIN_LIGHT
+        normText.contains("暴雪") || normText.contains("大雪") -> WeatherCategory.SNOW_HEAVY
+        normText.contains("雪") -> WeatherCategory.SNOW_LIGHT
+        normText.contains("沙") || normText.contains("尘") -> WeatherCategory.SANDSTORM
+        normText.contains("雾") || normText.contains("霾") -> WeatherCategory.FOG
+        normText.contains("风") && !normText.contains("微风") -> WeatherCategory.WINDY
+        normText.contains("阴") -> if (isNight) WeatherCategory.OVERCAST_NIGHT else WeatherCategory.OVERCAST
+        normText.contains("云") -> if (isNight) WeatherCategory.CLOUDY_NIGHT else WeatherCategory.CLOUDY
         isNight -> WeatherCategory.SUNNY_NIGHT
         else -> WeatherCategory.SUNNY
     }
@@ -1487,8 +1489,8 @@ private fun DrawScope.drawSunWithRays(
     val state = calculateSolarPhysicalState(dayProgress)
     val masterAlpha = state.horizonExtinction
 
-    // 太阳发光跨度半径 (适度饱满舒展大气)
-    val sunSpanRadius = width * (0.26f + pulseProgress * 0.015f) * state.diskScale
+    // 太阳发光跨度半径 (适度饱满舒展大气，缩减20%)
+    val sunSpanRadius = width * (0.208f + pulseProgress * 0.012f) * state.diskScale
 
     // 1. 远景超大范围大气瑞利散射光晕 (环境色温染色天幕)
     val outerCoronaRadius = sunSpanRadius * 2.2f
@@ -1604,8 +1606,8 @@ private fun DrawScope.drawSunCloudPenetration(
     val state = calculateSolarPhysicalState(dayProgress)
     val masterAlpha = state.horizonExtinction
 
-    // 太阳发光跨度半径
-    val sunSpanRadius = width * (0.26f + pulseProgress * 0.015f) * state.diskScale
+    // 太阳发光跨度半径 (缩减20%)
+    val sunSpanRadius = width * (0.208f + pulseProgress * 0.012f) * state.diskScale
 
     // 1. 透云强光日冕与近日光晕（确保太阳穿云依然有极亮金白光晕）
     val penetrationGlowRadius = sunSpanRadius * (if (isCloudy) 1.25f else 1.10f)

@@ -4,6 +4,7 @@ import com.weather.app.model.CurrentWeather
 import com.weather.app.model.DailyForecast
 import com.weather.app.model.LifeIndex
 import com.weather.app.model.LifeIndexItem
+import com.weather.app.model.normalizeWeatherText
 import kotlin.math.abs
 
 /**
@@ -32,7 +33,7 @@ object LifeIndexCalculator {
         val tempMax = todayForecast?.maxTemperature ?: (current.temperature + 3.0)
         val tempMin = todayForecast?.minTemperature ?: (current.temperature - 4.0)
         val tempRange = abs(tempMax - tempMin)
-        val weatherText = current.weatherText
+        val weatherText = current.weatherText.normalizeWeatherText()
 
         val items = mutableListOf<LifeIndexItem>()
 

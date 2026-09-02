@@ -2,6 +2,7 @@ package com.weather.app.ui.theme
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.weather.app.model.normalizeWeatherText
 
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
@@ -26,6 +27,7 @@ val WeatherCardBorder = Color(0x4DFFFFFF)
  * @return 渐变背景画刷 [Brush]
  */
 fun getWeatherBackgroundBrush(weatherText: String, isNight: Boolean = false): Brush {
+    val norm = weatherText.normalizeWeatherText()
     return if (isNight) {
         Brush.verticalGradient(
             listOf(
@@ -35,26 +37,26 @@ fun getWeatherBackgroundBrush(weatherText: String, isNight: Boolean = false): Br
             )
         )
     } else when {
-        weatherText.contains("晴") -> Brush.verticalGradient(
+        norm.contains("晴") -> Brush.verticalGradient(
             listOf(
                 Color(0xFF2193b0),
                 Color(0xFF6dd5ed)
             )
         )
-        weatherText.contains("云") || weatherText.contains("阴") -> Brush.verticalGradient(
+        norm.contains("云") || norm.contains("阴") -> Brush.verticalGradient(
             listOf(
                 Color(0xFF4A6572),
                 Color(0xFF344955),
                 Color(0xFF232F34)
             )
         )
-        weatherText.contains("雨") || weatherText.contains("雷") -> Brush.verticalGradient(
+        norm.contains("雨") || norm.contains("雷") -> Brush.verticalGradient(
             listOf(
                 Color(0xFF373B44),
                 Color(0xFF4286f4)
             )
         )
-        weatherText.contains("雪") -> Brush.verticalGradient(
+        norm.contains("雪") -> Brush.verticalGradient(
             listOf(
                 Color(0xFF83a4d4),
                 Color(0xFFb6fbff)

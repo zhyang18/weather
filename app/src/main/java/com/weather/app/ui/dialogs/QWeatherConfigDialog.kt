@@ -17,9 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,11 +64,12 @@ import kotlinx.coroutines.launch
  * 采用 95% 磨砂深灰蓝沉浸式底色，支持用户配置和风天气的 Project ID、Key ID、Ed25519 私钥及专属 API Host 域名，
  * 在保存前自动执行在线签名联通性验证，并集成和风天气官方控制台请求量统计 (GET /metrics/v1/stats) 可视化面板。
  *
- * @param config 当前已有的和风天气配置实体 [QWeatherConfig]
- * @param initialStats 初始传入的请求量统计数据模型（可选）
- * @param onSave 点击保存并通过验证时的回调函数
- * @param onDismiss 点击取消或关闭对话框时的回调函数
+ * @param config 当前正在生效的和风天气凭据配置 [QWeatherConfig]
+ * @param initialStats 已缓存的控制台用量统计概要 (可选) [QWeatherStatsSummary]
+ * @param onSave 用户确认保存有效配置时的回调
+ * @param onDismiss 用户点击取消或关闭对话框时的回调
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material.ExperimentalMaterialApi::class)
 @Composable
 fun QWeatherConfigDialog(
     config: QWeatherConfig,
@@ -83,24 +89,9 @@ fun QWeatherConfigDialog(
     var statsSummary by remember { mutableStateOf<QWeatherStatsSummary?>(initialStats) }
     var isFetchingStats by remember { mutableStateOf(false) }
     var statsError by remember { mutableStateOf<String?>(null) }
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = 0) { 2 }
 
     val coroutineScope = rememberCoroutineScope()
-
-    // 若已有配置且尚未加载过统计，首次自动尝试加载
-    LaunchedEffect(Unit) {
-        if (config.isConfigured() && statsSummary == null) {
-            isFetchingStats = true
-            val result = QWeatherStatsFetcher.fetchStats(config)
-            isFetchingStats = false
-            result.onSuccess {
-                statsSummary = it
-                statsError = null
-            }.onFailure { err ->
-                statsError = err.localizedMessage
-            }
-        }
-    }
 
     /**
      * 手动拉取最新控制台用量统计
@@ -131,6 +122,28 @@ fun QWeatherConfigDialog(
         }
     }
 
+    // 若已有配置且尚未加载过统计，首次自动尝试加载
+    LaunchedEffect(Unit) {
+        if (config.isConfigured() && statsSummary == null) {
+            isFetchingStats = true
+            val result = QWeatherStatsFetcher.fetchStats(config)
+            isFetchingStats = false
+            result.onSuccess {
+                statsSummary = it
+                statsError = null
+            }.onFailure { err ->
+                statsError = err.localizedMessage
+            }
+        }
+    }
+
+    // 当滑动到用量统计 Tab 且未拉取过统计时，自动触发获取
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage == 1 && statsSummary == null && !isFetchingStats) {
+            triggerFetchStats()
+        }
+    }
+
     Dialog(
         onDismissRequest = {
             if (!isVerifying) onDismiss()
@@ -150,25 +163,21 @@ fun QWeatherConfigDialog(
                     .fillMaxSize()
                     .padding(horizontal = 15.dp, vertical = 10.dp)
             ) {
-                // 顶部标题（与彩云天气一致）
                 Text(
                     text = "和风天气 API 凭证管理",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Normal,
                     color = Color.White
                 )
-
                 Spacer(modifier = Modifier.height(3.dp))
-
                 Text(
                     text = "支持 Ed25519 签名鉴权与 24 小时控制台用量统计",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.65f)
                 )
-
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Tab 切换栏（紧凑设计）
+                // Tab 切换栏（紧凑设计，支持滑动与点击切换）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -178,16 +187,15 @@ fun QWeatherConfigDialog(
                 ) {
                     val tabs = listOf("凭证配置", "用量统计")
                     tabs.forEachIndexed { index, title ->
-                        val isSelected = selectedTabIndex == index
+                        val isSelected = pagerState.currentPage == index
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(if (isSelected) Color(0xFF2563EB) else Color.Transparent)
                                 .clickable {
-                                    selectedTabIndex = index
-                                    if (index == 1 && statsSummary == null && !isFetchingStats) {
-                                        triggerFetchStats()
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(index)
                                     }
                                 }
                                 .padding(vertical = 5.dp),
@@ -205,27 +213,23 @@ fun QWeatherConfigDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 中间统一高度内容区（90% 高度自动铺满，消除 Tab 切换跳动）
-                Box(
+                // 中间统一高度内容区（HorizontalPager 支持左右平滑滑动切换，Tab 2 支持下拉刷新）
+                HorizontalPager(
+                    state = pagerState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                ) {
-                    if (selectedTabIndex == 0) {
+                ) { page ->
+                    if (page == 0) {
                         // ==================== Tab 1: 凭据配置 ====================
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(rememberScrollState())
                         ) {
-                            // Project ID
                             OutlinedTextField(
                                 value = projectId,
-                                onValueChange = {
-                                    projectId = it
-                                    errorMessage = null
-                                    successMessage = null
-                                },
+                                onValueChange = { projectId = it; errorMessage = null; successMessage = null },
                                 label = { Text("Project ID（项目 ID）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
                                 placeholder = { Text("例如：project_123456", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
                                 singleLine = true,
@@ -239,19 +243,12 @@ fun QWeatherConfigDialog(
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             )
-
                             Spacer(modifier = Modifier.height(6.dp))
-
-                            // Key ID (kid)
                             OutlinedTextField(
                                 value = keyId,
-                                onValueChange = {
-                                    keyId = it
-                                    errorMessage = null
-                                    successMessage = null
-                                },
-                                label = { Text("Key ID / 凭据 ID（kid）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
-                                placeholder = { Text("例如：key_abc123", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                                onValueChange = { keyId = it; errorMessage = null; successMessage = null },
+                                label = { Text("Key ID（凭据公钥 ID）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
+                                placeholder = { Text("例如：key_abcdef123456", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
                                 singleLine = true,
                                 enabled = !isVerifying,
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -263,21 +260,14 @@ fun QWeatherConfigDialog(
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             )
-
                             Spacer(modifier = Modifier.height(6.dp))
-
-                            // Private Key PEM
                             OutlinedTextField(
                                 value = privateKey,
-                                onValueChange = {
-                                    privateKey = it
-                                    errorMessage = null
-                                    successMessage = null
-                                },
-                                label = { Text("Ed25519 Private Key（私钥）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
-                                placeholder = { Text("-----BEGIN PRIVATE KEY----- ...", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
-                                minLines = 1,
-                                maxLines = 2,
+                                onValueChange = { privateKey = it; errorMessage = null; successMessage = null },
+                                label = { Text("Ed25519 Private Key（私钥明文）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
+                                placeholder = { Text("-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEI...\n-----END PRIVATE KEY-----", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp) },
+                                minLines = 3,
+                                maxLines = 5,
                                 enabled = !isVerifying,
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
@@ -288,10 +278,7 @@ fun QWeatherConfigDialog(
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             )
-
                             Spacer(modifier = Modifier.height(6.dp))
-
-                            // API Host
                             OutlinedTextField(
                                 value = apiHost,
                                 onValueChange = {
@@ -299,8 +286,8 @@ fun QWeatherConfigDialog(
                                     errorMessage = null
                                     successMessage = null
                                 },
-                                label = { Text("API 专属域名（Host）", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
-                                placeholder = { Text("例如：xxx.qweatherapi.com", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
+                                label = { Text("API 接入主机域名 (Host)", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp) },
+                                placeholder = { Text("默认为 devapi.qweather.com", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp) },
                                 singleLine = true,
                                 enabled = !isVerifying,
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -398,17 +385,36 @@ fun QWeatherConfigDialog(
                             }
                         }
                     } else {
-                        // ==================== Tab 2: 用量统计（内部垂直滚动布局） ====================
-                        Column(
+                        // ==================== Tab 2: 用量统计（支持下拉刷新） ====================
+                        val pullRefreshState = rememberPullRefreshState(
+                            refreshing = isFetchingStats,
+                            onRefresh = triggerFetchStats
+                        )
+
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .verticalScroll(rememberScrollState())
+                                .pullRefresh(pullRefreshState)
                         ) {
-                            QWeatherStatsCard(
-                                statsSummary = statsSummary,
-                                isFetching = isFetchingStats,
-                                errorMessage = statsError,
-                                onRefresh = triggerFetchStats
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                QWeatherStatsCard(
+                                    statsSummary = statsSummary,
+                                    isFetching = isFetchingStats,
+                                    errorMessage = statsError,
+                                    onRefresh = triggerFetchStats
+                                )
+                            }
+
+                            PullRefreshIndicator(
+                                refreshing = isFetchingStats,
+                                state = pullRefreshState,
+                                modifier = Modifier.align(Alignment.TopCenter),
+                                backgroundColor = Color(0xFF1E293B),
+                                contentColor = Color(0xFF60A5FA)
                             )
                         }
                     }
@@ -417,7 +423,7 @@ fun QWeatherConfigDialog(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // 底部固定操作按钮栏（高度一致，Tab 切换不跳动）
-                if (selectedTabIndex == 0) {
+                if (pagerState.currentPage == 0) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -577,50 +583,20 @@ fun QWeatherStatsCard(
                 .fillMaxWidth()
                 .padding(10.dp)
         ) {
-            // 头部标题与刷新操作栏
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "控制台 API 用量分析",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(1.dp))
-                    Text(
-                        text = "官方 /metrics/v1/stats 数据 (延迟约 1 小时)",
-                        fontSize = 10.sp,
-                        color = Color.White.copy(alpha = 0.5f)
-                    )
-                }
-
-                OutlinedButton(
-                    onClick = onRefresh,
-                    enabled = !isFetching,
-                    shape = RoundedCornerShape(6.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    border = BorderStroke(0.6.dp, Color(0xFF60A5FA).copy(alpha = 0.6f)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF93C5FD)),
-                    modifier = Modifier
-                        .height(26.dp)
-                        .defaultMinSize(minWidth = 50.dp)
-                ) {
-                    if (isFetching) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(10.dp),
-                            color = Color(0xFF93C5FD),
-                            strokeWidth = 1.5.dp
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("查询中", fontSize = 10.5.sp, maxLines = 1)
-                    } else {
-                        Text("刷新", fontSize = 10.5.sp, maxLines = 1)
-                    }
-                }
+            // 头部标题与描述（支持下拉手势刷新）
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "控制台 API 用量分析",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(1.dp))
+                Text(
+                    text = "官方 /metrics/v1/stats 数据 (延迟约 1 小时 · 下拉可刷新)",
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))

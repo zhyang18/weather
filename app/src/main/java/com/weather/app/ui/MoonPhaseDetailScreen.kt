@@ -10,6 +10,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -68,6 +70,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -143,14 +147,14 @@ private fun MoonPhaseDetailContent(
 ) {
     val scrollState = rememberScrollState()
 
-    // 基准日历（当前系统时钟）
-    val todayCalendar = remember { Calendar.getInstance() }
+    // 基准日历（当前系统时钟，随城市切换同步重置）
+    val todayCalendar = remember(city?.getCacheKey()) { Calendar.getInstance() }
 
-    // 当前选中的相对偏移天数（0 表示今天，负数过去，正数未来）
-    var selectedDayOffset by remember { mutableIntStateOf(0) }
+    // 当前选中的相对偏移天数（0 表示今天，负数过去，正数未来，随城市切换重置回当天）
+    var selectedDayOffset by remember(city?.getCacheKey()) { mutableIntStateOf(0) }
 
     // 计算选中日期的日历对象
-    val activeCalendar = remember(selectedDayOffset) {
+    val activeCalendar = remember(selectedDayOffset, city?.getCacheKey()) {
         (todayCalendar.clone() as Calendar).apply {
             add(Calendar.DAY_OF_YEAR, selectedDayOffset)
         }
@@ -221,7 +225,7 @@ private fun MoonPhaseDetailContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // 3D 月相主舞台与日期切换
+                // 3D 月相主舞台与日期切换（支持左右滑动手势）
                 HeroInteractiveMoonStage(
                     lunarDetail = activeLunarDetail,
                     moonBitmap = heroMoonBitmap,
@@ -229,15 +233,15 @@ private fun MoonPhaseDetailContent(
                     onNextDayClick = { selectedDayOffset += 1 }
                 )
 
-                // 朔望四相关键时间节点
-                MajorMoonPhasesSection(majorPhases = majorPhases)
-
-                // 30 天月相周期日历轮播
+                // 30 天月相周期日历轮播（排在关键节点卡片上方）
                 MoonCycleCarouselSection(
                     sequence = monthSequence,
                     selectedOffset = selectedDayOffset,
                     onSelectDayOffset = { offset -> selectedDayOffset = offset }
                 )
+
+                // 朔望四相关键时间节点（排在 30 天周期轮播卡片下方）
+                MajorMoonPhasesSection(majorPhases = majorPhases)
 
                 // 月球天文详细指标网格
                 LunarAstrometricsGrid(lunarDetail = activeLunarDetail)
@@ -417,10 +421,33 @@ private fun HeroInteractiveMoonStage(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // 3D 真实月球大尺寸渲染区 (210dp)
+        val density = LocalDensity.current
+        val stepThresholdPx = remember(density) { with(density) { 24.dp.toPx() } }
+        var dragAccumulator by remember { mutableFloatStateOf(0f) }
+
+        // 3D 真实月球大尺寸渲染区 (210dp，支持左右滑动手势连续切换日期)
         Box(
             modifier = Modifier
                 .size(210.dp)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragAccumulator = 0f },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            dragAccumulator += dragAmount
+                            while (dragAccumulator <= -stepThresholdPx) {
+                                onNextDayClick() // 向左滑动，切换至后一天
+                                dragAccumulator += stepThresholdPx
+                            }
+                            while (dragAccumulator >= stepThresholdPx) {
+                                onPrevDayClick() // 向右滑动，切换至前一天
+                                dragAccumulator -= stepThresholdPx
+                            }
+                        },
+                        onDragEnd = { dragAccumulator = 0f },
+                        onDragCancel = { dragAccumulator = 0f }
+                    )
+                }
                 .drawWithCache {
                     val w = size.width
                     val h = size.height
@@ -642,6 +669,15 @@ private fun MoonCycleCarouselSection(
     onSelectDayOffset: (Int) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+
+    // 当选中的日期偏移改变时，自动平滑滚动并将当前项定位到可见/居中区域
+    LaunchedEffect(selectedOffset) {
+        val index = (selectedOffset + 3).coerceIn(0, (sequence.size - 1).coerceAtLeast(0))
+        val itemWidthPx = with(density) { 62.dp.toPx() }
+        val targetScrollPx = (index * itemWidthPx - itemWidthPx * 1.8f).coerceAtLeast(0f).toInt()
+        scrollState.animateScrollTo(targetScrollPx)
+    }
 
     Column(
         modifier = Modifier

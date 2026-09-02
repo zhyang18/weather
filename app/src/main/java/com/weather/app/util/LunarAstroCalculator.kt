@@ -817,11 +817,6 @@ object LunarAstroCalculator {
      * @return 经纬度键值对 (纬度, 经度)
      */
     private fun resolveCoordinates(city: CityInfo?): Pair<Double, Double> {
-        val lat = city?.latitude
-        val lng = city?.longitude
-        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
-            return Pair(lat, lng)
-        }
-        return Pair(39.9042, 116.4074) // 默认北京
+        return SolarAstroCalculator.resolveCoordinates(city)
     }
 }
