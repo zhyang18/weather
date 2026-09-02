@@ -425,7 +425,7 @@ class WeatherRepository(
     }
 
     /**
-     * 在指定位置恢复/插入城市（支持删除后撤销恢复，自动定位城市永远保留在首行）
+     * 在指定位置恢复/插入城市（支持删除后撤销恢复）
      *
      * @param index 插入目标索引
      * @param city 待恢复的城市信息 [CityInfo]
@@ -434,9 +434,7 @@ class WeatherRepository(
     fun insertCity(index: Int, city: CityInfo): List<CityInfo> {
         val safeCity = city.sanitize()
         val current = getSavedCities().toMutableList()
-        val hasAutoCity = current.firstOrNull()?.isAutoLocated == true
-        val minIndex = if (hasAutoCity && !safeCity.isAutoLocated) 1 else 0
-        val safeIndex = index.coerceIn(minIndex, current.size)
+        val safeIndex = index.coerceIn(0, current.size)
         if (current.none { it.name == safeCity.name && it.code == safeCity.code }) {
             current.add(safeIndex, safeCity)
             saveSavedCities(current)
@@ -445,7 +443,7 @@ class WeatherRepository(
     }
 
     /**
-     * 更新保存列表中的定位城市信息（确保始终保持在列表首行）
+     * 更新保存列表中的定位城市信息（如果已有定位城市则就地更新，保留用户调整后的排序位置；若无则置于首位）
      *
      * @param locatedCity 最新识别到的定位城市 [CityInfo]
      * @return 更新后的城市列表
@@ -453,10 +451,14 @@ class WeatherRepository(
     fun updateAutoLocatedCity(locatedCity: CityInfo): List<CityInfo> {
         val safeCity = locatedCity.sanitize().copy(isAutoLocated = true)
         val current = getSavedCities().toMutableList()
-        val withoutAuto = current.filterNot { it.isAutoLocated }.toMutableList()
-        withoutAuto.add(0, safeCity)
-        saveSavedCities(withoutAuto)
-        return withoutAuto
+        val existingIndex = current.indexOfFirst { it.isAutoLocated }
+        if (existingIndex >= 0) {
+            current[existingIndex] = safeCity
+        } else {
+            current.add(0, safeCity)
+        }
+        saveSavedCities(current)
+        return current
     }
 
     /**

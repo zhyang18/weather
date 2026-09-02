@@ -5,7 +5,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -85,11 +84,18 @@ import com.weather.app.model.CityInfo
 import com.weather.app.model.WeatherData
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.compose.runtime.mutableFloatStateOf
 
 /**
  * 城市列表拖拽排序状态管理类
  *
- * 负责管理拖拽过程中的当前选中项标识与索引、Y 轴实时位移累加、带滞后回差防抖的跨项位置交换判定以及列表边缘平滑自动滚动。
+ * 性能设计说明：
+ * - [dragOffset] 使用 [mutableFloatStateOf] 存储实时偏移值，在 graphicsLayer lambda 内读取时
+ *   仅触发 RenderNode 重绘（Draw 阶段），不触发 Compose 重组（Composition 阶段）。
+ * - [onDragStart] / [onDrag] 均为普通函数（非 suspend），直接同步赋值，
+ *   彻底消除"每帧 launch 新协程 → Animatable.snapTo 互斥锁竞争"导致的向上拖动卡顿问题。
+ * - 释放回弹通过局部 [Animatable] 实现，每帧回调更新 [_dragOffset] 驱动重绘。
+ * - 边界判定与跨项交换逻辑保持不变。
  *
  * @property onMove 发生跨项调换时的回调函数，参数分别为原位置索引和目标位置索引
  */
@@ -109,10 +115,18 @@ class DragDropListState(
         private set
 
     /**
-     * 被拖拽项相对于当前所在槽位的 Y 轴实时像素偏移量
+     * 被拖拽项 Y 轴实时偏移的内部状态。
+     *
+     * 使用 [mutableFloatStateOf] 而非 [Animatable]：
+     * - 可在普通函数中直接同步赋值，无需协程，彻底避免多协程竞争互斥锁。
+     * - 在 graphicsLayer lambda 内读取时，仅触发重绘（Draw），不触发重组（Composition）。
      */
-    var draggingItemOffset by mutableStateOf(0f)
-        private set
+    private val _dragOffset = mutableFloatStateOf(0f)
+
+    /**
+     * 被拖拽项当前 Y 轴像素偏移量，供 graphicsLayer 直接读取
+     */
+    val dragOffset: Float get() = _dragOffset.floatValue
 
     /**
      * 单个列表项步长高度（卡片高度 + 间距）像素值
@@ -125,12 +139,11 @@ class DragDropListState(
      * @param key 卡片唯一标识键
      * @return 若当前卡片正处于拖拽中则返回 true，否则返回 false
      */
-    fun isDragging(key: String): Boolean {
-        return draggingItemKey == key
-    }
+    fun isDragging(key: String): Boolean = draggingItemKey == key
 
     /**
-     * 拖拽手势开始时的初始化处理
+     * 拖拽手势开始时的初始化处理，将偏移量立即归零。
+     * 普通函数，无需协程，同步执行。
      *
      * @param key 当前被按住拖拽的城市卡片唯一标识键
      * @param index 当前被按住拖拽的城市卡片初始索引
@@ -138,33 +151,26 @@ class DragDropListState(
     fun onDragStart(key: String, index: Int) {
         draggingItemKey = key
         draggingItemIndex = index
-        draggingItemOffset = 0f
+        _dragOffset.floatValue = 0f
     }
 
     /**
-     * 拖拽手势移动过程中的位移累加与跨项交换判定
+     * 拖拽手势移动过程中的位移累加与跨项交换判定。
      *
-     * 采用严格的对称 0.5 步长判定阈值，确保交换后残留位移严格落在安全死区内，从数学上杜绝反向误触发与悬空卡住。
+     * 普通函数（非 suspend），直接同步赋值 [_dragOffset]，
+     * 彻底避免旧方案中每次 onDrag 事件 launch 新协程、多协程竞争
+     * [Animatable.snapTo] 互斥锁导致偏移量计算错乱、向上拖动卡住的问题。
      *
      * @param dragAmount 本次手势或滚动的 Y 轴移动增量像素值
      * @param itemCount 城市列表总数量
-     * @param minIndex 允许移动到的最小索引（首行为自动定位城市时为 1，否则为 0）
-     * @param canScrollBackward 列表当前是否还能向上滚动
-     * @param canScrollForward 列表当前是否还能向下滚动
      */
-    fun onDrag(
-        dragAmount: Float,
-        itemCount: Int,
-        minIndex: Int = 0,
-        canScrollBackward: Boolean = false,
-        canScrollForward: Boolean = false
-    ) {
-        var newOffset = draggingItemOffset + dragAmount
+    fun onDrag(dragAmount: Float, itemCount: Int) {
+        var newOffset = _dragOffset.floatValue + dragAmount
         val stepHeight = if (itemHeightPx > 0f) itemHeightPx else 1f
         val threshold = stepHeight * 0.50f
 
         // 向上拖拽交换判定 (超过半个卡片高度立即交换并补偿步长)
-        while (newOffset < -threshold && draggingItemIndex != null && draggingItemIndex!! > minIndex) {
+        while (newOffset < -threshold && draggingItemIndex != null && draggingItemIndex!! > 0) {
             val currentIdx = draggingItemIndex!!
             val targetIndex = currentIdx - 1
             onMove(currentIdx, targetIndex)
@@ -181,17 +187,11 @@ class DragDropListState(
             newOffset -= stepHeight
         }
 
-        // 边界限制：到达列表最顶端(minIndex)或最底端且无法滚动时，位移严格锁定为 0f，确保紧贴列表槽位，彻底杜绝悬空卡住
-        val currentIdx = draggingItemIndex ?: 0
-        if (currentIdx <= minIndex && !canScrollBackward && newOffset < 0f) {
-            newOffset = 0f
-        } else if (currentIdx >= itemCount - 1 && !canScrollForward && newOffset > 0f) {
-            newOffset = 0f
-        } else {
-            newOffset = newOffset.coerceIn(-stepHeight * 0.85f, stepHeight * 0.85f)
-        }
+        // 视觉阻尼限位：超出列表边界时卡片最多偏移 0.85 个步长，手感自然，不强制回弹
+        newOffset = newOffset.coerceIn(-stepHeight * 0.85f, stepHeight * 0.85f)
 
-        draggingItemOffset = newOffset
+        // 直接同步赋值，仅触发 graphicsLayer 重绘，不触发 Recomposition，无协程开销
+        _dragOffset.floatValue = newOffset
     }
 
     /**
@@ -199,13 +199,11 @@ class DragDropListState(
      *
      * @param lazyListState 列表滚动状态实例 [LazyListState]
      * @param itemCount 城市列表总数量
-     * @param minIndex 允许移动到的最小索引
      * @return 若执行了自动滚动则返回 true，否则返回 false
      */
     suspend fun checkAndAutoScroll(
         lazyListState: LazyListState,
-        itemCount: Int,
-        minIndex: Int
+        itemCount: Int
     ): Boolean {
         val key = draggingItemKey ?: return false
         val currentIndex = draggingItemIndex ?: return false
@@ -219,11 +217,13 @@ class DragDropListState(
         val currentVisibleItem = visibleItems.firstOrNull { it.key == key }
             ?: visibleItems.firstOrNull { it.index == currentIndex }
 
+        val currentOffsetValue = _dragOffset.floatValue
         val (draggedTop, draggedBottom) = if (currentVisibleItem != null) {
-            val top = currentVisibleItem.offset + draggingItemOffset
+            val top = currentVisibleItem.offset + currentOffsetValue
             top to (top + currentVisibleItem.size)
         } else {
-            val estimatedTop = (currentIndex - (layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0)) * stepHeight + draggingItemOffset
+            val estimatedTop = (currentIndex - (layoutInfo.visibleItemsInfo.firstOrNull()?.index
+                ?: 0)) * stepHeight + currentOffsetValue
             estimatedTop to (estimatedTop + stepHeight)
         }
 
@@ -231,49 +231,64 @@ class DragDropListState(
         val maxScrollSpeed = (stepHeight * 0.28f).coerceAtLeast(24f)
 
         val scrollDelta = when {
-            draggedTop < scrollThreshold && (currentIndex > minIndex || lazyListState.canScrollBackward) -> {
+            draggedTop < scrollThreshold && (currentIndex > 0 || lazyListState.canScrollBackward) -> {
                 if (lazyListState.canScrollBackward) {
-                    val fraction = ((scrollThreshold - draggedTop) / scrollThreshold).coerceIn(0.35f, 2.0f)
+                    val fraction =
+                        ((scrollThreshold - draggedTop) / scrollThreshold).coerceIn(0.35f, 2.0f)
                     -maxScrollSpeed * fraction
-                } else {
-                    0f
-                }
+                } else 0f
             }
+
             draggedBottom > viewportHeight - scrollThreshold && (currentIndex < itemCount - 1 || lazyListState.canScrollForward) -> {
                 if (lazyListState.canScrollForward) {
-                    val fraction = ((draggedBottom - (viewportHeight - scrollThreshold)) / scrollThreshold).coerceIn(0.35f, 2.0f)
+                    val fraction =
+                        ((draggedBottom - (viewportHeight - scrollThreshold)) / scrollThreshold).coerceIn(
+                            0.35f, 2.0f
+                        )
                     maxScrollSpeed * fraction
-                } else {
-                    0f
-                }
+                } else 0f
             }
+
             else -> 0f
         }
 
         if (scrollDelta != 0f) {
             lazyListState.scrollBy(scrollDelta)
-            // 列表平滑滚动时，滚动位移无缝驱动跨项排序更新
-            onDrag(
-                dragAmount = scrollDelta,
-                itemCount = itemCount,
-                minIndex = minIndex,
-                canScrollBackward = lazyListState.canScrollBackward,
-                canScrollForward = lazyListState.canScrollForward
-            )
+            // 列表平滑滚动时，滚动位移无缝驱动跨项排序更新（直接调用，无需协程）
+            onDrag(dragAmount = scrollDelta, itemCount = itemCount)
             return true
         }
         return false
     }
 
     /**
-     * 拖拽结束或取消时的即时完全复位清理逻辑，确保卡片平稳回落槽位
+     * 拖拽结束时的平滑弹簧回落归位逻辑。
+     *
+     * 使用局部 [Animatable] 从当前偏移值开始弹簧动画至 0，
+     * 每帧通过 block 回调同步更新 [_dragOffset]，驱动 graphicsLayer 重绘。
+     * 动画完成后清除拖拽状态，避免提前清除导致视觉闪烁。
      */
-    fun onDragInterrupted() {
+    suspend fun onDragInterrupted() {
+        val startValue = _dragOffset.floatValue
+        if (startValue != 0f) {
+            // 局部 Animatable 做弹簧回弹，每帧同步更新 _dragOffset 驱动重绘
+            Animatable(startValue).animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            ) {
+                _dragOffset.floatValue = value
+            }
+        }
+        // 动画完成后清除拖拽状态，避免提前清除导致视觉闪烁
+        _dragOffset.floatValue = 0f
         draggingItemKey = null
         draggingItemIndex = null
-        draggingItemOffset = 0f
     }
 }
+
 
 /**
  * 创建并记住城市列表拖拽排序状态实例
@@ -291,12 +306,12 @@ fun rememberDragDropListState(onMove: (Int, Int) -> Unit): DragDropListState {
  *
  * 严格对齐设计要求：
  * 1. 背景色由当前天气主页色动态驱动、全屏沉浸式展示；
- * 2. 顶部提供“排序 / 完成”切换入口，支持直观的城市顺序拖拽排序；
+ * 2. 顶部提供"排序 / 完成"切换入口，支持直观的城市顺序拖拽排序；
  * 3. 在排序模式下，每张城市卡片右侧展示拖动排序小图标，按住即可上下拖拽实时调整城市位置；
  * 4. 普通模式下向左滑动卡片露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
- * 5. 点击该方块切换为深红棕色“✓”对勾图标（代表确定删除状态）；
- * 6. 再次点击“✓”对勾执行删除，并弹出底部“撤销”按钮；
- * 7. 底部提供“+ 添加城市”操作入口。
+ * 5. 点击该方块切换为深红棕色"✓"对勾图标（代表确定删除状态）；
+ * 6. 再次点击"✓"对勾执行删除，并弹出底部"撤销"按钮；
+ * 7. 底部提供"+ 添加城市"操作入口。
  *
  * @param visible 是否展开显示
  * @param weatherText 当前主页天气现象文本（用于动态驱动背景色）
@@ -306,7 +321,7 @@ fun rememberDragDropListState(onMove: (Int, Int) -> Unit): DragDropListState {
  * @param onDeleteCity 删除指定城市时的回调
  * @param onRestoreCity 撤销删除并恢复城市时的回调
  * @param onMoveCity 调整城市显示顺序时的回调
- * @param onAddCityClick 点击底部“添加城市”按钮时的回调
+ * @param onAddCityClick 点击底部"添加城市"按钮时的回调
  * @param onBackClick 点击返回按钮时的回调
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -328,10 +343,8 @@ fun CityManagementFullScreen(
     val lazyListState = rememberLazyListState()
     var isReorderMode by remember { mutableStateOf(false) }
 
-    // 自动定位城市固定首行相关限制计算
-    val hasAutoCity = savedCities.firstOrNull()?.isAutoLocated == true
-    val minReorderIndex = if (hasAutoCity) 1 else 0
-    val canReorder = if (hasAutoCity) savedCities.size >= 3 else savedCities.size >= 2
+    // 排序能力判断（保存城市数量 >= 2 时支持自由拖拽排序）
+    val canReorder = savedCities.size >= 2
 
     // 拖拽排序状态管理
     val density = LocalDensity.current
@@ -346,8 +359,7 @@ fun CityManagementFullScreen(
         while (dragDropState.draggingItemKey == currentKey) {
             val scrolled = dragDropState.checkAndAutoScroll(
                 lazyListState = lazyListState,
-                itemCount = savedCities.size,
-                minIndex = minReorderIndex
+                itemCount = savedCities.size
             )
             if (scrolled) {
                 kotlinx.coroutines.delay(16)
@@ -387,11 +399,17 @@ fun CityManagementFullScreen(
         visible = visible,
         enter = slideInHorizontally(
             initialOffsetX = { -it },
-            animationSpec = tween(durationMillis = 280, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            animationSpec = tween(
+                durationMillis = 280,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing
+            )
         ),
         exit = slideOutHorizontally(
             targetOffsetX = { -it },
-            animationSpec = tween(durationMillis = 260, easing = androidx.compose.animation.core.FastOutLinearInEasing)
+            animationSpec = tween(
+                durationMillis = 260,
+                easing = androidx.compose.animation.core.FastOutLinearInEasing
+            )
         )
     ) {
         Box(
@@ -419,7 +437,7 @@ fun CityManagementFullScreen(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp)
             ) {
-                // 顶部导航栏：返回按钮、“管理城市”标题 与 “排序/完成”切换按钮
+                // 顶部导航栏：返回按钮、"管理城市"标题 与 "排序/完成"切换按钮
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -459,7 +477,9 @@ fun CityManagementFullScreen(
                     if (canReorder) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = if (isReorderMode) Color(0xFF64B5F6).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.18f),
+                            color = if (isReorderMode) Color(0xFF64B5F6).copy(alpha = 0.35f) else Color.White.copy(
+                                alpha = 0.18f
+                            ),
                             modifier = Modifier.clickable {
                                 isReorderMode = !isReorderMode
                             }
@@ -480,6 +500,10 @@ fun CityManagementFullScreen(
                 // 城市卡片列表 (支持排序模式拖动排序与普通模式向左滑动删除，支持边缘自动滚动)
                 LazyColumn(
                     state = lazyListState,
+                    // 排序模式下禁用用户手势滚动，防止 LazyColumn 向上滚动手势
+                    // 与拖拽 handle 的 detectDragGestures 竞争（导致向上拖动卡住）
+                    // lazyListState.scrollBy() 的程序化自动滚动不受影响
+                    userScrollEnabled = !isReorderMode,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
@@ -501,19 +525,26 @@ fun CityManagementFullScreen(
                             canDelete = canDelete,
                             isReorderMode = isReorderMode,
                             isDragging = isDragging,
-                            dragOffsetY = if (isDragging) dragDropState.draggingItemOffset else 0f,
-                            onDragStart = { dragDropState.onDragStart(city.getCacheKey(), index) },
+                            dragDropState = dragDropState,
+                            onDragStart = {
+                                dragDropState.onDragStart(city.getCacheKey(), index)
+                            },
                             onDrag = { amount ->
                                 dragDropState.onDrag(
                                     dragAmount = amount,
-                                    itemCount = savedCities.size,
-                                    minIndex = minReorderIndex,
-                                    canScrollBackward = lazyListState.canScrollBackward,
-                                    canScrollForward = lazyListState.canScrollForward
+                                    itemCount = savedCities.size
                                 )
                             },
-                            onDragEnd = { dragDropState.onDragInterrupted() },
-                            onDragCancel = { dragDropState.onDragInterrupted() },
+                            onDragEnd = {
+                                coroutineScope.launch {
+                                    dragDropState.onDragInterrupted()
+                                }
+                            },
+                            onDragCancel = {
+                                coroutineScope.launch {
+                                    dragDropState.onDragInterrupted()
+                                }
+                            },
                             onClick = {
                                 if (!isReorderMode) {
                                     onCityClick(index)
@@ -551,7 +582,7 @@ fun CityManagementFullScreen(
                     }
                 }
 
-                // 底部居中“+ 添加城市”操作按钮 (排序模式下隐藏，界面更专注)
+                // 底部居中"+ 添加城市"操作按钮 (排序模式下隐藏，界面更专注)
                 if (!isReorderMode) {
                     Box(
                         modifier = Modifier
@@ -586,7 +617,7 @@ fun CityManagementFullScreen(
                 }
             }
 
-            // 底部“撤销删除”毛玻璃 Snackbar 提示条
+            // 底部"撤销删除"毛玻璃 Snackbar 提示条
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
@@ -612,15 +643,21 @@ fun CityManagementFullScreen(
  * 严格对齐设计与交互要求：
  * 1. 排序模式下：右侧展示拖动排序小图标，按住图标即可上下实时拖拽卡片调整位置；
  * 2. 默认模式下：卡片完全闭合，向左滑动露出浅珊瑚粉色大圆角方块（深红棕色垃圾桶图标）；
- * 3. 首次点击该方块切换为“✓”对勾图标（代表确定删除状态）；
- * 4. 再次点击“✓”对勾执行删除，并弹出底部撤销 Snackbar。
+ * 3. 首次点击该方块切换为"✓"对勾图标（代表确定删除状态）；
+ * 4. 再次点击"✓"对勾执行删除，并弹出底部撤销 Snackbar。
+ *
+ * 性能重构说明：
+ * - 不再接收 `dragOffsetY: Float` 参数（避免每帧传入 Compose State 触发重组）。
+ * - 改为接收 [DragDropListState] 引用，在 `graphicsLayer { }` lambda 内直接读取
+ *   `dragDropState.dragOffset`，仅触发 RenderNode 重绘，不触发 Recomposition。
+ * - 移除原 `animateFloatAsState` 对拖拽偏移的二次弹簧插值，消除跟手延迟感。
  *
  * @param city 城市信息 [CityInfo]
  * @param weather 城市天气数据 [WeatherData]
  * @param canDelete 是否允许删除
  * @param isReorderMode 是否处于城市排序调整模式
  * @param isDragging 是否当前正在被拖拽
- * @param dragOffsetY 当前拖拽时的 Y 轴像素偏移量
+ * @param dragDropState 拖拽排序状态实例，用于在 graphicsLayer 内直接读取偏移，避免重组
  * @param onDragStart 拖拽手势开始回调
  * @param onDrag 拖拽手势位移回调
  * @param onDragEnd 拖拽手势正常结束回调
@@ -636,7 +673,7 @@ private fun SwipeableCityCard(
     canDelete: Boolean,
     isReorderMode: Boolean = false,
     isDragging: Boolean = false,
-    dragOffsetY: Float = 0f,
+    dragDropState: DragDropListState,
     onDragStart: () -> Unit = {},
     onDrag: (Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
@@ -683,26 +720,22 @@ private fun SwipeableCityCard(
     val currentOffset = offsetX.value
     val revealProgress = (-currentOffset / totalRevealPx).coerceIn(0f, 1f)
 
-    val animatedDragOffsetY by animateFloatAsState(
-        targetValue = if (isDragging) dragOffsetY else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "dragOffsetY"
-    )
-
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(86.dp)
             .graphicsLayer {
-                val currentDragY = if (isDragging) dragOffsetY else animatedDragOffsetY
-                if (isDragging || currentDragY != 0f) {
-                    translationY = currentDragY
-                    val scale = if (isDragging) 1.02f else 1.0f
-                    scaleX = scale
-                    scaleY = scale
+                // 核心修复：必须在 else 分支将 translationY 和 scale 严格归零/复位，
+                // 否则当 isDragging 变为 false 时，RenderNode 会永久残留上一帧的偏移量，
+                // 导致卡片脱离原本槽位悬在下方、在列表中间留下大片空白。
+                if (isDragging) {
+                    translationY = dragDropState.dragOffset
+                    scaleX = 1.02f
+                    scaleY = 1.02f
+                } else {
+                    translationY = 0f
+                    scaleX = 1.0f
+                    scaleY = 1.0f
                 }
             }
     ) {
@@ -786,7 +819,8 @@ private fun SwipeableCityCard(
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
                             coroutineScope.launch {
-                                val nextOffset = (offsetX.value + dragAmount).coerceIn(-totalRevealPx * 1.05f, 0f)
+                                val nextOffset =
+                                    (offsetX.value + dragAmount).coerceIn(-totalRevealPx * 1.05f, 0f)
                                 offsetX.snapTo(nextOffset)
                             }
                         }
@@ -921,14 +955,18 @@ private fun SavedCitySkyCard(
                     )
                 }
 
-                // 排序模式下展示右侧可拖拽排序小图标 (自动定位城市固定在首行，不允许拖拽移动)
-                if (isReorderMode && !city.isAutoLocated) {
+                // 排序模式下展示右侧可拖拽排序小图标 (所有城市均支持拖拽移动调整顺序)
+                if (isReorderMode) {
                     Surface(
                         shape = CircleShape,
-                        color = if (isDragging) Color(0xFF64B5F6).copy(alpha = 0.45f) else Color.White.copy(alpha = 0.22f),
+                        color = if (isDragging) Color(0xFF64B5F6).copy(alpha = 0.45f) else Color.White.copy(
+                            alpha = 0.22f
+                        ),
                         modifier = Modifier
                             .size(42.dp)
                             .pointerInput(city.getCacheKey()) {
+                                // 在 pointerInput 协程内直接调用 suspend 版本的拖拽回调，
+                                // 避免通过 Compose State 传递偏移值。
                                 detectDragGestures(
                                     onDragStart = { currentOnDragStart() },
                                     onDragEnd = { currentOnDragEnd() },

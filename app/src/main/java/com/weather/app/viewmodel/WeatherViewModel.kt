@@ -456,17 +456,15 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     /**
      * 调整城市在列表中的显示顺序并持久化保存
      *
-     * 保证当首行为自动定位城市时，自动定位城市永远固定在第 0 位不可移动，其余城市仅在索引 1 及之后范围内调整顺序。
+     * 支持包含自动定位城市在内的所有城市参与自由拖拽排序。
      *
      * @param fromIndex 原位置索引
      * @param toIndex 目标位置索引
      */
     fun moveCity(fromIndex: Int, toIndex: Int) {
         val currentList = _uiState.value.savedCities.toMutableList()
-        val hasAutoCity = currentList.firstOrNull()?.isAutoLocated == true
-        val minIndex = if (hasAutoCity) 1 else 0
 
-        if (fromIndex in minIndex until currentList.size && toIndex in minIndex until currentList.size && fromIndex != toIndex) {
+        if (fromIndex in 0 until currentList.size && toIndex in 0 until currentList.size && fromIndex != toIndex) {
             val item = currentList.removeAt(fromIndex)
             currentList.add(toIndex, item)
             repository.saveSavedCities(currentList)
