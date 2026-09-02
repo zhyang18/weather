@@ -294,8 +294,8 @@
                     minZoom: 3
                 });
 
-                // 卫星路网与地标 POI 覆盖层 (高德 2x 高清标注图层)
-                satelliteLabelLayer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}', {
+                // 卫星路网与地标 POI 覆盖层 (高德透明标注图层，包含路网与中文注记，不会遮挡底部的卫星遥感影像)
+                satelliteLabelLayer = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
                     subdomains: '1234',
                     maxZoom: 18,
                     minZoom: 3
