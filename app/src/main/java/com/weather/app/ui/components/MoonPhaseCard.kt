@@ -298,29 +298,31 @@ private fun MiniMoonPhaseIcon(
 
             val brightPath = Path().apply {
                 if (p in 0.02f..0.48f) {
-                    // 渐盈阶段（上弦、峨眉月、凸月）：右半侧亮
+                    // 渐盈阶段（娥眉月、上弦月、渐盈凸月）：右半侧亮
                     val rx = (kotlin.math.abs(k) * r).coerceAtLeast(0.01f)
                     val termRect = Rect(c.x - rx, c.y - r, c.x + rx, c.y + r)
+                    // 1. 从顶部 (-90°) 顺时针沿外圆右半边画到底部 (90°)
                     arcTo(outerRect, -90f, 180f, false)
                     if (k > 0f) {
-                        // 峨眉月（亮面小于半圆）：晨昏线向右鼓起
-                        arcTo(termRect, 90f, 180f, false)
-                    } else {
-                        // 凸月（亮面大于半圆）：晨昏线向左凹入
+                        // 娥眉月（亮面小于半圆）：晨昏线向右鼓起，从底部逆时针经右侧回到顶部
                         arcTo(termRect, 90f, -180f, false)
+                    } else {
+                        // 渐盈凸月（亮面大于半圆）：晨昏线向左凹入，从底部顺时针经左侧回到顶部
+                        arcTo(termRect, 90f, 180f, false)
                     }
                     close()
                 } else if (p in 0.52f..0.98f) {
-                    // 渐亏阶段（下弦、亏凸月、残月）：左半侧亮
+                    // 渐亏阶段（渐亏凸月、下弦月、残月）：左半侧亮
                     val rx = (kotlin.math.abs(k) * r).coerceAtLeast(0.01f)
                     val termRect = Rect(c.x - rx, c.y - r, c.x + rx, c.y + r)
+                    // 1. 从底部 (90°) 顺时针沿外圆左半边画到顶部 (270°)
                     arcTo(outerRect, 90f, 180f, false)
                     if (k > 0f) {
-                        // 残月（亮面小于半圆）：晨昏线向左鼓起
-                        arcTo(termRect, 270f, 180f, false)
-                    } else {
-                        // 亏凸月（亮面大于半圆）：晨昏线向右凹入
+                        // 残月（亮面小于半圆）：晨昏线向左鼓起，从顶部逆时针经左侧回到底部
                         arcTo(termRect, 270f, -180f, false)
+                    } else {
+                        // 渐亏凸月（亮面大于半圆）：晨昏线向右凹入，从顶部顺时针经右侧回到底部
+                        arcTo(termRect, 270f, 180f, false)
                     }
                     close()
                 }
