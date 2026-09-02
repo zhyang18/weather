@@ -236,11 +236,11 @@ class WeatherRepository(
      * @return 当前生效的定位展示模式 [com.weather.app.model.LocationDisplayMode]
      */
     fun getLocationDisplayMode(): com.weather.app.model.LocationDisplayMode {
-        val name = prefs.getString(KEY_LOCATION_DISPLAY_MODE, com.weather.app.model.LocationDisplayMode.LANDMARK.name)
+        val name = prefs.getString(KEY_LOCATION_DISPLAY_MODE, com.weather.app.model.LocationDisplayMode.DISTRICT.name)
         return try {
-            com.weather.app.model.LocationDisplayMode.valueOf(name ?: com.weather.app.model.LocationDisplayMode.LANDMARK.name)
+            com.weather.app.model.LocationDisplayMode.valueOf(name ?: com.weather.app.model.LocationDisplayMode.DISTRICT.name)
         } catch (e: Exception) {
-            com.weather.app.model.LocationDisplayMode.LANDMARK
+            com.weather.app.model.LocationDisplayMode.DISTRICT
         }
     }
 
@@ -369,11 +369,9 @@ class WeatherRepository(
                 }
             } catch (_: Exception) {}
         }
-        // 初始默认城市列表
+        // 初始默认城市列表：仅保留首个自动定位项，启动后由系统定位动态加载
         val defaultList = listOf(
-            CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true),
-            CityInfo(code = "CxOWZ", name = "南京", province = "江苏省"),
-            CityInfo(code = "WwcJd", name = "上海", province = "上海市")
+            CityInfo(code = "", name = "当前位置", province = "", isAutoLocated = true)
         )
         saveSavedCities(defaultList)
         return defaultList
@@ -407,24 +405,27 @@ class WeatherRepository(
     }
 
     /**
-     * 从保存列表中移除指定城市
+     * 从保存列表中移除指定城市（自动定位城市受保护，禁止删除）
      *
      * @param city 待移除的城市信息 [CityInfo]
      * @return 更新后的完整城市列表
      */
     fun removeCity(city: CityInfo): List<CityInfo> {
         val safeCity = city.sanitize()
+        if (safeCity.isAutoLocated) {
+            return getSavedCities()
+        }
         val current = getSavedCities().toMutableList()
-        current.removeAll { it.name == safeCity.name && it.code == safeCity.code }
+        current.removeAll { (it.name == safeCity.name && it.code == safeCity.code) || (!it.isAutoLocated && it.name == safeCity.name) }
         if (current.isEmpty()) {
-            current.add(CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true))
+            current.add(CityInfo(code = "", name = "当前位置", province = "", isAutoLocated = true))
         }
         saveSavedCities(current)
         return current
     }
 
     /**
-     * 在指定位置恢复/插入城市（支持删除后撤销恢复）
+     * 在指定位置恢复/插入城市（支持删除后撤销恢复，自动定位城市永远保留在首行）
      *
      * @param index 插入目标索引
      * @param city 待恢复的城市信息 [CityInfo]
@@ -433,7 +434,9 @@ class WeatherRepository(
     fun insertCity(index: Int, city: CityInfo): List<CityInfo> {
         val safeCity = city.sanitize()
         val current = getSavedCities().toMutableList()
-        val safeIndex = index.coerceIn(0, current.size)
+        val hasAutoCity = current.firstOrNull()?.isAutoLocated == true
+        val minIndex = if (hasAutoCity && !safeCity.isAutoLocated) 1 else 0
+        val safeIndex = index.coerceIn(minIndex, current.size)
         if (current.none { it.name == safeCity.name && it.code == safeCity.code }) {
             current.add(safeIndex, safeCity)
             saveSavedCities(current)
@@ -442,22 +445,18 @@ class WeatherRepository(
     }
 
     /**
-     * 更新保存列表中的定位城市信息
+     * 更新保存列表中的定位城市信息（确保始终保持在列表首行）
      *
      * @param locatedCity 最新识别到的定位城市 [CityInfo]
      * @return 更新后的城市列表
      */
     fun updateAutoLocatedCity(locatedCity: CityInfo): List<CityInfo> {
-        val safeCity = locatedCity.sanitize()
+        val safeCity = locatedCity.sanitize().copy(isAutoLocated = true)
         val current = getSavedCities().toMutableList()
-        val existingIndex = current.indexOfFirst { it.isAutoLocated }
-        if (existingIndex != -1) {
-            current[existingIndex] = safeCity.copy(isAutoLocated = true)
-        } else {
-            current.add(0, safeCity.copy(isAutoLocated = true))
-        }
-        saveSavedCities(current)
-        return current
+        val withoutAuto = current.filterNot { it.isAutoLocated }.toMutableList()
+        withoutAuto.add(0, safeCity)
+        saveSavedCities(withoutAuto)
+        return withoutAuto
     }
 
     /**
@@ -501,7 +500,7 @@ class WeatherRepository(
         // 2. 硬件定位获取失败时的防漂移保护：
         // 若已有真实定位城市记录，优先保留已有真实城市；仅在冷启动且完全无历史记录时才允许外网 IP 首次推荐
         if (locatedCity == null) {
-            if (existingAutoCity != null && (existingAutoCity.latitude != null || existingAutoCity.name.isNotEmpty())) {
+            if (existingAutoCity != null && (existingAutoCity.latitude != null || (existingAutoCity.name.isNotEmpty() && existingAutoCity.name != "当前位置"))) {
                 locatedCity = existingAutoCity
             } else {
                 val ipLocateResult = currentSource.autoLocate()
@@ -510,7 +509,7 @@ class WeatherRepository(
         }
 
         // 3. 更新已保存城市列表中的定位城市
-        val targetCity = locatedCity ?: existingAutoCity ?: getSavedCities().firstOrNull() ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市", isAutoLocated = true)
+        val targetCity = locatedCity ?: existingAutoCity ?: getSavedCities().firstOrNull() ?: CityInfo(code = "", name = "当前位置", province = "", isAutoLocated = true)
         updateAutoLocatedCity(targetCity)
 
         // 4. 获取目标城市的天气数据并回写可靠气象站点编码

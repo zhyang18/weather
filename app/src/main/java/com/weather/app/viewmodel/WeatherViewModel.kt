@@ -70,7 +70,7 @@ data class WeatherUiState(
     val showSourceDialog: Boolean = false,
     val showAddCityDialog: Boolean = false,
     val isDailyChartMode: Boolean = true,
-    val locationDisplayMode: com.weather.app.model.LocationDisplayMode = com.weather.app.model.LocationDisplayMode.LANDMARK,
+    val locationDisplayMode: com.weather.app.model.LocationDisplayMode = com.weather.app.model.LocationDisplayMode.DISTRICT,
     val showLocationSettings: Boolean = false,
     val autoUpdateIntervalMinutes: Int = 60,
     val autoUpdateIntervalHours: Int = 1,
@@ -107,7 +107,7 @@ data class WeatherUiState(
      */
     fun getCurrentCity(): CityInfo {
         return savedCities.getOrNull(currentCityIndex)
-            ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市")
+            ?: CityInfo(code = "", name = "当前位置", province = "", isAutoLocated = true)
     }
 
     /**
@@ -456,12 +456,17 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     /**
      * 调整城市在列表中的显示顺序并持久化保存
      *
+     * 保证当首行为自动定位城市时，自动定位城市永远固定在第 0 位不可移动，其余城市仅在索引 1 及之后范围内调整顺序。
+     *
      * @param fromIndex 原位置索引
      * @param toIndex 目标位置索引
      */
     fun moveCity(fromIndex: Int, toIndex: Int) {
         val currentList = _uiState.value.savedCities.toMutableList()
-        if (fromIndex in currentList.indices && toIndex in currentList.indices && fromIndex != toIndex) {
+        val hasAutoCity = currentList.firstOrNull()?.isAutoLocated == true
+        val minIndex = if (hasAutoCity) 1 else 0
+
+        if (fromIndex in minIndex until currentList.size && toIndex in minIndex until currentList.size && fromIndex != toIndex) {
             val item = currentList.removeAt(fromIndex)
             currentList.add(toIndex, item)
             repository.saveSavedCities(currentList)

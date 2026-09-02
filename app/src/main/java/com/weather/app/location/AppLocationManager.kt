@@ -82,10 +82,11 @@ class AppLocationManager(private val context: Context) {
      * 异步获取设备当前地理位置经纬度
      *
      * 采用分级收敛策略：
-     * 1. 当 [forceRefresh] 为 false 时，若存在 30 秒内的极新鲜历史定位则秒级直接复用；
+     * 1. 当 [forceRefresh] 为 false 时，若存在 60 秒内的极新鲜历史定位则秒级直接复用；
      * 2. 并发向 GPS、Network、Fused 等所有可用硬件与网络提供商注册单次高频定位监听；
-     * 3. 收到高精度定位（GPS <= 80m 或 任意 <= 40m）时立即快速返回；
-     * 4. 若 4.5 秒内未达到极致精度，优先返回监听期间收到的最佳实时候选坐标；若无任何实时更新则安全回退至系统最近历史位置，杜绝定位失败漂移。
+     * 3. 收到高精度定位（任意提供商 <= 100m）时立即快速返回，彻底消除室内无 GPS 搜星时的长时间等待；
+     * 4. 收到中等精度定位候选（<= 300m）时在短暂观察后快速收敛返回；
+     * 5. 若 3.0 秒内未达到极致精度，优先返回监听期间收到的最佳实时候选坐标；若无任何实时更新则安全回退至系统最近历史位置，杜绝定位失败漂移。
      *
      * @param forceRefresh 是否强制触发实时定位更新（为 true 时发起实时硬件与基站网络搜寻）
      * @return 包含系统最新位置对象的 [Location] 或 null（未授权或硬件定位功能彻底关闭）
@@ -98,8 +99,8 @@ class AppLocationManager(private val context: Context) {
 
         val bestLastKnown = getBestLastKnownLocation()
 
-        // 非强制刷新模式下，仅当最后已知位置在 30 秒内（极新鲜）时才予以复用
-        if (!forceRefresh && bestLastKnown != null && System.currentTimeMillis() - bestLastKnown.time < 30 * 1000) {
+        // 非强制刷新模式下，若最后已知位置在 60 秒内且精度良好（<= 150m）则秒级直接复用
+        if (!forceRefresh && bestLastKnown != null && (System.currentTimeMillis() - bestLastKnown.time < 60 * 1000) && bestLastKnown.accuracy <= 150f) {
             return@withContext bestLastKnown
         }
 
@@ -124,8 +125,8 @@ class AppLocationManager(private val context: Context) {
 
         var bestCandidate: Location? = null
 
-        // 实时并发请求最新高精度定位（4.5 秒超时窗口，兼顾搜星响应速度与用户交互流畅性）
-        val liveLocation = withTimeoutOrNull(4500) {
+        // 实时并发请求最新定位（3.0 秒超时窗口，兼顾搜星响应速度与用户交互流畅性）
+        val liveLocation = withTimeoutOrNull(3000) {
             suspendCancellableCoroutine { continuation ->
                 var isResumed = false
 
@@ -135,12 +136,9 @@ class AppLocationManager(private val context: Context) {
                             if (isResumed) return
 
                             val accuracy = location.accuracy
-                            val isGps = location.provider == LocationManager.GPS_PROVIDER
 
-                            // 满足以下极高精度条件之一即可立即采纳并返回：
-                            // 1. GPS 定位且精度优于 80 米；
-                            // 2. 任意提供商（包括 Wi-Fi/网络定位）精度优于 40 米。
-                            if ((isGps && accuracy in 0.0f..80.0f) || (accuracy in 0.0f..40.0f)) {
+                            // 满足高精度条件（任意提供商 accuracy <= 100m）即可立即采纳并返回，极速响应室内网络/Wi-Fi 定位
+                            if (accuracy in 0.0f..100.0f) {
                                 isResumed = true
                                 locationManager.removeUpdates(this)
                                 if (continuation.isActive) {
@@ -152,6 +150,15 @@ class AppLocationManager(private val context: Context) {
                             // 暂存当前最新候选位置（保留精度最高者）
                             if (bestCandidate == null || accuracy < (bestCandidate?.accuracy ?: Float.MAX_VALUE)) {
                                 bestCandidate = location
+                            }
+
+                            // 针对室内弱信号场景：若已收到中等精度候选（<= 300m），无需死等 GPS 搜星，直接快速采纳
+                            if (accuracy in 0.0f..300.0f) {
+                                isResumed = true
+                                locationManager.removeUpdates(this)
+                                if (continuation.isActive) {
+                                    continuation.resume(location)
+                                }
                             }
                         }
                     }
@@ -184,7 +191,7 @@ class AppLocationManager(private val context: Context) {
             }
         }
 
-        // 1. 优先采用秒级收敛的极高精度实时定位
+        // 1. 优先采用秒级收敛的实时定位
         if (liveLocation != null) {
             return@withContext liveLocation
         }
@@ -213,7 +220,7 @@ class AppLocationManager(private val context: Context) {
     suspend fun reverseGeocode(
         latitude: Double,
         longitude: Double,
-        displayMode: com.weather.app.model.LocationDisplayMode = com.weather.app.model.LocationDisplayMode.LANDMARK
+        displayMode: com.weather.app.model.LocationDisplayMode = com.weather.app.model.LocationDisplayMode.DISTRICT
     ): CityInfo? = withContext(Dispatchers.IO) {
         try {
             if (!Geocoder.isPresent()) {
@@ -222,8 +229,10 @@ class AppLocationManager(private val context: Context) {
             }
 
             val geocoder = Geocoder(context, Locale.CHINA)
-            @Suppress("DEPRECATION")
-            val addresses = geocoder.getFromLocation(latitude, longitude, 1)
+            val addresses = withTimeoutOrNull(2500) {
+                @Suppress("DEPRECATION")
+                geocoder.getFromLocation(latitude, longitude, 1)
+            }
 
             if (!addresses.isNullOrEmpty()) {
                 val address = addresses[0]

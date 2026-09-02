@@ -282,7 +282,7 @@ fun WeatherScreen(
                 // 在 Pager 内部稳定读取页面所需的城市与天气数据，避免父级重组传染
                 val pageCity = remember(uiState.savedCities, page) {
                     uiState.savedCities.getOrNull(page)
-                        ?: CityInfo(code = "Wqsps", name = "北京", province = "北京市")
+                        ?: CityInfo(code = "", name = "当前位置", province = "", isAutoLocated = true)
                 }
                 val pageWeather = remember(stableWeatherCache, pageCity) {
                     uiState.getWeatherForCity(pageCity)

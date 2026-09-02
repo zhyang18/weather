@@ -481,7 +481,32 @@ class WeatherDataSourceTest {
         // 3. 验证两个站点的编码严格不同
         org.junit.Assert.assertNotEquals(longgangData.city.code, nanjingData.city.code)
     }
+
+    /**
+     * 测试定位城市在默认未传参情况下调用 getDisplayName 时优先展示区县名称
+     */
+    @Test
+    fun testDefaultLocationDisplayModeIsDistrict() {
+        val city = CityInfo(
+            code = "Dfezs",
+            name = "龙港科技园",
+            province = "江苏省",
+            district = "江宁区",
+            landmark = "龙港科技园",
+            parentCity = "南京市",
+            isAutoLocated = true
+        )
+
+        // 默认未显式传入 LocationDisplayMode 时，应遵循默认区县模式返回 "江宁区"
+        val defaultDisplayName = city.getDisplayName()
+        assertEquals("江宁区", defaultDisplayName)
+
+        // 显式指定 LANDMARK 模式时返回地标
+        val landmarkDisplayName = city.getDisplayName(com.weather.app.model.LocationDisplayMode.LANDMARK)
+        assertEquals("龙港科技园", landmarkDisplayName)
+
+        // 显式指定 DISTRICT 模式时返回区县
+        val districtDisplayName = city.getDisplayName(com.weather.app.model.LocationDisplayMode.DISTRICT)
+        assertEquals("江宁区", districtDisplayName)
+    }
 }
-
-
-

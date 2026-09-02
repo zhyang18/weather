@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -19,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +37,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -72,6 +76,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,7 +89,7 @@ import kotlin.math.roundToInt
 /**
  * 城市列表拖拽排序状态管理类
  *
- * 负责管理拖拽过程中的当前选中项标识与索引、Y 轴实时位移累加以及跨项位置交换判定。
+ * 负责管理拖拽过程中的当前选中项标识与索引、Y 轴实时位移累加、带滞后回差防抖的跨项位置交换判定以及列表边缘平滑自动滚动。
  *
  * @property onMove 发生跨项调换时的回调函数，参数分别为原位置索引和目标位置索引
  */
@@ -104,7 +109,7 @@ class DragDropListState(
         private set
 
     /**
-     * 被拖拽项相对于初始位置的 Y 轴实时像素偏移量
+     * 被拖拽项相对于当前所在槽位的 Y 轴实时像素偏移量
      */
     var draggingItemOffset by mutableStateOf(0f)
         private set
@@ -128,7 +133,7 @@ class DragDropListState(
      * 拖拽手势开始时的初始化处理
      *
      * @param key 当前被按住拖拽的城市卡片唯一标识键
-     * @param index 当前被按住拖拽的城市卡片索引
+     * @param index 当前被按住拖拽的城市卡片初始索引
      */
     fun onDragStart(key: String, index: Int) {
         draggingItemKey = key
@@ -137,30 +142,131 @@ class DragDropListState(
     }
 
     /**
-     * 拖拽过程中的手势位移累加与跨项交换判定
+     * 拖拽手势移动过程中的位移累加与跨项交换判定
      *
-     * @param dragAmount 本次手势的 Y 轴移动增量像素值
+     * 采用严格的对称 0.5 步长判定阈值，确保交换后残留位移严格落在安全死区内，从数学上杜绝反向误触发与悬空卡住。
+     *
+     * @param dragAmount 本次手势或滚动的 Y 轴移动增量像素值
      * @param itemCount 城市列表总数量
+     * @param minIndex 允许移动到的最小索引（首行为自动定位城市时为 1，否则为 0）
+     * @param canScrollBackward 列表当前是否还能向上滚动
+     * @param canScrollForward 列表当前是否还能向下滚动
      */
-    fun onDrag(dragAmount: Float, itemCount: Int) {
-        val currentIndex = draggingItemIndex ?: return
-        draggingItemOffset += dragAmount
-
+    fun onDrag(
+        dragAmount: Float,
+        itemCount: Int,
+        minIndex: Int = 0,
+        canScrollBackward: Boolean = false,
+        canScrollForward: Boolean = false
+    ) {
+        var newOffset = draggingItemOffset + dragAmount
         val stepHeight = if (itemHeightPx > 0f) itemHeightPx else 1f
-        val deltaIndex = (draggingItemOffset / stepHeight).roundToInt()
-        if (deltaIndex != 0) {
-            val targetIndex = (currentIndex + deltaIndex).coerceIn(0, itemCount - 1)
-            if (targetIndex != currentIndex) {
-                onMove(currentIndex, targetIndex)
-                draggingItemIndex = targetIndex
-                // 扣除已交换项对应的步长位移，确保被拖拽卡片紧随手指不发生跳动
-                draggingItemOffset -= (targetIndex - currentIndex) * stepHeight
-            }
+        val threshold = stepHeight * 0.50f
+
+        // 向上拖拽交换判定 (超过半个卡片高度立即交换并补偿步长)
+        while (newOffset < -threshold && draggingItemIndex != null && draggingItemIndex!! > minIndex) {
+            val currentIdx = draggingItemIndex!!
+            val targetIndex = currentIdx - 1
+            onMove(currentIdx, targetIndex)
+            draggingItemIndex = targetIndex
+            newOffset += stepHeight
         }
+
+        // 向下拖拽交换判定 (超过半个卡片高度立即交换并补偿步长)
+        while (newOffset > threshold && draggingItemIndex != null && draggingItemIndex!! < itemCount - 1) {
+            val currentIdx = draggingItemIndex!!
+            val targetIndex = currentIdx + 1
+            onMove(currentIdx, targetIndex)
+            draggingItemIndex = targetIndex
+            newOffset -= stepHeight
+        }
+
+        // 边界限制：到达列表最顶端(minIndex)或最底端且无法滚动时，位移严格锁定为 0f，确保紧贴列表槽位，彻底杜绝悬空卡住
+        val currentIdx = draggingItemIndex ?: 0
+        if (currentIdx <= minIndex && !canScrollBackward && newOffset < 0f) {
+            newOffset = 0f
+        } else if (currentIdx >= itemCount - 1 && !canScrollForward && newOffset > 0f) {
+            newOffset = 0f
+        } else {
+            newOffset = newOffset.coerceIn(-stepHeight * 0.85f, stepHeight * 0.85f)
+        }
+
+        draggingItemOffset = newOffset
     }
 
     /**
-     * 拖拽结束或取消时的重置清理逻辑
+     * 检查拖拽项是否处于列表边缘并执行平滑自动滚动与同步排序
+     *
+     * @param lazyListState 列表滚动状态实例 [LazyListState]
+     * @param itemCount 城市列表总数量
+     * @param minIndex 允许移动到的最小索引
+     * @return 若执行了自动滚动则返回 true，否则返回 false
+     */
+    suspend fun checkAndAutoScroll(
+        lazyListState: LazyListState,
+        itemCount: Int,
+        minIndex: Int
+    ): Boolean {
+        val key = draggingItemKey ?: return false
+        val currentIndex = draggingItemIndex ?: return false
+        val layoutInfo = lazyListState.layoutInfo
+        val visibleItems = layoutInfo.visibleItemsInfo
+        val stepHeight = if (itemHeightPx > 0f) itemHeightPx else 1f
+        val viewportHeight = layoutInfo.viewportSize.height.toFloat()
+        if (viewportHeight <= 0f) return false
+
+        // 优先根据唯一 key 查找，若边缘重组瞬态未命中则通过 index 回退查找
+        val currentVisibleItem = visibleItems.firstOrNull { it.key == key }
+            ?: visibleItems.firstOrNull { it.index == currentIndex }
+
+        val (draggedTop, draggedBottom) = if (currentVisibleItem != null) {
+            val top = currentVisibleItem.offset + draggingItemOffset
+            top to (top + currentVisibleItem.size)
+        } else {
+            val estimatedTop = (currentIndex - (layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0)) * stepHeight + draggingItemOffset
+            estimatedTop to (estimatedTop + stepHeight)
+        }
+
+        val scrollThreshold = (stepHeight * 1.15f).coerceAtLeast(115f)
+        val maxScrollSpeed = (stepHeight * 0.28f).coerceAtLeast(24f)
+
+        val scrollDelta = when {
+            draggedTop < scrollThreshold && (currentIndex > minIndex || lazyListState.canScrollBackward) -> {
+                if (lazyListState.canScrollBackward) {
+                    val fraction = ((scrollThreshold - draggedTop) / scrollThreshold).coerceIn(0.35f, 2.0f)
+                    -maxScrollSpeed * fraction
+                } else {
+                    0f
+                }
+            }
+            draggedBottom > viewportHeight - scrollThreshold && (currentIndex < itemCount - 1 || lazyListState.canScrollForward) -> {
+                if (lazyListState.canScrollForward) {
+                    val fraction = ((draggedBottom - (viewportHeight - scrollThreshold)) / scrollThreshold).coerceIn(0.35f, 2.0f)
+                    maxScrollSpeed * fraction
+                } else {
+                    0f
+                }
+            }
+            else -> 0f
+        }
+
+        if (scrollDelta != 0f) {
+            lazyListState.scrollBy(scrollDelta)
+            // 列表平滑滚动时，滚动位移无缝驱动跨项排序更新
+            onDrag(
+                dragAmount = scrollDelta,
+                itemCount = itemCount,
+                minIndex = minIndex,
+                canScrollBackward = lazyListState.canScrollBackward,
+                canScrollForward = lazyListState.canScrollForward
+            )
+            return true
+        }
+        return false
+    }
+
+    /**
+     * 拖拽结束或取消时的即时完全复位清理逻辑，确保卡片平稳回落槽位
      */
     fun onDragInterrupted() {
         draggingItemKey = null
@@ -219,13 +325,36 @@ fun CityManagementFullScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val lazyListState = rememberLazyListState()
     var isReorderMode by remember { mutableStateOf(false) }
+
+    // 自动定位城市固定首行相关限制计算
+    val hasAutoCity = savedCities.firstOrNull()?.isAutoLocated == true
+    val minReorderIndex = if (hasAutoCity) 1 else 0
+    val canReorder = if (hasAutoCity) savedCities.size >= 3 else savedCities.size >= 2
 
     // 拖拽排序状态管理
     val density = LocalDensity.current
     val itemHeightWithSpacingPx = with(density) { (86.dp + 12.dp).toPx() }
     val dragDropState = rememberDragDropListState(onMove = onMoveCity).apply {
         itemHeightPx = itemHeightWithSpacingPx
+    }
+
+    // 拖拽至列表边缘时自动平滑滚动并同步更新排序
+    LaunchedEffect(dragDropState.draggingItemKey) {
+        val currentKey = dragDropState.draggingItemKey ?: return@LaunchedEffect
+        while (dragDropState.draggingItemKey == currentKey) {
+            val scrolled = dragDropState.checkAndAutoScroll(
+                lazyListState = lazyListState,
+                itemCount = savedCities.size,
+                minIndex = minReorderIndex
+            )
+            if (scrolled) {
+                kotlinx.coroutines.delay(16)
+            } else {
+                kotlinx.coroutines.delay(32)
+            }
+        }
     }
 
     // 拦截物理返回键与侧滑返回手势，按下时优先退出排序模式或收回抽屉
@@ -326,8 +455,8 @@ fun CityManagementFullScreen(
                         )
                     }
 
-                    // 仅当保存城市数量 >= 2 时展示排序/完成操作按钮
-                    if (savedCities.size >= 2) {
+                    // 仅当可供调整顺序的城市数量 >= 2 时展示排序/完成操作按钮（自动定位城市固定首行不计入可调序项）
+                    if (canReorder) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = if (isReorderMode) Color(0xFF64B5F6).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.18f),
@@ -348,8 +477,9 @@ fun CityManagementFullScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 城市卡片列表 (支持排序模式拖动排序与普通模式向左滑动删除)
+                // 城市卡片列表 (支持排序模式拖动排序与普通模式向左滑动删除，支持边缘自动滚动)
                 LazyColumn(
+                    state = lazyListState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
@@ -373,7 +503,15 @@ fun CityManagementFullScreen(
                             isDragging = isDragging,
                             dragOffsetY = if (isDragging) dragDropState.draggingItemOffset else 0f,
                             onDragStart = { dragDropState.onDragStart(city.getCacheKey(), index) },
-                            onDrag = { amount -> dragDropState.onDrag(amount, savedCities.size) },
+                            onDrag = { amount ->
+                                dragDropState.onDrag(
+                                    dragAmount = amount,
+                                    itemCount = savedCities.size,
+                                    minIndex = minReorderIndex,
+                                    canScrollBackward = lazyListState.canScrollBackward,
+                                    canScrollForward = lazyListState.canScrollForward
+                                )
+                            },
                             onDragEnd = { dragDropState.onDragInterrupted() },
                             onDragCancel = { dragDropState.onDragInterrupted() },
                             onClick = {
@@ -402,7 +540,12 @@ fun CityManagementFullScreen(
                             } else {
                                 Modifier
                                     .zIndex(0f)
-                                    .animateItemPlacement()
+                                    .animateItemPlacement(
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessMedium
+                                        )
+                                    )
                             }
                         )
                     }
@@ -540,15 +683,26 @@ private fun SwipeableCityCard(
     val currentOffset = offsetX.value
     val revealProgress = (-currentOffset / totalRevealPx).coerceIn(0f, 1f)
 
+    val animatedDragOffsetY by animateFloatAsState(
+        targetValue = if (isDragging) dragOffsetY else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "dragOffsetY"
+    )
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(86.dp)
             .graphicsLayer {
-                if (isDragging) {
-                    translationY = dragOffsetY
-                    scaleX = 1.02f
-                    scaleY = 1.02f
+                val currentDragY = if (isDragging) dragOffsetY else animatedDragOffsetY
+                if (isDragging || currentDragY != 0f) {
+                    translationY = currentDragY
+                    val scale = if (isDragging) 1.02f else 1.0f
+                    scaleX = scale
+                    scaleY = scale
                 }
             }
     ) {
@@ -719,13 +873,22 @@ private fun SavedCitySkyCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // 左侧：城市名称与定位图标
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 左侧：城市名称与定位图标 (配置 weight(1f) 与 padding(end = 12.dp)，超长时自动换行，绝不挤占右侧温度区域)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp)
+            ) {
                 Text(
                     text = city.name,
                     color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Normal
+                    fontSize = if (city.name.length > 7) 17.sp else 20.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 22.sp,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
 
                 if (city.isAutoLocated) {
@@ -758,8 +921,8 @@ private fun SavedCitySkyCard(
                     )
                 }
 
-                // 排序模式下展示右侧可拖拽排序小图标 (扩大触控热区并提供灵敏的手势响应与视觉反馈)
-                if (isReorderMode) {
+                // 排序模式下展示右侧可拖拽排序小图标 (自动定位城市固定在首行，不允许拖拽移动)
+                if (isReorderMode && !city.isAutoLocated) {
                     Surface(
                         shape = CircleShape,
                         color = if (isDragging) Color(0xFF64B5F6).copy(alpha = 0.45f) else Color.White.copy(alpha = 0.22f),

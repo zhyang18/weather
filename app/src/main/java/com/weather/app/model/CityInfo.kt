@@ -83,7 +83,7 @@ data class CityInfo(
      * @param displayMode 定位展示模式 [LocationDisplayMode]
      * @return 适用于天气主页顶栏与卡片展示的精简名称
      */
-    fun getDisplayName(displayMode: LocationDisplayMode = LocationDisplayMode.LANDMARK): String {
+    fun getDisplayName(displayMode: LocationDisplayMode = LocationDisplayMode.DISTRICT): String {
         if (!isAutoLocated) return name
         val safeLandmark = simplifyLandmarkName((landmark as String?) ?: "")
         val safeDistrict = (district as String?) ?: ""

@@ -34,7 +34,7 @@ data class AppBackupData(
     val caiyunConfig: CaiyunConfig = CaiyunConfig(),
     val seniverseConfig: SeniverseConfig = SeniverseConfig(),
     val autoUpdateIntervalMinutes: Int = 60,
-    val locationDisplayMode: LocationDisplayMode = LocationDisplayMode.LANDMARK,
+    val locationDisplayMode: LocationDisplayMode = LocationDisplayMode.DISTRICT,
     val isDailyChartMode: Boolean = true
 ) {
     /**
