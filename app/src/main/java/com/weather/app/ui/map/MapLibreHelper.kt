@@ -37,72 +37,113 @@ object MapLibreHelper {
         }
     }
 
-    /**
-     * 构建暗色夜景底图样式 JSON（高德 2x 高清暗色夜景瓦片与注记路网）
-     *
-     * 使用高德官方深色/夜间地图瓦片服务，国内高速直连，保证路网、地标建筑和 POI 清晰可见且契合深色主题。
-     *
-     * @return 暗色夜景 Style JSON
-     */
     private fun buildDarkStyleJson(): String {
         return """
-        {
-          "version": 8,
-          "name": "WeatherDark",
-          "sources": {
-            "amap-dark": {
-              "type": "raster",
-              "tiles": [
-                "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}",
-                "https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}",
-                "https://webrd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}",
-                "https://webrd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}"
-              ],
-              "tileSize": 256,
-              "maxzoom": 18
-            },
-            "amap-dark-labels": {
-              "type": "raster",
-              "tiles": [
-                "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}",
-                "https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}",
-                "https://webrd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}",
-                "https://webrd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}"
-              ],
-              "tileSize": 256,
-              "maxzoom": 18
-            }
-          },
-          "layers": [
-            {
-              "id": "background",
-              "type": "background",
-              "paint": {
-                "background-color": "#121824"
-              }
-            },
-            {
-              "id": "amap-dark-base-layer",
-              "type": "raster",
-              "source": "amap-dark",
-              "paint": {
-                "raster-opacity": 0.88,
-                "raster-brightness-max": 0.85,
-                "raster-contrast": 0.2
-              }
-            },
-            {
-              "id": "amap-dark-labels-layer",
-              "type": "raster",
-              "source": "amap-dark-labels",
-              "paint": {
-                "raster-opacity": 0.95
-              }
-            }
-          ]
-        }
-        """.trimIndent()
+{
+  "version": 8,
+  "name": "WeatherDark",
+
+  "sources": {
+    "amap-dark-base": {
+      "type": "raster",
+      "tiles": [
+        "https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}",
+        "https://wprd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}",
+        "https://wprd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}",
+        "https://wprd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}"
+      ],
+      "tileSize": 256,
+      "maxzoom": 18
+    },
+    "amap-labels": {
+      "type": "raster",
+      "tiles": [
+        "https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+        "https://wprd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}_z={z}",
+        "https://wprd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+        "https://wprd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
+      ],
+      "tileSize": 256,
+      "maxzoom": 18
     }
+  },
+
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#070B12"
+      }
+    },
+
+    {
+      "id": "amap-dark-base",
+      "type": "raster",
+      "source": "amap-dark-base",
+      "paint": {
+        "raster-opacity": 0.65,
+        "raster-brightness-min": 0.0,
+        "raster-brightness-max": 0.30,
+        "raster-contrast": 0.35,
+        "raster-saturation": -0.60,
+        "raster-fade-duration": 0
+      }
+    },
+
+    {
+      "id": "amap-labels",
+      "type": "raster",
+      "source": "amap-labels",
+      "paint": {
+        "raster-opacity": 0.7,
+        "raster-brightness-min": 0.3,
+        "raster-brightness-max": 0.8,
+        "raster-contrast": 0.50,
+        "raster-fade-duration": 0
+      }
+    }
+  ]
+}
+""".trimIndent()
+    }
+
+
+//    private fun buildDarkStyleJson(): String {
+//        return """
+//    {
+//      "version": 8,
+//      "name": "WeatherDark",
+//      "sources": {
+//        "amap-dark": {
+//          "type": "raster",
+//          "tiles": [
+//            "https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
+//          ],
+//          "tileSize": 256,
+//          "maxzoom": 18
+//        }
+//      },
+//      "layers": [
+//        {
+//          "id": "background",
+//          "type": "background",
+//          "paint": {
+//            "background-color": "#0B0E14"
+//          }
+//        },
+//        {
+//          "id": "amap-dark-base-layer",
+//          "type": "raster",
+//          "source": "amap-dark",
+//          "paint": {
+//            "raster-opacity": 1.0
+//          }
+//        }
+//      ]
+//    }
+//    """.trimIndent()
+//    }
 
     /**
      * 构建标准街景底图样式 JSON（高德 2x 高清全要素街景瓦片）
@@ -302,7 +343,10 @@ object MapLibreHelper {
         val clampedLat = latitude.coerceIn(-80.0, 80.0)
         val radLat = Math.toRadians(clampedLat)
         val targetMetersPerPx = (targetDistanceMeters / targetWidthDp) / density
-        val initialZoom = kotlin.math.ln((40075016.686 * kotlin.math.cos(radLat)) / (256.0 * targetMetersPerPx)) / kotlin.math.ln(2.0)
+        val initialZoom =
+            kotlin.math.ln((40075016.686 * kotlin.math.cos(radLat)) / (256.0 * targetMetersPerPx)) / kotlin.math.ln(
+                2.0
+            )
         return initialZoom.coerceIn(3.0, 18.0)
     }
 }

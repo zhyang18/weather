@@ -88,8 +88,8 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            isMinifyEnabled = true  // 开启 R8 代码压缩与混淆
-            isShrinkResources = true // 开启无用资源裁剪
+            isMinifyEnabled = false  // 开启 R8 代码压缩与混淆
+            isShrinkResources = false // 开启无用资源裁剪
             // 临时开启调试能力，方便用 Android Studio 抓 Logcat 和附加断点
             isDebuggable = true
             proguardFiles(

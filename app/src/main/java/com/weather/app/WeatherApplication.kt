@@ -1,7 +1,10 @@
 package com.weather.app
 
 import android.app.Application
+import okhttp3.OkHttpClient
 import org.maplibre.android.MapLibre
+import org.maplibre.android.http.HttpRequest
+import org.maplibre.android.module.http.HttpRequestUtil
 
 /**
  * 应用程序全局 Application 类
@@ -19,5 +22,17 @@ class WeatherApplication : Application() {
         super.onCreate()
         // 初始化 MapLibre 原生地图 SDK 单例
         MapLibre.getInstance(this)
+        // 2. 创建带有 User-Agent 拦截器的 OkHttpClient
+        val customOkHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile)")
+                    .build()
+                chain.proceed(request)
+            }
+            .build()
+
+        // 3. 全局应用到 MapLibre
+        HttpRequestUtil.setOkHttpClient(customOkHttpClient)
     }
 }
