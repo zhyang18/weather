@@ -20,32 +20,26 @@ android {
         applicationId = "com.weather.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 52
-        versionName = "1.8.0"
+        versionCode = 53
+        versionName = "1.8.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
-        // 配置 APK 分包
-        splits {
-            abi {
-                // 1. 开启 ABI 分包
-                isEnable = true
+    }
 
-                // 2. 重置架构列表（默认包含所有架构，先 reset 再指定更安全）
-                reset()
-
-                // 3. 指定需要单独打 APK 的架构
-                include("arm64-v8a", "armeabi-v7a")
-
-                // 4. 是否同时生成包含所有 ABI 的通用包 (Universal APK)
-                // 如果设为 true，会额外生成一个包含所有架构的完整大包
-                isUniversalApk = false
-            }
+    // 正确位置：splits 必须与 defaultConfig 平级，放在 android 闭包下
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
         }
     }
-    // 为不同 ABI 赋予不同的 versionCode 偏移量
+
+    // 动态设置 versionCode 并解决多架构文件名冲突
     val abiVersionCodes = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2)
 
     applicationVariants.all {
@@ -53,30 +47,16 @@ android {
         variant.outputs.forEach { output ->
             val abiOutput = output as? com.android.build.gradle.internal.api.ApkVariantOutputImpl
             if (abiOutput != null) {
-                // 获取当前 APK 的 ABI 类型
                 val abiFilter = abiOutput.getFilter(com.android.build.OutputFile.ABI)
                 if (abiFilter != null) {
-                    // 动态设置不同的 versionCode，例如原 versionCode 是 52：
-                    // armeabi-v7a -> 100052
-                    // arm64-v8a   -> 200052
                     val abiCode = abiVersionCodes[abiFilter] ?: 0
                     abiOutput.versionCodeOverride = abiCode * 100000 + variant.versionCode
                 }
-                // 3. 动态拼接文件名，确保不同架构文件名唯一
-                // 生成样式：Weather-v1.8.0-arm64-v8a-release.apk
                 val abiName = abiFilter ?: "universal"
                 abiOutput.outputFileName = "Weather-v${variant.versionName}-${abiName}-${variant.buildType.name}.apk"
             }
         }
     }
-
-//    // 自动为生成的 APK 命名：项目名_版本号_构建类型.apk
-//    applicationVariants.all {
-//        outputs.all {
-//            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-//            output.outputFileName = "Weather-v${versionName}-${buildType.name}.apk"
-//        }
-//    }
 
     signingConfigs {
         create("release") {
@@ -84,23 +64,23 @@ android {
             storeFile = file(keystorePath)
             storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
                 ?: project.findProperty("RELEASE_STORE_PASSWORD") as String?
-                ?: System.getenv("RELEASE_STORE_PASSWORD")
-                ?: ""
+                        ?: System.getenv("RELEASE_STORE_PASSWORD")
+                        ?: ""
             keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
                 ?: project.findProperty("RELEASE_KEY_ALIAS") as String?
-                ?: System.getenv("RELEASE_KEY_ALIAS")
-                ?: ""
+                        ?: System.getenv("RELEASE_KEY_ALIAS")
+                        ?: ""
             keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
                 ?: project.findProperty("RELEASE_KEY_PASSWORD") as String?
-                ?: System.getenv("RELEASE_KEY_PASSWORD")
-                ?: ""
+                        ?: System.getenv("RELEASE_KEY_PASSWORD")
+                        ?: ""
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = true  // 开启 R8 代码压缩与混淆
+            isShrinkResources = true // 开启无用资源裁剪
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -108,8 +88,10 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true  // 开启 R8 代码压缩与混淆
+            isShrinkResources = true // 开启无用资源裁剪
+            // 临时开启调试能力，方便用 Android Studio 抓 Logcat 和附加断点
+            isDebuggable = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -117,6 +99,7 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -133,7 +116,6 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            // 建议 3：移除无用元数据文件
             excludes += "META-INF/*.version"
             excludes += "META-INF/DEPENDENCIES"
         }
