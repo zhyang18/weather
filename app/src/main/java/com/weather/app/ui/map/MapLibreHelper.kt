@@ -38,7 +38,9 @@ object MapLibreHelper {
     }
 
     /**
-     * 构建暗色夜景底图样式 JSON（深色主题背景与高清暗色瓦片）
+     * 构建暗色夜景底图样式 JSON（高德 2x 高清暗色夜景瓦片与注记路网）
+     *
+     * 使用高德官方深色/夜间地图瓦片服务，国内高速直连，保证路网、地标建筑和 POI 清晰可见且契合深色主题。
      *
      * @return 暗色夜景 Style JSON
      */
@@ -48,15 +50,27 @@ object MapLibreHelper {
           "version": 8,
           "name": "WeatherDark",
           "sources": {
-            "carto-dark": {
+            "amap-dark": {
               "type": "raster",
               "tiles": [
-                "https://a.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png",
-                "https://b.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png",
-                "https://c.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png"
+                "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}",
+                "https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}",
+                "https://webrd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}",
+                "https://webrd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=7&x={x}&y={y}&z={z}"
               ],
               "tileSize": 256,
-              "maxzoom": 19
+              "maxzoom": 18
+            },
+            "amap-dark-labels": {
+              "type": "raster",
+              "tiles": [
+                "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}",
+                "https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}",
+                "https://webrd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}",
+                "https://webrd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}"
+              ],
+              "tileSize": 256,
+              "maxzoom": 18
             }
           },
           "layers": [
@@ -68,9 +82,19 @@ object MapLibreHelper {
               }
             },
             {
-              "id": "carto-dark-layer",
+              "id": "amap-dark-base-layer",
               "type": "raster",
-              "source": "carto-dark",
+              "source": "amap-dark",
+              "paint": {
+                "raster-opacity": 0.88,
+                "raster-brightness-max": 0.85,
+                "raster-contrast": 0.2
+              }
+            },
+            {
+              "id": "amap-dark-labels-layer",
+              "type": "raster",
+              "source": "amap-dark-labels",
               "paint": {
                 "raster-opacity": 0.95
               }
@@ -146,10 +170,10 @@ object MapLibreHelper {
             "amap-labels": {
               "type": "raster",
               "tiles": [
-                "https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
-                "https://wprd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
-                "https://wprd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
-                "https://wprd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
+                "https://webst01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+                "https://webst02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+                "https://webst03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+                "https://webst04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
               ],
               "tileSize": 256,
               "maxzoom": 18
