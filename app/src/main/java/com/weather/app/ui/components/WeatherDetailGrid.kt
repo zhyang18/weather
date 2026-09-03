@@ -307,6 +307,22 @@ fun WeatherDetailGrid(
                     fontWeight = FontWeight.Normal
                 )
             }
+
+            // 当前定位详细地址展示（在底部文字最下方新增一行）
+            val detailedAddressText = weatherData.city.getDetailedAddressText()
+            if (detailedAddressText.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.5.dp))
+                val label = if (weatherData.city.isAutoLocated) "当前定位：" else "定位地址："
+                Text(
+                    text = "$label$detailedAddressText",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
         }
     }
 }

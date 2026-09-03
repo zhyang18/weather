@@ -298,7 +298,28 @@ class AppLocationManager(private val context: Context) {
                     districtName.ifEmpty { locality.ifEmpty { "当前位置" } }
                 }
 
-                AppLog.d("WeatherLocation", "--> 解析输出: 界面展示名='$displayCityName', 所属区县='$districtName', 地标='$pureLandmarkName', 所属市='$locality', 省份='$province'")
+                // 提取并构建完整的中文详细地址描述 (如 "江苏省南京市雨花台区软件大道109号")
+                val cleanAddressLine = fullAddressLine.removePrefix("中国").trim()
+                val constructedDetail = buildString {
+                    if (province.isNotEmpty()) append(province)
+                    if (locality.isNotEmpty() && !province.contains(locality)) {
+                        append(locality)
+                        if (!locality.endsWith("市") && !locality.endsWith("地区") && !locality.endsWith("州")) append("市")
+                    }
+                    if (subLocality.isNotEmpty() && !contains(subLocality)) append(subLocality)
+                    if (thoroughfare.isNotEmpty() && !contains(thoroughfare)) append(thoroughfare)
+                    if (subThoroughfare.isNotEmpty() && !contains(subThoroughfare)) append(subThoroughfare)
+                    if (featureName.isNotEmpty() && !contains(featureName) && featureName != locality && featureName != province) {
+                        append(featureName)
+                    }
+                }
+                val finalDetailedAddress = when {
+                    cleanAddressLine.isNotEmpty() -> cleanAddressLine
+                    constructedDetail.isNotEmpty() -> constructedDetail
+                    else -> ""
+                }
+
+                AppLog.d("WeatherLocation", "--> 解析输出: 界面展示名='$displayCityName', 所属区县='$districtName', 地标='$pureLandmarkName', 所属市='$locality', 省份='$province', 详细地址='$finalDetailedAddress'")
                 AppLog.d("WeatherLocation", "===========================================")
 
                 CityInfo(
@@ -310,7 +331,8 @@ class AppLocationManager(private val context: Context) {
                     isAutoLocated = true,
                     district = districtName,
                     landmark = pureLandmarkName,
-                    parentCity = locality
+                    parentCity = locality,
+                    detailedAddress = finalDetailedAddress
                 )
             } else {
                 AppLog.w("WeatherLocation", "逆地理编码返回空地址列表 (addresses.isNullOrEmpty())")

@@ -520,9 +520,10 @@ class WeatherRepository(
             val finalAutoCity = targetCity.copy(
                 code = data.city.code.ifEmpty { targetCity.code },
                 name = if (targetCity.name == "当前位置" && data.city.name.isNotEmpty()) data.city.name else targetCity.name,
-                province = data.city.province.ifEmpty { targetCity.province }
+                province = data.city.province.ifEmpty { targetCity.province },
+                detailedAddress = if (targetCity.detailedAddress.isNotEmpty()) targetCity.detailedAddress else data.city.detailedAddress
             )
-            com.weather.app.util.AppLog.d("WeatherLocation", "自动定位天气拉取成功: 城市='${finalAutoCity.name}', 区县='${finalAutoCity.district}', 省份='${finalAutoCity.province}', 气象站点编码='${finalAutoCity.code}', 数据源='${currentSource.getSourceInfo().name}'")
+            com.weather.app.util.AppLog.d("WeatherLocation", "自动定位天气拉取成功: 城市='${finalAutoCity.name}', 区县='${finalAutoCity.district}', 省份='${finalAutoCity.province}', 气象站点编码='${finalAutoCity.code}', 详细地址='${finalAutoCity.detailedAddress}', 数据源='${currentSource.getSourceInfo().name}'")
             updateAutoLocatedCity(finalAutoCity)
             saveCachedWeatherData(finalAutoCity, data)
         }.onFailure { err ->
@@ -556,7 +557,8 @@ class WeatherRepository(
                         district = geocoded.district,
                         landmark = geocoded.landmark,
                         parentCity = geocoded.parentCity,
-                        province = if (currentAuto.province.isEmpty()) geocoded.province else currentAuto.province
+                        province = if (currentAuto.province.isEmpty()) geocoded.province else currentAuto.province,
+                        detailedAddress = if (geocoded.detailedAddress.isNotEmpty()) geocoded.detailedAddress else currentAuto.detailedAddress
                     )
                 }
             }

@@ -130,10 +130,10 @@ fun WeatherSettingsMenu(
                             .padding(vertical = 3.dp)
                     ) {
                         val menuItems = listOf(
-                            "卡片显示" to { onCardSettingsClick() },
-                            "更新间隔" to { onIntervalClick() },
                             "天气数据源" to { onSelectSourceClick() },
+                            "更新间隔" to { onIntervalClick() },
                             "定位设置" to { onLocationSettingsClick() },
+                            "卡片显示" to { onCardSettingsClick() },
                             "备份与恢复" to { onBackupRestoreClick() },
                             "隐私与免责" to { onPrivacyClick() }
                         )

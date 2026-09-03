@@ -467,16 +467,21 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         if (fromIndex in 0 until currentList.size && toIndex in 0 until currentList.size && fromIndex != toIndex) {
             val item = currentList.removeAt(fromIndex)
             currentList.add(toIndex, item)
-            repository.saveSavedCities(currentList)
             val currentCity = _uiState.value.getCurrentCity()
             val newCurrentIndex = currentList.indexOfFirst { it.name == currentCity.name && it.code == currentCity.code }
                 .coerceIn(0, (currentList.size - 1).coerceAtLeast(0))
 
+            // 1. 内存即时更新，UI 响应零延迟
             _uiState.update {
                 it.copy(
                     savedCities = currentList,
                     currentCityIndex = newCurrentIndex
                 )
+            }
+
+            // 2. 异步在 IO 线程持久化，绝不阻塞主线程拖拽
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.saveSavedCities(currentList)
             }
         }
     }

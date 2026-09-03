@@ -24,6 +24,7 @@ import java.lang.reflect.Type
  * @property district 所属区县名称 (如 "雨花台区", "雁塔区")
  * @property landmark 附近地标或街道名称 (如 "软件谷", "紫峰大厦")
  * @property parentCity 所属地级市名称 (如 "南京市", "西安市")
+ * @property detailedAddress 逆地理编码解析得到的定位详细地址 (如 "江苏省南京市雨花台区软件大道109号")
  */
 @Immutable
 data class CityInfo(
@@ -35,7 +36,8 @@ data class CityInfo(
     val isAutoLocated: Boolean = false,
     val district: String = "",
     val landmark: String = "",
-    val parentCity: String = ""
+    val parentCity: String = "",
+    val detailedAddress: String = ""
 ) {
 
     /**
@@ -55,7 +57,8 @@ data class CityInfo(
             isAutoLocated = isAutoLocated,
             district = (district as String?) ?: "",
             landmark = (landmark as String?) ?: "",
-            parentCity = (parentCity as String?) ?: ""
+            parentCity = (parentCity as String?) ?: "",
+            detailedAddress = (detailedAddress as String?) ?: ""
         )
     }
 
@@ -105,6 +108,39 @@ data class CityInfo(
                 }
             }
         }
+    }
+
+    /**
+     * 获取当前城市的定位详细地址描述
+     *
+     * 若逆地理编码成功解析出精确街道门牌详细地址则优先展示；
+     * 否则根据省份、城市、区县与地标智能拼接完整层级地址。
+     *
+     * @return 格式化后的详细地址字符串（如 "江苏省南京市雨花台区软件大道109号"）
+     */
+    fun getDetailedAddressText(): String {
+        val safeDetail = (detailedAddress as String?) ?: ""
+        if (safeDetail.isNotEmpty()) {
+            return safeDetail
+        }
+        val p = (province as String?) ?: ""
+        val c = (parentCity as String?) ?: ""
+        val d = (district as String?) ?: ""
+        val n = (name as String?) ?: ""
+        val l = (landmark as String?) ?: ""
+
+        val sb = StringBuilder()
+        if (p.isNotEmpty()) sb.append(p)
+        if (c.isNotEmpty() && !p.contains(c)) {
+            sb.append(c)
+            if (!c.endsWith("市") && !c.endsWith("地区") && !c.endsWith("州")) sb.append("市")
+        }
+        if (d.isNotEmpty() && !sb.contains(d)) sb.append(d)
+        val specific = if (l.isNotEmpty()) l else n
+        if (specific.isNotEmpty() && !sb.contains(specific) && specific != "当前位置") {
+            sb.append(specific)
+        }
+        return sb.toString().ifEmpty { if (isAutoLocated) "当前定位位置" else n }
     }
 
     /**
@@ -279,7 +315,8 @@ class CityInfoJsonAdapter : JsonDeserializer<CityInfo>, JsonSerializer<CityInfo>
             isAutoLocated = obj.get("isAutoLocated")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
             district = obj.get("district")?.takeIf { !it.isJsonNull }?.asString ?: "",
             landmark = obj.get("landmark")?.takeIf { !it.isJsonNull }?.asString ?: "",
-            parentCity = obj.get("parentCity")?.takeIf { !it.isJsonNull }?.asString ?: ""
+            parentCity = obj.get("parentCity")?.takeIf { !it.isJsonNull }?.asString ?: "",
+            detailedAddress = obj.get("detailedAddress")?.takeIf { !it.isJsonNull }?.asString ?: ""
         )
     }
 
@@ -307,6 +344,7 @@ class CityInfoJsonAdapter : JsonDeserializer<CityInfo>, JsonSerializer<CityInfo>
         obj.addProperty("district", safe.district)
         obj.addProperty("landmark", safe.landmark)
         obj.addProperty("parentCity", safe.parentCity)
+        if (safe.detailedAddress.isNotEmpty()) obj.addProperty("detailedAddress", safe.detailedAddress)
         return obj
     }
 }

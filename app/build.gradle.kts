@@ -20,8 +20,8 @@ android {
         applicationId = "com.weather.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 47
-        versionName = "1.7.5"
+        versionCode = 48
+        versionName = "1.7.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -106,6 +106,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // 新一代开源拖拽排序库 (Reorderable)
+    implementation("sh.calvin.reorderable:reorderable:1.3.1")
 
     // 网络与 JSON 解析
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
