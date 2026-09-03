@@ -27,6 +27,9 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+        }
     }
 
     signingConfigs {
@@ -128,6 +131,9 @@ dependencies {
 
     // 图片加载 (Coil)
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // MapLibre 原生地图 SDK
+    implementation("org.maplibre.gl:android-sdk:11.5.1")
 
     // 测试套件
     testImplementation("junit:junit:4.13.2")

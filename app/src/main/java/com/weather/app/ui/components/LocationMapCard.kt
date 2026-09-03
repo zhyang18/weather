@@ -1,24 +1,26 @@
 package com.weather.app.ui.components
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
@@ -26,12 +28,8 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,18 +38,18 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.weather.app.model.CityInfo
 import com.weather.app.model.WeatherData
+import com.weather.app.ui.map.MapLibreComposeView
 
 /**
  * 首页定位气象微缩地图卡片组件
  *
- * 1. 统一 152.dp 标准高度与深灰蓝毛玻璃质感，与其他卡片保持严格一致的视觉层级与排版规范；
- * 2. 采用左右分栏的精简布局：
- *    - 左侧区域：顶部微型定位图标与标题及跳转指示、主标题展示当前聚焦城市/区县大字、实时天气与温度、底部经纬度坐标；
- *    - 右侧区域：嵌入圆角微缩地图视窗，直观呈现当前地理位置；
- * 3. 点击卡片触发 [onClick] 回调跳转至全屏定位地图详情页面。
+ * 采用 MapLibre Native 原生地图硬件加速渲染：
+ * 1. 统一 152.dp 标准高度与深灰蓝质感，与其他卡片保持严格一致的视觉层级；
+ * 2. 嵌入轻量只读 MapLibre 原生地图视窗，自动跟随当前聚焦城市地理坐标与图层偏好；
+ * 3. 中心叠加动态微光呼吸定位点；
+ * 4. 点击卡片触发 [onClick] 回调跳转至全屏定位大地图页面。
  *
  * @param city 当前聚焦的城市实体 [CityInfo]
  * @param weatherData 当前城市聚合气象数据 [WeatherData]
@@ -59,7 +57,6 @@ import com.weather.app.model.WeatherData
  * @param onClick 点击卡片跳转全屏大地图的回调
  * @param modifier 外部修饰符
  */
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun LocationMapCard(
     city: CityInfo,
@@ -79,16 +76,6 @@ fun LocationMapCard(
     }
     val lat = coords.first
     val lng = coords.second
-    val displayName = city.district.ifEmpty { city.name }
-
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
-
-    // 当城市坐标、显示地名或底图类型变更时，立即驱动 WebView 地图更新位置与图层
-    LaunchedEffect(lat, lng, displayName, mapLayerType, webViewRef) {
-        webViewRef?.let { view ->
-            updateCardMapLocation(view, lat, lng, displayName, mapLayerType)
-        }
-    }
 
     Box(
         modifier = modifier
@@ -136,7 +123,7 @@ fun LocationMapCard(
                 )
             }
 
-            // 2. 中间主要内容：微缩地图视窗直接全宽占满
+            // 2. 中间主要内容：微缩原生地图视窗（只读展示，屏蔽内部手势）
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -144,20 +131,24 @@ fun LocationMapCard(
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xFF141923))
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        createCardWebView(ctx, lat, lng, displayName, mapLayerType) { view ->
-                            webViewRef = view
-                        }
-                    },
-                    update = { webView ->
-                        webViewRef = webView
-                        updateCardMapLocation(webView, lat, lng, displayName, mapLayerType)
-                    },
-                    modifier = Modifier.fillMaxSize()
+                MapLibreComposeView(
+                    modifier = Modifier.fillMaxSize(),
+                    lat = lat,
+                    lng = lng,
+                    zoom = 14.5,
+                    mapLayerType = mapLayerType,
+                    isInteractive = false
                 )
 
-                // 覆盖一层全透明点击层，防止 WebView 内部消费滚动事件影响外部滑动
+                // 正中心叠加脉冲呼吸定位标记
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LocationPulseDot()
+                }
+
+                // 覆盖一层全透明层，避免任何手势穿透影响列表滑动
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -178,87 +169,57 @@ fun LocationMapCard(
 }
 
 /**
- * 创建用于小卡片预览的轻量 WebView 实例
+ * 动态呼吸脉冲定位圆点微组件
  *
- * @param context Android 视图上下文
- * @param lat 纬度数值
- * @param lng 经度数值
- * @param name 城市名称
- * @param mapLayerType 底图图层类型键名
- * @param onCreated 创建完成回调
- * @return 配置完成的 [WebView] 实例
+ * 用于在小地图卡片中心呈现定位状态。
  */
-@SuppressLint("SetJavaScriptEnabled")
-private fun createCardWebView(
-    context: Context,
-    lat: Double,
-    lng: Double,
-    name: String,
-    mapLayerType: String = "dark",
-    onCreated: (WebView) -> Unit = {}
-): WebView {
-    return WebView(context).apply {
-        layoutParams = android.view.ViewGroup.LayoutParams(
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        webChromeClient = object : android.webkit.WebChromeClient() {
-            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                android.util.Log.d("WeatherMapCard", "${consoleMessage?.message()} -- line ${consoleMessage?.lineNumber()}")
-                return true
-            }
-        }
-        @Suppress("DEPRECATION")
-        settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = true
-            allowContentAccess = true
-            allowFileAccessFromFileURLs = true
-            allowUniversalAccessFromFileURLs = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            loadsImagesAutomatically = true
-            blockNetworkImage = false
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            cacheMode = WebSettings.LOAD_DEFAULT
-            userAgentString = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 WeatherApp"
-        }
-        setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
-        setBackgroundColor(android.graphics.Color.parseColor("#151c28"))
-        isVerticalScrollBarEnabled = false
-        isHorizontalScrollBarEnabled = false
-        setOnTouchListener { _, _ -> false } // 禁用手势触摸，仅做只读展示
-        webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                updateCardMapLocation(view, lat, lng, name, mapLayerType)
-            }
-        }
-        loadUrl("file:///android_asset/map/index.html")
-        onCreated(this)
-    }
-}
+@Composable
+private fun LocationPulseDot() {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.8f,
+        targetValue = 2.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseScale"
+    )
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseAlpha"
+    )
 
-/**
- * 更新小卡片地图的中心点坐标、标注与底图图层（默认 500m 比例尺 / Zoom 15）
- *
- * @param webView 目标 [WebView] 控件
- * @param lat 目标纬度
- * @param lng 目标经度
- * @param name 目标城市地名
- * @param mapLayerType 底图图层类型键名
- */
-private fun updateCardMapLocation(
-    webView: WebView?,
-    lat: Double,
-    lng: Double,
-    name: String,
-    mapLayerType: String = "dark"
-) {
-    if (webView == null) return
-    val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 15, '$name', '', false, '$mapLayerType'); window.dispatchEvent(new Event('resize')); } })()"
-    webView.evaluateJavascript(js, null)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(24.dp)
+    ) {
+        // 外层扩散光圈
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.alpha = alpha
+                }
+                .clip(CircleShape)
+                .background(Color(0xFF2196F3))
+        )
+        // 核心实心圆点
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF2196F3))
+                .border(2.dp, Color.White, CircleShape)
+        )
+    }
 }
 
 /**

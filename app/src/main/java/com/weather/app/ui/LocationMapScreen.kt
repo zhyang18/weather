@@ -1,17 +1,19 @@
 package com.weather.app.ui
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,36 +46,48 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.weather.app.model.CityInfo
 import com.weather.app.model.WeatherData
+import com.weather.app.ui.map.MapLibreComposeView
+import com.weather.app.ui.map.MapLibreHelper
+import com.weather.app.util.CoordinateTransform
+import kotlinx.coroutines.launch
+import org.maplibre.android.annotations.Marker
+import org.maplibre.android.annotations.MarkerOptions
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
 
 /**
  * 地图底图图层类型枚举
  *
- * @property key 图层在 JS 桥接中的唯一标识
- * @property title 图层展示名称
+ * @property key 图层在系统中的唯一标识符
+ * @property title 图层在 UI 中的展示名称
  */
 enum class MapLayerType(val key: String, val title: String) {
-    /** 暗夜深色矢量底图 */
+    /** 暗夜深色底图 */
     DARK("dark", "暗色夜景"),
-    /** OpenStreetMap 标准街景底图 */
+    /** 标准中文街景底图 */
     STANDARD("standard", "标准街景"),
-    /** Esri 高清卫星遥感影像底图 */
+    /** 高清遥感卫星影像底图 */
     SATELLITE("satellite", "卫星影像");
 
     companion object {
         /**
-         * 根据图层 key 解析枚举，缺省回退为 DARK
+         * 根据图层键名解析枚举，缺省回退为 DARK
          *
          * @param key 图层标识符
          * @return 对应的 [MapLayerType]
@@ -85,10 +99,10 @@ enum class MapLayerType(val key: String, val title: String) {
 }
 
 /**
- * 全屏定位气象大地图交互页面
+ * 全屏定位气象大地图页面（基于 MapLibre Native 原生渲染引擎）
  *
- * 采用全屏沉浸式架构，支持自由缩放平移、多源底图切换（暗色/街景/卫星）、
- * 实时降雨气象雷达瓦片叠加、一键当前定位复位以及底部天气详情浮窗。
+ * 采用全屏硬件加速架构，支持双指自由平移旋转缩放、多源底图即时切换、
+ * RainViewer 实时降水气象雷达瓦片叠加、一键复位平滑相机动画以及底部天气实况卡片。
  *
  * @param visible 是否展示该全屏页面
  * @param city 当前聚焦的城市实体 [CityInfo]
@@ -100,7 +114,6 @@ enum class MapLayerType(val key: String, val title: String) {
  * @param onBackClick 点击返回按钮或系统返回手势时的回调
  * @param modifier 外部修饰符
  */
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun LocationMapScreen(
     visible: Boolean,
@@ -137,17 +150,70 @@ fun LocationMapScreen(
         val cityName = city.name
         val detailText = "${city.province} ${city.district}".trim()
 
+        // 经纬度偏转（GCJ-02）
+        val gcjCoords = remember(lat, lng) {
+            CoordinateTransform.wgs84ToGcj02(lat, lng)
+        }
+        val targetLatLng = remember(gcjCoords) {
+            LatLng(gcjCoords.first, gcjCoords.second)
+        }
+
         var currentLayer by remember(mapLayerType) { mutableStateOf(MapLayerType.fromKey(mapLayerType)) }
         var isRadarEnabled by remember(isMapRadarEnabled) { mutableStateOf(isMapRadarEnabled) }
         var showLayerSelector by remember { mutableStateOf(false) }
-        var webViewInstance by remember { mutableStateOf<WebView?>(null) }
 
-        // 当大地图可见或当前城市坐标/图层/雷达状态变更时，自动驱动大地图飞至最新坐标并更新标注（默认 300m 比例尺 / Zoom 16）
-        LaunchedEffect(visible, lat, lng, cityName, currentLayer, isRadarEnabled, webViewInstance) {
-            if (visible && webViewInstance != null) {
-                val subtitle = "气温: ${weatherData?.current?.temperature?.toInt() ?: 0}° · ${weatherData?.getDisplayWeatherText() ?: ""}"
-                val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 16, '$cityName', '$subtitle', true, '${currentLayer.key}', $isRadarEnabled); window.dispatchEvent(new Event('resize')); } })()"
-                webViewInstance?.evaluateJavascript(js, null)
+        var mapInstance by remember { mutableStateOf<MapLibreMap?>(null) }
+        var currentStyle by remember { mutableStateOf<Style?>(null) }
+        var currentMarker by remember { mutableStateOf<Marker?>(null) }
+        val scope = rememberCoroutineScope()
+
+        // 更新标注点
+        fun updateMapMarker(map: MapLibreMap) {
+            currentMarker?.let { map.removeMarker(it) }
+            val subtitle = "气温: ${weatherData?.current?.temperature?.toInt() ?: 0}° · ${weatherData?.getDisplayWeatherText() ?: ""}"
+            val marker = map.addMarker(
+                MarkerOptions()
+                    .position(targetLatLng)
+                    .title(cityName)
+                    .snippet(subtitle)
+            )
+            currentMarker = marker
+            map.selectMarker(marker)
+        }
+
+        // 同步雷达图层状态
+        fun syncRadarLayer(style: Style?, enabled: Boolean) {
+            if (style == null) return
+            if (enabled) {
+                scope.launch {
+                    val tileUrl = MapLibreHelper.fetchLatestRadarTileUrl()
+                    if (tileUrl != null) {
+                        MapLibreHelper.applyRadarLayer(style, tileUrl)
+                    }
+                }
+            } else {
+                MapLibreHelper.removeRadarLayer(style)
+            }
+        }
+
+        // 当城市坐标或天气数据变化时，更新标记点与相机中心
+        LaunchedEffect(visible, targetLatLng, cityName, weatherData, mapInstance) {
+            mapInstance?.let { map ->
+                if (visible) {
+                    updateMapMarker(map)
+                    val cameraPosition = CameraPosition.Builder()
+                        .target(targetLatLng)
+                        .zoom(15.5)
+                        .build()
+                    map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 400)
+                }
+            }
+        }
+
+        // 当雷达开关或 Style 发生变更时，同步雷达图层
+        LaunchedEffect(isRadarEnabled, currentStyle) {
+            currentStyle?.let { style ->
+                syncRadarLayer(style, isRadarEnabled)
             }
         }
 
@@ -156,25 +222,20 @@ fun LocationMapScreen(
                 .fillMaxSize()
                 .background(Color(0xFF121824))
         ) {
-            // 1. 底层全屏地图 WebView
-            AndroidView(
-                factory = { ctx ->
-                    createFullMapWebView(
-                        context = ctx,
-                        lat = lat,
-                        lng = lng,
-                        title = cityName,
-                        subtitle = "气温: ${weatherData?.current?.temperature?.toInt() ?: 0}° · ${weatherData?.getDisplayWeatherText() ?: "未知"}",
-                        initialLayer = currentLayer.key,
-                        initialRadar = isRadarEnabled
-                    ) { view ->
-                        webViewInstance = view
-                    }
-                },
-                update = { view ->
-                    webViewInstance = view
-                },
-                modifier = Modifier.fillMaxSize()
+            // 1. 底层全屏 MapLibre 原生地图
+            MapLibreComposeView(
+                modifier = Modifier.fillMaxSize(),
+                lat = lat,
+                lng = lng,
+                zoom = 15.5,
+                mapLayerType = currentLayer.key,
+                isInteractive = true,
+                onMapReady = { map, style ->
+                    mapInstance = map
+                    currentStyle = style
+                    updateMapMarker(map)
+                    syncRadarLayer(style, isRadarEnabled)
+                }
             )
 
             // 2. 顶部沉浸式导航栏
@@ -234,7 +295,7 @@ fun LocationMapScreen(
                 }
             }
 
-            // 3. 右侧快捷地图控制操作区 (图层切换 / 气象雷达 / 缩放 / 复位，上移至顶部栏下方，彻底杜绝与底部浮窗重叠)
+            // 3. 右侧快捷地图控制操作区 (图层切换 / 气象雷达 / 缩放 / 复位)
             Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -256,9 +317,10 @@ fun LocationMapScreen(
                     contentDescription = "降水雷达",
                     isActive = isRadarEnabled,
                     onClick = {
-                        isRadarEnabled = !isRadarEnabled
-                        onMapRadarToggle(isRadarEnabled)
-                        webViewInstance?.evaluateJavascript("javascript:toggleRadarLayer($isRadarEnabled);", null)
+                        val nextState = !isRadarEnabled
+                        isRadarEnabled = nextState
+                        onMapRadarToggle(nextState)
+                        syncRadarLayer(currentStyle, nextState)
                     }
                 )
 
@@ -269,7 +331,7 @@ fun LocationMapScreen(
                     icon = Icons.Default.Add,
                     contentDescription = "放大地图",
                     onClick = {
-                        webViewInstance?.evaluateJavascript("javascript:zoomIn();", null)
+                        mapInstance?.animateCamera(CameraUpdateFactory.zoomIn(), 250)
                     }
                 )
 
@@ -278,7 +340,7 @@ fun LocationMapScreen(
                     icon = Icons.Default.Remove,
                     contentDescription = "缩小地图",
                     onClick = {
-                        webViewInstance?.evaluateJavascript("javascript:zoomOut();", null)
+                        mapInstance?.animateCamera(CameraUpdateFactory.zoomOut(), 250)
                     }
                 )
 
@@ -287,7 +349,13 @@ fun LocationMapScreen(
                     icon = Icons.Default.MyLocation,
                     contentDescription = "复位定位",
                     onClick = {
-                        webViewInstance?.evaluateJavascript("javascript:centerCurrent();", null)
+                        mapInstance?.let { map ->
+                            val cameraPosition = CameraPosition.Builder()
+                                .target(targetLatLng)
+                                .zoom(15.5)
+                                .build()
+                            map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 500)
+                        }
                     }
                 )
             }
@@ -317,7 +385,6 @@ fun LocationMapScreen(
                                         currentLayer = layer
                                         showLayerSelector = false
                                         onMapLayerChange(layer.key)
-                                        webViewInstance?.evaluateJavascript("javascript:setLayer('${layer.key}');", null)
                                     }
                             ) {
                                 Text(
@@ -333,7 +400,7 @@ fun LocationMapScreen(
                 }
             }
 
-            // 5. 底部城市天气详情信息浮窗 (优化左右权重分配，防止长地名挤压右侧数据)
+            // 5. 底部城市天气详情信息浮窗
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xEB16202E),
@@ -349,7 +416,7 @@ fun LocationMapScreen(
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 左侧：城市地名与实时天气现象（支持长地名单行省略保护）
+                    // 左侧：城市地名与实时天气现象
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -372,7 +439,7 @@ fun LocationMapScreen(
                         )
                     }
 
-                    // 右侧：湿度、风速与经纬度坐标（精简格式化，彻底杜绝浮点数多位尾巴和换行）
+                    // 右侧：湿度、风速与经纬度坐标
                     if (weatherData != null) {
                         val windSpeedFormatted = String.format(java.util.Locale.CHINA, "%.1f", weatherData.current.windSpeed).removeSuffix(".0")
                         Column(
@@ -400,12 +467,12 @@ fun LocationMapScreen(
 }
 
 /**
- * 地图悬浮功能圆钮
+ * 地图悬浮控制圆形按钮
  *
  * @param icon 图标矢量资产 [ImageVector]
- * @param contentDescription 无障碍辅助文本
+ * @param contentDescription 无障碍辅助描述
  * @param isActive 是否处于高亮激活状态
- * @param onClick 点击事件回调
+ * @param onClick 按钮点击回调
  */
 @Composable
 private fun MapFloatingButton(
@@ -427,74 +494,5 @@ private fun MapFloatingButton(
                 modifier = Modifier.size(20.dp)
             )
         }
-    }
-}
-
-/**
- * 创建全屏大地图专用的 WebView 控件
- *
- * @param context Android 上下文对象
- * @param lat 纬度数值
- * @param lng 经度数值
- * @param title 标注标题
- * @param subtitle 标注副标题
- * @param initialLayer 初始记忆底图图层标识
- * @param initialRadar 初始记忆降水雷达开关状态
- * @param onCreated 创建完成回调
- * @return 初始化的 [WebView] 实例
- */
-@SuppressLint("SetJavaScriptEnabled")
-private fun createFullMapWebView(
-    context: Context,
-    lat: Double,
-    lng: Double,
-    title: String,
-    subtitle: String,
-    initialLayer: String = "dark",
-    initialRadar: Boolean = false,
-    onCreated: (WebView) -> Unit
-): WebView {
-    return WebView(context).apply {
-        layoutParams = android.view.ViewGroup.LayoutParams(
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        webChromeClient = object : android.webkit.WebChromeClient() {
-            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                android.util.Log.d("WeatherFullMap", "${consoleMessage?.message()} -- line ${consoleMessage?.lineNumber()}")
-                return true
-            }
-        }
-        @Suppress("DEPRECATION")
-        settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = true
-            allowContentAccess = true
-            allowFileAccessFromFileURLs = true
-            allowUniversalAccessFromFileURLs = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            loadsImagesAutomatically = true
-            blockNetworkImage = false
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            cacheMode = WebSettings.LOAD_DEFAULT
-            userAgentString = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 WeatherApp"
-            setSupportZoom(true)
-            builtInZoomControls = false
-        }
-        setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
-        setBackgroundColor(android.graphics.Color.parseColor("#151c28"))
-        isVerticalScrollBarEnabled = false
-        isHorizontalScrollBarEnabled = false
-        webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                val js = "javascript:(function(){ if(window.setLocation){ window.setLocation($lat, $lng, 16, '$title', '$subtitle', true, '$initialLayer', $initialRadar); window.dispatchEvent(new Event('resize')); } })()"
-                view?.evaluateJavascript(js, null)
-            }
-        }
-        loadUrl("file:///android_asset/map/index.html")
-        onCreated(this)
     }
 }

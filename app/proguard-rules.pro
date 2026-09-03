@@ -146,3 +146,12 @@
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+
+# ------------------------------------------------------------------------------
+# 9. MapLibre 原生 SDK 保护规则
+# ------------------------------------------------------------------------------
+-keep class org.maplibre.android.** { *; }
+-keep interface org.maplibre.android.** { *; }
+-dontwarn org.maplibre.android.**
+-keepclassmembers class org.maplibre.android.** { *; }
+
