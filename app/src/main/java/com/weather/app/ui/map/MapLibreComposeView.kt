@@ -104,7 +104,7 @@ fun MapLibreComposeView(
         mapInstance?.let { map ->
             val cameraPosition = CameraPosition.Builder()
                 .target(targetLatLng)
-                .zoom(zoom)
+                .zoom(zoom.coerceIn(MapLibreHelper.MIN_ZOOM, MapLibreHelper.MAX_ZOOM))
                 .build()
             map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 300)
         }
@@ -115,6 +115,10 @@ fun MapLibreComposeView(
             mapView.apply {
                 getMapAsync { map ->
                     mapInstance = map
+
+                    // 配置高德地图标准缩放级别范围（3.0 ~ 18.0）
+                    map.setMinZoomPreference(MapLibreHelper.MIN_ZOOM)
+                    map.setMaxZoomPreference(MapLibreHelper.MAX_ZOOM)
 
                     // 配置手势交互与内置 UI 控件状态
                     map.uiSettings.apply {
@@ -131,7 +135,7 @@ fun MapLibreComposeView(
                     // 设置初始相机位置
                     map.cameraPosition = CameraPosition.Builder()
                         .target(targetLatLng)
-                        .zoom(zoom)
+                        .zoom(zoom.coerceIn(MapLibreHelper.MIN_ZOOM, MapLibreHelper.MAX_ZOOM))
                         .build()
 
                     /**

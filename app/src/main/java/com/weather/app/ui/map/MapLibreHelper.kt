@@ -18,6 +18,18 @@ import org.maplibre.android.style.sources.TileSet
  */
 object MapLibreHelper {
 
+    /** 高德地图官方支持的最小缩放级别（国家/全球视野） */
+    const val MIN_ZOOM = 3.0
+
+    /** 高德地图支持的最大缩放级别（18 级街区精细视野） */
+    const val MAX_ZOOM = 18.0
+
+    /** 高德栅格切片瓦片底层支持的最小缩放级别 */
+    const val TILE_MIN_ZOOM = 3
+
+    /** 高德栅格切片瓦片底层支持的最大切片级别 */
+    const val TILE_MAX_ZOOM = 18
+
     private const val SOURCE_RADAR = "rainviewer-radar-source"
     private const val LAYER_RADAR = "rainviewer-radar-layer"
 
@@ -37,6 +49,11 @@ object MapLibreHelper {
         }
     }
 
+    /**
+     * 构建暗色夜景底图样式 JSON（高德栅格深色模式切片）
+     *
+     * @return 暗色夜景 Style JSON
+     */
     private fun buildDarkStyleJson(): String {
         return """
 {
@@ -53,18 +70,20 @@ object MapLibreHelper {
         "https://wprd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}"
       ],
       "tileSize": 256,
-      "maxzoom": 18
+      "minzoom": $TILE_MIN_ZOOM,
+      "maxzoom": $TILE_MAX_ZOOM
     },
     "amap-labels": {
       "type": "raster",
       "tiles": [
         "https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
-        "https://wprd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}_z={z}",
+        "https://wprd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
         "https://wprd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
         "https://wprd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
       ],
       "tileSize": 256,
-      "maxzoom": 18
+      "minzoom": $TILE_MIN_ZOOM,
+      "maxzoom": $TILE_MAX_ZOOM
     }
   },
 
@@ -165,7 +184,8 @@ object MapLibreHelper {
                 "https://webrd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=2&style=8&x={x}&y={y}&z={z}"
               ],
               "tileSize": 256,
-              "maxzoom": 18
+              "minzoom": $TILE_MIN_ZOOM,
+              "maxzoom": $TILE_MAX_ZOOM
             }
           },
           "layers": [
@@ -206,7 +226,8 @@ object MapLibreHelper {
                 "https://webst04.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}"
               ],
               "tileSize": 256,
-              "maxzoom": 18
+              "minzoom": $TILE_MIN_ZOOM,
+              "maxzoom": $TILE_MAX_ZOOM
             },
             "amap-labels": {
               "type": "raster",
@@ -217,7 +238,8 @@ object MapLibreHelper {
                 "https://webst04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
               ],
               "tileSize": 256,
-              "maxzoom": 18
+              "minzoom": $TILE_MIN_ZOOM,
+              "maxzoom": $TILE_MAX_ZOOM
             }
           },
           "layers": [
@@ -290,8 +312,8 @@ object MapLibreHelper {
 
         try {
             val tileSet = TileSet("2.1.0", radarTileUrl).apply {
-                maxZoom = 18f
-                minZoom = 0f
+                minZoom = MIN_ZOOM.toFloat()
+                maxZoom = TILE_MAX_ZOOM.toFloat()
             }
             val rasterSource = RasterSource(SOURCE_RADAR, tileSet, 256)
             style.addSource(rasterSource)
@@ -347,6 +369,6 @@ object MapLibreHelper {
             kotlin.math.ln((40075016.686 * kotlin.math.cos(radLat)) / (256.0 * targetMetersPerPx)) / kotlin.math.ln(
                 2.0
             )
-        return initialZoom.coerceIn(3.0, 18.0)
+        return initialZoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
     }
 }
