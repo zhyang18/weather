@@ -97,6 +97,7 @@ object WeatherAutoUpdateScheduler {
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresBatteryNotLow(true)
             .build()
 
         val periodicWorkRequest = PeriodicWorkRequestBuilder<WeatherAutoUpdateWorker>(

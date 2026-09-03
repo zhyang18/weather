@@ -29,6 +29,14 @@ import kotlin.coroutines.resume
  */
 class AppLocationManager(private val context: Context) {
 
+    companion object {
+        /** 门牌号与纯数字建筑物特征预编译正则表达式 */
+        private val REGEX_NUMERIC_FEATURE = Regex("^[0-9一二三四五六七八九十百]+(?:号|号院|弄|栋|幢|单元|室|层)?$")
+
+        /** 常见中国行政区划前缀剥离预编译正则表达式 */
+        private val REGEX_ADMIN_PREFIX = Regex("^(?:[\\u4e00-\\u9fa5]{2,10}(?:省|自治区|特别行政区))?(?:[\\u4e00-\\u9fa5]{2,10}(?:市|地区|自治州|盟))?(?:[\\u4e00-\\u9fa5]{2,10}(?:区|县|县级市|旗))")
+    }
+
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
 
     /**
@@ -316,7 +324,7 @@ class AppLocationManager(private val context: Context) {
 
                 // 提取纯净地标/街道/建筑名（排除纯数字门牌号与市/省同名）
                 val rawFeature = featureName.trim()
-                val isNumericFeature = rawFeature.all { it.isDigit() } || rawFeature.matches(Regex("^[0-9一二三四五六七八九十百]+(?:号|号院|弄|栋|幢|单元|室|层)?$"))
+                val isNumericFeature = rawFeature.all { it.isDigit() } || rawFeature.matches(REGEX_NUMERIC_FEATURE)
 
                 val cleanedFeature = if (!isNumericFeature && rawFeature.isNotEmpty()) {
                     extractLastLevelName(rawFeature, province, locality, districtName)
@@ -456,8 +464,7 @@ class AppLocationManager(private val context: Context) {
         }
 
         // 2. 正则剥离可能残留的常见中国行政区划前缀 (例如 "广东省深圳市南山区高新南一道" -> "高新南一道")
-        val adminRegex = Regex("^(?:[\\u4e00-\\u9fa5]{2,10}(?:省|自治区|特别行政区))?(?:[\\u4e00-\\u9fa5]{2,10}(?:市|地区|自治州|盟))?(?:[\\u4e00-\\u9fa5]{2,10}(?:区|县|县级市|旗))")
-        val match = adminRegex.find(text)
+        val match = REGEX_ADMIN_PREFIX.find(text)
         if (match != null && match.value.isNotEmpty() && match.value.length < text.length) {
             val remain = text.substring(match.value.length).trimStart(' ', '·', '-', '/', ',', '，', '_')
             if (remain.isNotEmpty()) {

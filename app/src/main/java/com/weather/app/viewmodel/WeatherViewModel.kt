@@ -763,20 +763,37 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 启动前台定时自动刷新检查轮询协程
+     * 启动前台智能定时自动刷新检查协程
      *
-     * 根据用户配置的 [autoUpdateIntervalMinutes] 定期轮询检查当前数据是否已过期。
-     * 采用轻量高效的休眠唤醒机制，并在数据超出设定间隔时自动触发静默刷新。
+     * 根据用户配置的 [autoUpdateIntervalMinutes] 与当前天气数据的最后刷新时间戳，
+     * 动态精确计算距下一次过期的剩余毫秒数并单次休眠，彻底消除原本每 15 秒高频唤醒导致的电量空耗。
+     * 当数据超出设定间隔时自动触发静默刷新，并在刷新完成后精准安排下一周期的休眠。
      */
     private fun startAutoRefreshLoop() {
         autoRefreshJob?.cancel()
         val intervalMinutes = _uiState.value.autoUpdateIntervalMinutes
         if (intervalMinutes <= 0) return
 
+        val intervalMillis = intervalMinutes * 60 * 1000L
+
         autoRefreshJob = viewModelScope.launch {
             while (true) {
-                delay(15_000L) // 每 15 秒轻量检查一次是否超时
-                checkAndAutoRefresh()
+                val now = System.currentTimeMillis()
+                val currentWeather = _uiState.value.getCurrentWeather()
+                val lastUpdate = currentWeather?.updateTimestamp ?: 0L
+                val elapsed = now - lastUpdate
+                val remaining = intervalMillis - elapsed
+
+                if (remaining <= 0 || currentWeather == null) {
+                    // 已过期或无天气数据，触发静默刷新
+                    refreshAllSavedCitiesSilent()
+                    // 刷新完成后休眠一个完整间隔
+                    delay(intervalMillis)
+                } else {
+                    // 尚未过期，精准休眠剩余时长（最小保底 60 秒，避免因系统时间微调引发频密轮询）
+                    delay(remaining.coerceIn(60_000L, intervalMillis))
+                    refreshAllSavedCitiesSilent()
+                }
             }
         }
     }
@@ -876,6 +893,17 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         checkAndAutoRefresh()
         // 3. 确保前台定时器处于激活状态
         startAutoRefreshLoop()
+    }
+
+    /**
+     * 当应用退至后台 (Activity onStop) 时的生命周期通知
+     *
+     * 立即取消前台定时刷新轮询协程，杜绝应用处于不可见状态时在后台空耗 CPU 算力与电池电量。
+     * 后台静默刷新完全交由 WorkManager 在满足网络与省电约束的前提下统一调度。
+     */
+    fun onAppStop() {
+        autoRefreshJob?.cancel()
+        autoRefreshJob = null
     }
 
     /**

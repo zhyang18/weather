@@ -141,9 +141,7 @@ class QWeatherWeatherDataSource(
         level = HttpLoggingInterceptor.Level.BODY
     }
 
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+    private val okHttpClient: OkHttpClient = com.weather.app.datasource.NetworkClientProvider.newBuilder(15, 15)
         .addInterceptor(authInterceptor)
         .addInterceptor(loggingInterceptor)
         .build()

@@ -762,6 +762,26 @@ private fun createEarthWebView(context: Context): WebView {
 }
 
 /**
+ * 昼夜晨昏线沉浸式星空伪随机星芒粒子相对坐标常量列表（静态常驻内存，杜绝重绘产生垃圾分配）
+ */
+private val EARTH_STAR_COORDS = listOf(
+    Triple(0.12f, 0.08f, 1.2f),
+    Triple(0.35f, 0.04f, 0.8f),
+    Triple(0.78f, 0.07f, 1.4f),
+    Triple(0.90f, 0.15f, 0.9f),
+    Triple(0.08f, 0.22f, 0.7f),
+    Triple(0.85f, 0.28f, 1.1f),
+    Triple(0.24f, 0.38f, 1.3f),
+    Triple(0.68f, 0.42f, 0.8f),
+    Triple(0.15f, 0.55f, 1.0f),
+    Triple(0.92f, 0.62f, 1.2f),
+    Triple(0.40f, 0.70f, 0.7f),
+    Triple(0.75f, 0.80f, 1.5f),
+    Triple(0.18f, 0.88f, 0.9f),
+    Triple(0.88f, 0.92f, 1.1f)
+)
+
+/**
  * 昼夜晨昏线沉浸式星空微光背景画布（与月相详情页星空体系完全一致）
  *
  * @param modifier 外部修饰符 [Modifier]
@@ -774,25 +794,7 @@ private fun EarthStarlightBackgroundCanvas(
         val w = size.width
         val h = size.height
 
-        // 静态伪随机星芒粒子（固定种子保持稳定，无动态重绘开销）
-        val starCoords = listOf(
-            Triple(0.12f, 0.08f, 1.2f),
-            Triple(0.35f, 0.04f, 0.8f),
-            Triple(0.78f, 0.07f, 1.4f),
-            Triple(0.90f, 0.15f, 0.9f),
-            Triple(0.08f, 0.22f, 0.7f),
-            Triple(0.85f, 0.28f, 1.1f),
-            Triple(0.24f, 0.38f, 1.3f),
-            Triple(0.68f, 0.42f, 0.8f),
-            Triple(0.15f, 0.55f, 1.0f),
-            Triple(0.92f, 0.62f, 1.2f),
-            Triple(0.40f, 0.70f, 0.7f),
-            Triple(0.75f, 0.80f, 1.5f),
-            Triple(0.18f, 0.88f, 0.9f),
-            Triple(0.88f, 0.92f, 1.1f)
-        )
-
-        starCoords.forEach { (rx, ry, r) ->
+        EARTH_STAR_COORDS.forEach { (rx, ry, r) ->
             drawCircle(
                 color = Color.White.copy(alpha = 0.40f),
                 radius = r.dp.toPx(),

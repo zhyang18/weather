@@ -66,9 +66,7 @@ class CaiyunWeatherDataSource(
             level = HttpLoggingInterceptor.Level.BASIC
         }
 
-        okHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
+        okHttpClient = com.weather.app.datasource.NetworkClientProvider.newBuilder(15, 15)
             .addInterceptor(loggingInterceptor)
             .addInterceptor { chain ->
                 val config = getActiveConfig()

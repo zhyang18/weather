@@ -15,10 +15,7 @@ import java.util.concurrent.TimeUnit
  */
 object SeniverseVerifier {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val client = com.weather.app.datasource.NetworkClientProvider.newBuilder(10, 10).build()
 
     /**
      * 在线测试并验证心知天气凭据配置与网络可用性

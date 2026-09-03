@@ -33,7 +33,7 @@ object MapLibreHelper {
     private const val SOURCE_RADAR = "rainviewer-radar-source"
     private const val LAYER_RADAR = "rainviewer-radar-layer"
 
-    private val httpClient = OkHttpClient.Builder().build()
+    private val httpClient = com.weather.app.datasource.NetworkClientProvider.sharedOkHttpClient
 
     /**
      * 根据图层类型构造对应的 MapLibre Style JSON 字符串

@@ -172,9 +172,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
             level = HttpLoggingInterceptor.Level.BASIC
         }
 
-        val okHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
+        val okHttpClient = com.weather.app.datasource.NetworkClientProvider.newBuilder(15, 15)
             .addInterceptor(loggingInterceptor)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()

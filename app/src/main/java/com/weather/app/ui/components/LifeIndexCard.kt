@@ -1,6 +1,7 @@
 package com.weather.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,11 +12,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checkroom
@@ -35,10 +39,12 @@ import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Phishing
 import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -249,96 +255,92 @@ fun LifeIndexDetailSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xF2182230),
-        scrimColor = Color.Black.copy(alpha = 0.55f),
-        dragHandle = null
+        containerColor = Color(0xF2182230), // 95% 磨砂深灰蓝底色，全应用统一样式
+        scrimColor = Color.Transparent,     // 与已有弹窗保持一致的无缝透明遮罩
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color.White.copy(alpha = 0.35f)
+            )
+        }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.88f)
-                .padding(horizontal = 18.dp, vertical = 16.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 2.dp)
         ) {
-            // 顶部栏：标题与关闭按钮
+            // 1. 弹窗头部：主标题 + 指南条目总数胶囊徽章
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(Color(0xFFFBBF24).copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lightbulb,
-                            contentDescription = "生活指数全览",
-                            tint = Color(0xFFFBBF24),
-                            modifier = Modifier.size(18.dp)
+                Text(
+                    text = "生活气象指数",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = Color.White
+                )
+
+                // 统一风格的指南数量徽章
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFFBBF24).copy(alpha = 0.15f))
+                        .border(
+                            width = 1.dp,
+                            color = Color(0xFFFBBF24).copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(8.dp)
                         )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "生活气象指数全览",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "全天候科学气象指导与日常健康出行建议",
-                            color = Color.White.copy(alpha = 0.60f),
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭",
-                        tint = Color.White.copy(alpha = 0.75f),
-                        modifier = Modifier.size(20.dp)
+                    Text(
+                        text = "共 ${allItems.size} 项指南",
+                        color = Color(0xFFFBBF24),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = "全天候科学气象指导与日常健康出行建议",
+                fontSize = 12.5.sp,
+                color = Color.White.copy(alpha = 0.65f)
+            )
+
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 全量生活指数大卡片列表
+            // 2. 全量生活指数大卡片列表
             LazyColumn(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .heightIn(max = 560.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(allItems) { item ->
                     LifeIndexEnlargedCardRow(item = item)
                 }
                 item {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    // 底部贴心提示
+                    Spacer(modifier = Modifier.height(10.dp))
+                    // 底部贴心提示说明
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.04f))
-                            .padding(10.dp),
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.05f))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "💡 生活气象指数随每日温差、湿度、风力与降水实时推导更新",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.50f),
+                            fontSize = 11.5.sp,
+                            color = Color.White.copy(alpha = 0.55f),
                             textAlign = TextAlign.Center
                         )
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         }
@@ -348,6 +350,8 @@ fun LifeIndexDetailSheet(
 /**
  * 放大卡片中的单项生活指数全景展示卡片
  *
+ * 遵循全应用弹窗统一的 Surface(0x352C3E55)、RoundedCornerShape(14.dp) 与圆形微光图标设计规范。
+ *
  * @param item 生活指数数据条目 [LifeIndexItem]
  */
 @Composable
@@ -355,30 +359,30 @@ private fun LifeIndexEnlargedCardRow(item: LifeIndexItem) {
     val icon = getLifeIndexIcon(item.category, item.name)
     val themeColor = getLifeIndexThemeColor(item.category)
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0x45203348))
-            .padding(horizontal = 14.dp, vertical = 11.dp)
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0x352C3E55),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 大尺寸微光发光图标容器
+            // 圆形图标容器（与设置、数据源等弹窗的 38.dp 圆形图标一致）
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(themeColor.copy(alpha = 0.15f)),
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(themeColor.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = item.name,
                     tint = themeColor,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -394,21 +398,21 @@ private fun LifeIndexEnlargedCardRow(item: LifeIndexItem) {
                 ) {
                     Text(
                         text = item.name,
-                        color = Color.White.copy(alpha = 0.90f),
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Medium
+                        color = Color.White,
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Normal
                     )
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(themeColor.copy(alpha = 0.20f))
-                            .padding(horizontal = 6.dp, vertical = 1.5.dp)
+                            .background(themeColor.copy(alpha = 0.18f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = item.level,
                             color = themeColor,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
@@ -418,9 +422,9 @@ private fun LifeIndexEnlargedCardRow(item: LifeIndexItem) {
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = item.advice,
-                        color = Color.White.copy(alpha = 0.70f),
+                        color = Color.White.copy(alpha = 0.68f),
                         fontSize = 11.5.sp,
-                        lineHeight = 15.5.sp
+                        lineHeight = 15.sp
                     )
                 }
             }

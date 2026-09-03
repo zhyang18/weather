@@ -1432,6 +1432,22 @@ private fun DrawScope.drawDetailPhotorealisticSun(
 }
 
 /**
+ * 日出日落沉浸式星空伪随机星芒粒子相对坐标常量列表（静态常驻内存，杜绝重绘产生垃圾分配）
+ */
+private val SUN_STAR_COORDS = listOf(
+    Triple(0.12f, 0.08f, 1.2f),
+    Triple(0.85f, 0.12f, 1.0f),
+    Triple(0.25f, 0.22f, 1.5f),
+    Triple(0.70f, 0.28f, 0.8f),
+    Triple(0.18f, 0.45f, 1.0f),
+    Triple(0.90f, 0.52f, 1.3f),
+    Triple(0.35f, 0.68f, 0.9f),
+    Triple(0.80f, 0.78f, 1.4f),
+    Triple(0.15f, 0.88f, 1.1f),
+    Triple(0.65f, 0.92f, 0.8f)
+)
+
+/**
  * 绘制背景星空粒子装饰
  *
  * @param modifier 外部修饰符 [Modifier]
@@ -1439,20 +1455,7 @@ private fun DrawScope.drawDetailPhotorealisticSun(
 @Composable
 private fun StarlightBackgroundCanvas(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
-        val starPoints = listOf(
-            Triple(0.12f, 0.08f, 1.2f),
-            Triple(0.85f, 0.12f, 1.0f),
-            Triple(0.25f, 0.22f, 1.5f),
-            Triple(0.70f, 0.28f, 0.8f),
-            Triple(0.18f, 0.45f, 1.0f),
-            Triple(0.90f, 0.52f, 1.3f),
-            Triple(0.35f, 0.68f, 0.9f),
-            Triple(0.80f, 0.78f, 1.4f),
-            Triple(0.15f, 0.88f, 1.1f),
-            Triple(0.65f, 0.92f, 0.8f)
-        )
-
-        starPoints.forEach { (nx, ny, r) ->
+        SUN_STAR_COORDS.forEach { (nx, ny, r) ->
             drawCircle(
                 color = Color.White.copy(alpha = 0.25f),
                 radius = r.dp.toPx(),

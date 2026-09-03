@@ -19,10 +19,7 @@ import java.util.concurrent.TimeUnit
  */
 object QWeatherStatsFetcher {
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.weather.app.datasource.NetworkClientProvider.newBuilder(12, 12).build()
 
     /**
      * 在线拉取并解析和风天气控制台请求量统计数据

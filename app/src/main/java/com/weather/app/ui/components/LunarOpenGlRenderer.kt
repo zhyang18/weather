@@ -572,7 +572,6 @@ class LunarOpenGlRenderer {
             pixelBuffer.position(0)
             bitmap.copyPixelsFromBuffer(pixelBuffer)
 
-            // OpenGL 读取出来的 Y 轴与 Android Bitmap 坐标系相反，进行垂直翻转
             val matrix = android.graphics.Matrix().apply { postScale(1f, -1f) }
             val flippedBitmap = Bitmap.createBitmap(bitmap, 0, 0, targetSize, targetSize, matrix, true)
 

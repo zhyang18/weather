@@ -75,6 +75,16 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Activity 进入后台不可见状态生命周期回调
+     *
+     * 通知 ViewModel 挂起前台定时刷新轮询协程，杜绝退至后台或锁屏期间的 CPU 与电池电量无谓消耗。
+     */
+    override fun onStop() {
+        super.onStop()
+        weatherViewModel.onAppStop()
+    }
+
+    /**
      * 检查并请求定位权限
      */
     private fun checkAndRequestLocationPermission() {

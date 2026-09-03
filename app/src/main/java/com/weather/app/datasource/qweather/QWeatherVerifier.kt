@@ -15,10 +15,7 @@ import java.util.concurrent.TimeUnit
  */
 object QWeatherVerifier {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val client = com.weather.app.datasource.NetworkClientProvider.newBuilder(10, 10).build()
 
     /**
      * 在线测试并验证和风天气凭据配置
