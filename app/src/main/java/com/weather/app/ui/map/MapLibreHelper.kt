@@ -259,4 +259,26 @@ object MapLibreHelper {
             e.printStackTrace()
         }
     }
+
+    /**
+     * 计算使得屏幕比例尺刚好呈现目标大地距离（如 300 米）时的最优 Zoom 级别
+     *
+     * @param targetDistanceMeters 期望标尺显示的距离（米），如 300.0
+     * @param targetWidthDp 期望标尺占用的屏幕宽度（dp），如 70f
+     * @param latitude 当前视口纬度数值
+     * @param density 当前屏幕像素密度
+     * @return 适合的相机缩放级别（Zoom）
+     */
+    fun calculateZoomForScaleDistance(
+        targetDistanceMeters: Double = 300.0,
+        targetWidthDp: Float = 70f,
+        latitude: Double,
+        density: Float
+    ): Double {
+        val clampedLat = latitude.coerceIn(-80.0, 80.0)
+        val radLat = Math.toRadians(clampedLat)
+        val targetMetersPerPx = (targetDistanceMeters / targetWidthDp) / density
+        val initialZoom = kotlin.math.ln((40075016.686 * kotlin.math.cos(radLat)) / (256.0 * targetMetersPerPx)) / kotlin.math.ln(2.0)
+        return initialZoom.coerceIn(3.0, 18.0)
+    }
 }

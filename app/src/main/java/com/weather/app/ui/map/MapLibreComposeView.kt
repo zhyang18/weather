@@ -35,6 +35,7 @@ import org.maplibre.android.maps.Style
  * @param mapLayerType 底图类型标识（dark: 暗色夜景, standard: 标准街景, satellite: 卫星影像）
  * @param isInteractive 是否允许用户通过手势拖拽、缩放和旋转地图（卡片模式下可设为 false）
  * @param onMapReady 地图及其样式加载完成后的回调函数，提供 [MapLibreMap] 与当前 [Style] 句柄
+ * @param onCameraMove 地图相机视角平移、缩放或旋转变化时的回调函数，提供当前 [CameraPosition] 与实测每像素大地距离（米/px）
  */
 @Composable
 fun MapLibreComposeView(
@@ -44,7 +45,8 @@ fun MapLibreComposeView(
     zoom: Double = 15.0,
     mapLayerType: String = "dark",
     isInteractive: Boolean = true,
-    onMapReady: (MapLibreMap, Style) -> Unit = { _, _ -> }
+    onMapReady: (MapLibreMap, Style) -> Unit = { _, _ -> },
+    onCameraMove: (CameraPosition, Double) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -132,11 +134,47 @@ fun MapLibreComposeView(
                         .zoom(zoom)
                         .build()
 
+                    /**
+                     * 通过屏幕中心两点经纬度实测采样计算精确的物理像素分辨率，触发相机回调
+                     *
+                     * 采样两点横跨屏幕中心 40% 宽度，单次采样间距越大精度越高。
+                     * 完全不依赖 zoom 公式，支持任意倾斜/旋转/投影状态。
+                     */
+                    fun updateScaleSampling() {
+                        val w = mapView.width.takeIf { it > 50 }?.toFloat() ?: return
+                        val h = mapView.height.takeIf { it > 50 }?.toFloat() ?: return
+                        val cx = w / 2f
+                        val cy = h / 2f
+                        // 采样间距取屏幕宽度的 40%，大间距可降低浮点误差影响
+                        val halfDelta = w * 0.2f
+
+                        val geo1 = map.projection.fromScreenLocation(
+                            android.graphics.PointF(cx - halfDelta, cy)
+                        ) ?: return
+                        val geo2 = map.projection.fromScreenLocation(
+                            android.graphics.PointF(cx + halfDelta, cy)
+                        ) ?: return
+
+                        // 球面大地距离 / 屏幕物理像素间距 = 每物理像素对应真实大地距离（米/px）
+                        val metersPerPhysicalPixel = geo1.distanceTo(geo2) / (halfDelta * 2).toDouble()
+                        onCameraMove(map.cameraPosition, metersPerPhysicalPixel)
+                    }
+
+                    // 初始化完成后立即触发一次（等待 View 测量布局完毕）
+                    mapView.post { updateScaleSampling() }
+
+                    // 相机移动中（每帧）触发：捕捉双指缩放/旋转手势的实时变化
+                    map.addOnCameraMoveListener { updateScaleSampling() }
+
+                    // 相机静止（惯性结束）时触发：确保最终状态精确
+                    map.addOnCameraIdleListener { updateScaleSampling() }
+
                     // 加载初始底图样式
                     val initialStyleJson = MapLibreHelper.buildStyleJson(mapLayerType)
                     map.setStyle(Style.Builder().fromJson(initialStyleJson)) { style ->
                         currentStyleInstance = style
                         onMapReady(map, style)
+                        mapView.post { updateScaleSampling() }
                     }
                 }
             }

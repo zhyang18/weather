@@ -57,10 +57,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.weather.app.model.CityInfo
 import com.weather.app.model.WeatherData
 import com.weather.app.ui.map.MapLibreComposeView
 import com.weather.app.ui.map.MapLibreHelper
+import com.weather.app.ui.map.MapScaleBarView
 import com.weather.app.util.CoordinateTransform
 import kotlinx.coroutines.launch
 import org.maplibre.android.annotations.Marker
@@ -102,7 +104,7 @@ enum class MapLayerType(val key: String, val title: String) {
  * 全屏定位气象大地图页面（基于 MapLibre Native 原生渲染引擎）
  *
  * 采用全屏硬件加速架构，支持双指自由平移旋转缩放、多源底图即时切换、
- * RainViewer 实时降水气象雷达瓦片叠加、一键复位平滑相机动画以及底部天气实况卡片。
+ * RainViewer 实时降水气象雷达瓦片叠加、一键复位平滑相机动画、高精度自适应比例尺以及底部天气实况卡片。
  *
  * @param visible 是否展示该全屏页面
  * @param city 当前聚焦的城市实体 [CityInfo]
@@ -158,6 +160,9 @@ fun LocationMapScreen(
             LatLng(gcjCoords.first, gcjCoords.second)
         }
 
+        // 默认街道级缩放级别（标准 300m 街区视野 / Zoom 16.0）
+        val defaultZoom = 16.0
+
         var currentLayer by remember(mapLayerType) { mutableStateOf(MapLayerType.fromKey(mapLayerType)) }
         var isRadarEnabled by remember(isMapRadarEnabled) { mutableStateOf(isMapRadarEnabled) }
         var showLayerSelector by remember { mutableStateOf(false) }
@@ -165,20 +170,22 @@ fun LocationMapScreen(
         var mapInstance by remember { mutableStateOf<MapLibreMap?>(null) }
         var currentStyle by remember { mutableStateOf<Style?>(null) }
         var currentMarker by remember { mutableStateOf<Marker?>(null) }
+        var currentCameraPosition by remember { mutableStateOf<CameraPosition?>(null) }
         val scope = rememberCoroutineScope()
 
-        // 更新标注点
+        // 持有 MapScaleBarView 实例引用，供 onCameraMove 直接调用（零延迟，无 Compose 重组开销）
+        val scaleBarViewRef = remember { mutableStateOf<MapScaleBarView?>(null) }
+
+        // 更新定位标注点（仅保留纯图标标记，不添加提示气泡并屏蔽点击事件）
         fun updateMapMarker(map: MapLibreMap) {
             currentMarker?.let { map.removeMarker(it) }
-            val subtitle = "气温: ${weatherData?.current?.temperature?.toInt() ?: 0}° · ${weatherData?.getDisplayWeatherText() ?: ""}"
             val marker = map.addMarker(
                 MarkerOptions()
                     .position(targetLatLng)
-                    .title(cityName)
-                    .snippet(subtitle)
             )
             currentMarker = marker
-            map.selectMarker(marker)
+            // 彻底拦截并消费标注点的点击事件，防止弹出任何默认提示气泡框
+            map.setOnMarkerClickListener { true }
         }
 
         // 同步雷达图层状态
@@ -196,14 +203,14 @@ fun LocationMapScreen(
             }
         }
 
-        // 当城市坐标或天气数据变化时，更新标记点与相机中心
+        // 当城市坐标或天气数据变化时，更新标记点与相机中心（默认加载 300m 街区视野 / Zoom 16.0）
         LaunchedEffect(visible, targetLatLng, cityName, weatherData, mapInstance) {
             mapInstance?.let { map ->
                 if (visible) {
                     updateMapMarker(map)
                     val cameraPosition = CameraPosition.Builder()
                         .target(targetLatLng)
-                        .zoom(15.5)
+                        .zoom(defaultZoom)
                         .build()
                     map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 400)
                 }
@@ -222,19 +229,25 @@ fun LocationMapScreen(
                 .fillMaxSize()
                 .background(Color(0xFF121824))
         ) {
-            // 1. 底层全屏 MapLibre 原生地图
+            // 1. 底层全屏 MapLibre 原生地图（默认 300m 街区视野 / Zoom 16.0）
             MapLibreComposeView(
                 modifier = Modifier.fillMaxSize(),
                 lat = lat,
                 lng = lng,
-                zoom = 15.5,
+                zoom = defaultZoom,
                 mapLayerType = currentLayer.key,
                 isInteractive = true,
                 onMapReady = { map, style ->
                     mapInstance = map
                     currentStyle = style
+                    currentCameraPosition = map.cameraPosition
                     updateMapMarker(map)
                     syncRadarLayer(style, isRadarEnabled)
+                },
+                onCameraMove = { cameraPosition, metersPerPx ->
+                    currentCameraPosition = cameraPosition
+                    // 直接驱动原生 View 重绘，完全绕开 Compose 重组调度，做到相机每帧零延迟
+                    scaleBarViewRef.value?.updateFromSampling(metersPerPx)
                 }
             )
 
@@ -344,7 +357,7 @@ fun LocationMapScreen(
                     }
                 )
 
-                // 当前城市位置复位
+                // 当前城市位置复位（平滑动画飞回 300m 比例尺）
                 MapFloatingButton(
                     icon = Icons.Default.MyLocation,
                     contentDescription = "复位定位",
@@ -352,7 +365,7 @@ fun LocationMapScreen(
                         mapInstance?.let { map ->
                             val cameraPosition = CameraPosition.Builder()
                                 .target(targetLatLng)
-                                .zoom(15.5)
+                                .zoom(defaultZoom)
                                 .build()
                             map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 500)
                         }
@@ -400,7 +413,20 @@ fun LocationMapScreen(
                 }
             }
 
-            // 5. 底部城市天气详情信息浮窗
+            // 5. 左下角原生高帧率比例尺（由 onCameraMove 直接调用 updateFromSampling，零延迟实时刷新）
+            AndroidView(
+                factory = { ctx ->
+                    MapScaleBarView(ctx).also { view ->
+                        scaleBarViewRef.value = view
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 20.dp, bottom = 92.dp)
+            )
+
+            // 6. 底部城市天气详情信息浮窗
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xEB16202E),
