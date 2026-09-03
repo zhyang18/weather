@@ -252,7 +252,7 @@
             var mapCoords = toMapCoordinate(rawLat, rawLng);
             currentLat = mapCoords[0];
             currentLng = mapCoords[1];
-            var initialZoom = zoom || 14;
+            var initialZoom = zoom || 16;
 
             if (map) {
                 map.remove();
@@ -497,7 +497,7 @@
 
         window.addEventListener('resize', triggerResize);
         document.addEventListener('DOMContentLoaded', function() {
-            safeInit(32.17, 118.76, 14, true);
+            safeInit(32.17, 118.76, 16, true);
         });
     </script>
 </body>

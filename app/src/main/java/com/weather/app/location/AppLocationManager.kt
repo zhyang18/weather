@@ -79,14 +79,48 @@ class AppLocationManager(private val context: Context) {
     }
 
     /**
+     * 逆地理编码缓存数据模型
+     *
+     * @property latitude 缓存时经纬度纬度
+     * @property longitude 缓存时经纬度经度
+     * @property displayMode 缓存时的展示模式
+     * @property timestamp 缓存产生的时间戳（毫秒）
+     * @property cityInfo 逆地理编码解析得到的城市实体
+     */
+    private data class CachedGeocodeResult(
+        val latitude: Double,
+        val longitude: Double,
+        val displayMode: com.weather.app.model.LocationDisplayMode,
+        val timestamp: Long,
+        val cityInfo: CityInfo
+    )
+
+    @Volatile
+    private var recentGeocodeCache: CachedGeocodeResult? = null
+
+    /**
+     * 计算两个经纬度坐标点之间的直线球面距离（单位：米）
+     *
+     * @param lat1 起点纬度
+     * @param lon1 起点经度
+     * @param lat2 终点纬度
+     * @param lon2 终点经度
+     * @return 两点间直线距离（米）
+     */
+    fun calculateDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+        val results = FloatArray(1)
+        Location.distanceBetween(lat1, lon1, lat2, lon2, results)
+        return results[0]
+    }
+
+    /**
      * 异步获取设备当前地理位置经纬度
      *
-     * 采用分级收敛策略：
-     * 1. 当 [forceRefresh] 为 false 时，若存在 60 秒内的极新鲜历史定位则秒级直接复用；
+     * 采用室内极速收敛与分级响应策略：
+     * 1. 当 [forceRefresh] 为 false 时，若存在 120 秒内且精度良好的历史定位直接秒级复用；
      * 2. 并发向 GPS、Network、Fused 等所有可用硬件与网络提供商注册单次高频定位监听；
-     * 3. 收到高精度定位（任意提供商 <= 100m）时立即快速返回，彻底消除室内无 GPS 搜星时的长时间等待；
-     * 4. 收到中等精度定位候选（<= 300m）时在短暂观察后快速收敛返回；
-     * 5. 若 3.0 秒内未达到极致精度，优先返回监听期间收到的最佳实时候选坐标；若无任何实时更新则安全回退至系统最近历史位置，杜绝定位失败漂移。
+     * 3. 针对室内弱信号与蜂窝/Wi-Fi 环境优化收敛阈值（<= 500m 极速采纳，<= 1000m 基站粗定位即刻返回），彻底消除室内无 GPS 搜星时的长时间等待；
+     * 4. 设置 1.5 秒安全超时窗口，超时未收到更优实时定位时安全回退至系统最近历史位置，保障毫秒级流畅体验。
      *
      * @param forceRefresh 是否强制触发实时定位更新（为 true 时发起实时硬件与基站网络搜寻）
      * @return 包含系统最新位置对象的 [Location] 或 null（未授权或硬件定位功能彻底关闭）
@@ -99,8 +133,8 @@ class AppLocationManager(private val context: Context) {
 
         val bestLastKnown = getBestLastKnownLocation()
 
-        // 非强制刷新模式下，若最后已知位置在 60 秒内且精度良好（<= 150m）则秒级直接复用
-        if (!forceRefresh && bestLastKnown != null && (System.currentTimeMillis() - bestLastKnown.time < 60 * 1000) && bestLastKnown.accuracy <= 150f) {
+        // 非强制刷新模式下，若最后已知位置在 120 秒内且精度良好（<= 200m）则秒级直接复用
+        if (!forceRefresh && bestLastKnown != null && (System.currentTimeMillis() - bestLastKnown.time < 120 * 1000) && bestLastKnown.accuracy <= 200f) {
             return@withContext bestLastKnown
         }
 
@@ -125,8 +159,8 @@ class AppLocationManager(private val context: Context) {
 
         var bestCandidate: Location? = null
 
-        // 实时并发请求最新定位（3.0 秒超时窗口，兼顾搜星响应速度与用户交互流畅性）
-        val liveLocation = withTimeoutOrNull(3000) {
+        // 实时并发请求最新定位（1.5 秒超时窗口，兼顾室内网络定位极速响应与防卡顿）
+        val liveLocation = withTimeoutOrNull(1500) {
             suspendCancellableCoroutine { continuation ->
                 var isResumed = false
 
@@ -137,8 +171,8 @@ class AppLocationManager(private val context: Context) {
 
                             val accuracy = location.accuracy
 
-                            // 满足高精度条件（任意提供商 accuracy <= 100m）即可立即采纳并返回，极速响应室内网络/Wi-Fi 定位
-                            if (accuracy in 0.0f..100.0f) {
+                            // 针对室内 Wi-Fi / 网络定位（accuracy <= 500m）立即采纳并返回，实现毫秒级快速响应
+                            if (accuracy in 0.0f..500.0f) {
                                 isResumed = true
                                 locationManager.removeUpdates(this)
                                 if (continuation.isActive) {
@@ -152,8 +186,8 @@ class AppLocationManager(private val context: Context) {
                                 bestCandidate = location
                             }
 
-                            // 针对室内弱信号场景：若已收到中等精度候选（<= 300m），无需死等 GPS 搜星，直接快速采纳
-                            if (accuracy in 0.0f..300.0f) {
+                            // 针对室内弱信号与基站定位场景：若已收到中等/基站定位候选（<= 1000m），无需死等 GPS 搜星，直接快速采纳
+                            if (accuracy in 0.0f..1000.0f) {
                                 isResumed = true
                                 locationManager.removeUpdates(this)
                                 if (continuation.isActive) {
@@ -196,7 +230,7 @@ class AppLocationManager(private val context: Context) {
             return@withContext liveLocation
         }
 
-        // 2. 其次采用实时监听期间捕获到的最佳网络/粗略 GPS 候选坐标（绝不超时丢弃）
+        // 2. 其次采用实时监听期间捕获到的最佳网络/粗略候选坐标
         if (bestCandidate != null) {
             return@withContext bestCandidate
         }
@@ -207,6 +241,8 @@ class AppLocationManager(private val context: Context) {
 
     /**
      * 根据经纬度执行逆地理编码，精准解析出地标/街道、区县与地级市名称
+     *
+     * 具备内存级就近坐标高速缓存机制，200米以内相同位置且展示模式一致时 0ms 瞬间命中返回。
      *
      * 严格遵循用户定位设置展示模式：
      * - LANDMARK 模式：优先展示附近地标/乡镇/街道（例如：xx大厦、xx街道、xx镇、xx路）；
@@ -223,13 +259,26 @@ class AppLocationManager(private val context: Context) {
         displayMode: com.weather.app.model.LocationDisplayMode = com.weather.app.model.LocationDisplayMode.DISTRICT
     ): CityInfo? = withContext(Dispatchers.IO) {
         try {
+            // 1. 检查最近逆地理编码内存缓存（200米内视为同一室内/邻近区域，15分钟内有效，0ms 极速返回）
+            val cached = recentGeocodeCache
+            if (cached != null && cached.displayMode == displayMode && (System.currentTimeMillis() - cached.timestamp < 15 * 60 * 1000L)) {
+                val dist = calculateDistanceMeters(latitude, longitude, cached.latitude, cached.longitude)
+                if (dist <= 200f) {
+                    AppLog.d("WeatherLocation", "命中逆地理编码内存高速缓存 (距离=${dist}m <= 200m), 0ms 秒级返回: ${cached.cityInfo.name}")
+                    return@withContext cached.cityInfo.copy(
+                        latitude = latitude,
+                        longitude = longitude
+                    )
+                }
+            }
+
             if (!Geocoder.isPresent()) {
                 AppLog.w("WeatherLocation", "系统 Geocoder 逆地理服务不可用 (Geocoder.isPresent() == false)")
                 return@withContext null
             }
 
             val geocoder = Geocoder(context, Locale.CHINA)
-            val addresses = withTimeoutOrNull(2500) {
+            val addresses = withTimeoutOrNull(1800) {
                 @Suppress("DEPRECATION")
                 geocoder.getFromLocation(latitude, longitude, 1)
             }
@@ -322,7 +371,7 @@ class AppLocationManager(private val context: Context) {
                 AppLog.d("WeatherLocation", "--> 解析输出: 界面展示名='$displayCityName', 所属区县='$districtName', 地标='$pureLandmarkName', 所属市='$locality', 省份='$province', 详细地址='$finalDetailedAddress'")
                 AppLog.d("WeatherLocation", "===========================================")
 
-                CityInfo(
+                val resultCity = CityInfo(
                     code = "", // 由数据源依据地标/区县/所属地级市智能解析对应中央气象台站点编码
                     name = displayCityName,
                     province = province,
@@ -334,6 +383,17 @@ class AppLocationManager(private val context: Context) {
                     parentCity = locality,
                     detailedAddress = finalDetailedAddress
                 )
+
+                // 写入逆地理编码内存高速缓存
+                recentGeocodeCache = CachedGeocodeResult(
+                    latitude = latitude,
+                    longitude = longitude,
+                    displayMode = displayMode,
+                    timestamp = System.currentTimeMillis(),
+                    cityInfo = resultCity
+                )
+
+                resultCity
             } else {
                 AppLog.w("WeatherLocation", "逆地理编码返回空地址列表 (addresses.isNullOrEmpty())")
                 null
