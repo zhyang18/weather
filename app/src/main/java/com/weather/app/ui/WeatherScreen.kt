@@ -224,11 +224,18 @@ fun WeatherScreen(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // 沉浸式动态真实天气天空背景 (支持昼夜即时刷新切换，滑动过程视差无缝过渡，停靠结算后播放景深推远动效；带死区过滤防抖)
+        val isAnyFullScreenCovered = uiState.isCityManagementOpen ||
+            uiState.showSunriseSunsetScreen ||
+            uiState.showEarthDaylightScreen ||
+            uiState.showMoonPhaseScreen ||
+            uiState.showLocationMapScreen
+
+        // 沉浸式动态真实天气天空背景 (支持昼夜即时刷新切换，滑动过程视差无缝过渡，停靠结算后播放景深推远动效；带死区过滤防抖与全屏覆盖休眠)
         WeatherSkyBackground(
             weatherText = weatherText,
             city = settledCity,
             lastUpdatedTimestamp = settledWeather?.updateTimestamp ?: System.currentTimeMillis(),
+            isCovered = isAnyFullScreenCovered,
             parallaxOffsetProvider = {
                 val offset = pagerState.currentPageOffsetFraction
                 if (kotlin.math.abs(offset) < 0.003f) 0f else offset

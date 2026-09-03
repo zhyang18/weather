@@ -831,7 +831,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
         for (city in cities) {
             if (city.isAutoLocated) {
-                val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
+                // 定时静默自动轮询采用低能耗模式，优先秒级复用已知最新位置，避免日常无位移时反复唤醒硬件 GPS
+                val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = false)
                 locateResult.onSuccess { data ->
                     val updatedCities = repository.getSavedCities()
                     val cache = _uiState.value.weatherCache.toMutableMap()

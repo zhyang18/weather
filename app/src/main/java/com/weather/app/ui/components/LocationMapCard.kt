@@ -176,7 +176,7 @@ fun LocationMapCard(
 @Composable
 private fun LocationPulseDot() {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
+    val scaleState = infiniteTransition.animateFloat(
         initialValue = 0.8f,
         targetValue = 2.0f,
         animationSpec = infiniteRepeatable(
@@ -185,7 +185,7 @@ private fun LocationPulseDot() {
         ),
         label = "pulseScale"
     )
-    val alpha by infiniteTransition.animateFloat(
+    val alphaState = infiniteTransition.animateFloat(
         initialValue = 0.6f,
         targetValue = 0.0f,
         animationSpec = infiniteRepeatable(
@@ -199,14 +199,14 @@ private fun LocationPulseDot() {
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(24.dp)
     ) {
-        // 外层扩散光圈
+        // 外层扩散光圈 (在 graphicsLayer lambda 中延迟读取 State，彻底避免 Composable 函数每帧重组)
         Box(
             modifier = Modifier
                 .size(22.dp)
                 .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    this.alpha = alpha
+                    scaleX = scaleState.value
+                    scaleY = scaleState.value
+                    this.alpha = alphaState.value
                 }
                 .clip(CircleShape)
                 .background(Color(0xFF2196F3))

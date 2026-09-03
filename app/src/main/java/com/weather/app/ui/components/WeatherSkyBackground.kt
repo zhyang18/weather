@@ -84,6 +84,7 @@ import kotlin.random.Random
  * @param city 当前展示的城市信息实体 [CityInfo]（用于日出日落月出月落天文计算）
  * @param isNight 是否强制指定夜间模式（为 null 时依据城市实际日出日落自动判定）
  * @param lastUpdatedTimestamp 数据刷新时间戳（毫秒），用于感知刷新并即时重新计算昼夜与日月天体运行轨迹
+ * @param isCovered 当前主界面是否被全屏二级页面（城市管理、日出日落详情、昼夜晨昏线、月相、定位地图等）完全遮挡覆盖。为 true 时深度挂起所有天体与物理粒子 Canvas 绘制，降功耗至 0
  * @param isScrollInProgress 当前水平分页手势是否处于滑动中
  * @param parallaxOffsetProvider 水平滑动分页时的视差偏移量提供者 () -> Float，绘制阶段直接读取避免触发重组
  * @param modifier 外部修饰符
@@ -94,18 +95,28 @@ fun WeatherSkyBackground(
     city: CityInfo? = null,
     isNight: Boolean? = null,
     lastUpdatedTimestamp: Long = 0L,
+    isCovered: Boolean = false,
     isScrollInProgress: Boolean = false,
     parallaxOffsetProvider: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
     // 实时系统时钟（进入前台或每分钟自动校准，消除每秒无意义重组）
     var currentSystemTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var isAppResumed by remember { mutableStateOf(true) }
 
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                currentSystemTimeMillis = System.currentTimeMillis()
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    isAppResumed = true
+                    currentSystemTimeMillis = System.currentTimeMillis()
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    isAppResumed = false
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -113,6 +124,20 @@ fun WeatherSkyBackground(
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
+
+    // 系统省电模式感知
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isPowerSaveMode = remember(context) {
+        try {
+            val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+            powerManager?.isPowerSaveMode ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // 仅在应用处于前台可见且未被全屏页面完全遮挡时，才激活高频动态天气动效与粒子运算
+    val shouldRenderActiveAnimations = isAppResumed && !isCovered
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -384,13 +409,15 @@ fun WeatherSkyBackground(
                 Brush.verticalGradient(listOf(animatedTop, animatedMid, animatedBottom))
             )
     ) {
-        // OpenGL ES 2.0 纯代码 3D 真实月球渲染器（单例全局静态缓存，0 阻塞）
-        val lunarRenderer = remember { LunarOpenGlRenderer() }
-        DisposableEffect(Unit) {
-            onDispose {
-                lunarRenderer.release()
+        // 仅在主界面未被全屏覆盖且处于前台可见时渲染动态天体与物理粒子层，全屏遮挡时 CPU/GPU 负载降为 0
+        if (shouldRenderActiveAnimations) {
+            // OpenGL ES 2.0 纯代码 3D 真实月球渲染器（单例全局静态缓存，0 阻塞）
+            val lunarRenderer = remember { LunarOpenGlRenderer() }
+            DisposableEffect(Unit) {
+                onDispose {
+                    lunarRenderer.release()
+                }
             }
-        }
 
         // 预分配复用的 Path 对象，杜绝 Canvas 每一帧动画产生堆内存分配与 GC 压力
         val moonClipPath = remember { Path() }
@@ -552,10 +579,11 @@ fun WeatherSkyBackground(
                 weatherCategory == WeatherCategory.THUNDERSTORM
             ) {
                 val isHeavy = weatherCategory == WeatherCategory.RAIN_HEAVY || weatherCategory == WeatherCategory.THUNDERSTORM
+                val dropsToDraw = if (isPowerSaveMode) rainParticles.take(100) else rainParticles
                 drawRealisticHighDefRain(
                     width = width,
                     height = height,
-                    drops = rainParticles,
+                    drops = dropsToDraw,
                     splashes = rainSplashes,
                     ripples = ripples,
                     progress = fastProgress,
@@ -566,10 +594,11 @@ fun WeatherSkyBackground(
 
             if (weatherCategory == WeatherCategory.SNOW_LIGHT || weatherCategory == WeatherCategory.SNOW_HEAVY) {
                 val isHeavy = weatherCategory == WeatherCategory.SNOW_HEAVY
+                val flakesToDraw = if (isPowerSaveMode) snowParticles.take(30) else snowParticles
                 drawFallingSnow(
                     width = width,
                     height = height,
-                    flakes = snowParticles,
+                    flakes = flakesToDraw,
                     progress = mediumProgress,
                     rotation = continuousRotation,
                     isHeavy = isHeavy
@@ -586,6 +615,7 @@ fun WeatherSkyBackground(
                 )
             }
         }
+        }
     }
 }
 
@@ -595,6 +625,7 @@ fun WeatherSkyBackground(
  * @param weatherText 当前天气现象描述
  * @param isNight 是否为夜间
  * @param parallaxOffset 视差偏移量浮点数
+ * @param isCovered 是否被全屏页面完全遮挡
  * @param modifier 外部修饰符
  */
 @Composable
@@ -602,11 +633,13 @@ fun WeatherSkyBackground(
     weatherText: String,
     isNight: Boolean = remember { isCurrentlyNight() },
     parallaxOffset: Float,
+    isCovered: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     WeatherSkyBackground(
         weatherText = weatherText,
         isNight = isNight,
+        isCovered = isCovered,
         parallaxOffsetProvider = { parallaxOffset },
         modifier = modifier
     )

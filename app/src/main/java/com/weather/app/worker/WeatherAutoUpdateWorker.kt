@@ -43,7 +43,8 @@ class WeatherAutoUpdateWorker(
                 for (city in savedCities) {
                     try {
                         if (city.isAutoLocated) {
-                            val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = true)
+                            // 后台静默更新采用低功耗模式（forceRefresh = false），优先秒级复用系统已知最新位置，避免息屏期间强启 GPS 硬件搜星
+                            val locateResult = repository.autoLocateAndFetchWeather(forceRefresh = false)
                             if (locateResult.isFailure) {
                                 val fallbackResult = repository.fetchWeather(city)
                                 fallbackResult.onSuccess { weatherData ->
