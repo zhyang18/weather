@@ -5,13 +5,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val localProperties = Properties().apply {
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        localPropertiesFile.inputStream().use { load(it) }
-    }
-}
-
 android {
     namespace = "com.weather.app"
     compileSdk = 34
@@ -20,8 +13,8 @@ android {
         applicationId = "com.weather.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 56
-        versionName = "1.8.4"
+        versionCode = 57
+        versionName = "1.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -53,27 +46,39 @@ android {
                     abiOutput.versionCodeOverride = abiCode * 100000 + variant.versionCode
                 }
                 val abiName = abiFilter ?: "universal"
-                abiOutput.outputFileName = "Weather-v${variant.versionName}-${abiName}-${variant.buildType.name}.apk"
+                abiOutput.outputFileName =
+                    "Weather-v${variant.versionName}-${abiName}-${variant.buildType.name}.apk"
             }
         }
     }
 
     signingConfigs {
         create("release") {
-            val keystorePath = localProperties.getProperty("RELEASE_KEYSTORE_PATH") ?: "app.jks"
-            storeFile = file(keystorePath)
-            storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
-                ?: project.findProperty("RELEASE_STORE_PASSWORD") as String?
-                        ?: System.getenv("RELEASE_STORE_PASSWORD")
-                        ?: ""
-            keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
-                ?: project.findProperty("RELEASE_KEY_ALIAS") as String?
-                        ?: System.getenv("RELEASE_KEY_ALIAS")
-                        ?: ""
-            keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
-                ?: project.findProperty("RELEASE_KEY_PASSWORD") as String?
-                        ?: System.getenv("RELEASE_KEY_PASSWORD")
-                        ?: ""
+            val localProperties = Properties()
+            val localPropertiesFile = rootProject.file("local.properties")
+            if (localPropertiesFile.exists()) {
+                localPropertiesFile.reader(Charsets.UTF_8).use { localProperties.load(it) }
+            }
+
+            val keystoreFile = file("app.jks")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = localProperties.getProperty("KEYSTORE_PASSWORD")
+                    ?: (findProperty("KEYSTORE_PASSWORD") as? String)
+                            ?: System.getenv("KEYSTORE_PASSWORD")
+                            ?: ""
+                keyAlias = localProperties.getProperty("KEY_ALIAS")
+                    ?: (findProperty("KEY_ALIAS") as? String)
+                            ?: System.getenv("KEY_ALIAS")
+                            ?: ""
+                keyPassword = localProperties.getProperty("KEY_PASSWORD")
+                    ?: (findProperty("KEY_PASSWORD") as? String)
+                            ?: System.getenv("KEY_PASSWORD")
+                            ?: ""
+            }
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
