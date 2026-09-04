@@ -12,6 +12,8 @@ import java.util.Locale
  * @property standardName 常用精简地名（如 "衡南"）
  * @property latitude 纬度坐标
  * @property longitude 经度坐标
+ * @property township 所属乡镇或街道名称（如 "云集镇"、"乌镇"），无则为空字符串
+ * @property village 所属行政村或社区名称（如 "保宁村"、"新安村"），无则为空字符串
  */
 data class DivisionResult(
     val province: String,
@@ -19,14 +21,19 @@ data class DivisionResult(
     val district: String,
     val standardName: String,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val township: String = "",
+    val village: String = ""
 )
 
 /**
- * 级联三级降级查询方案模型
+ * 级联四级降级查询方案模型
  *
- * 用于所有天气数据源严格遵循“区县 -> 地级市 -> 省会”逐级查询。
+ * 用于所有天气数据源严格遵循“乡镇/村 -> 区县 -> 地级市 -> 省会”逐级查询与平滑降级。
  *
+ * @property townshipVillageName 目标乡镇或村庄名称（如 "保宁村"、"云集镇"）
+ * @property townshipVillageCleanName 目标乡镇或村庄纯净名
+ * @property townshipVillageCoords 乡镇或村庄高精度经纬度坐标
  * @property districtName 目标区县名称（如 "衡南县"）
  * @property districtCleanName 目标区县纯净名（如 "衡南"）
  * @property districtCoords 区县经纬度坐标
@@ -38,6 +45,9 @@ data class DivisionResult(
  * @property capitalCoords 省会经纬度坐标
  */
 data class CascadeSearchPlan(
+    val townshipVillageName: String = "",
+    val townshipVillageCleanName: String = "",
+    val townshipVillageCoords: Pair<Double, Double>? = null,
     val districtName: String,
     val districtCleanName: String,
     val districtCoords: Pair<Double, Double>?,
@@ -47,7 +57,33 @@ data class CascadeSearchPlan(
     val capitalCityName: String,
     val capitalCityCleanName: String,
     val capitalCoords: Pair<Double, Double>?
-)
+) {
+    /** 当前方案是否包含乡镇或村庄级地点 */
+    val hasTownshipVillage: Boolean
+        get() = townshipVillageName.isNotEmpty()
+
+    /** 按优先级由高到低（乡镇/村 -> 区县 -> 地级市 -> 省会）排列的查询候选名列表 */
+    val queryCandidateNames: List<String>
+        get() = listOfNotNull(
+            townshipVillageName.takeIf { it.isNotEmpty() },
+            townshipVillageCleanName.takeIf { it.isNotEmpty() && it != townshipVillageName },
+            districtName.takeIf { it.isNotEmpty() && it != townshipVillageName },
+            districtCleanName.takeIf { it.isNotEmpty() && it != districtName && it != townshipVillageCleanName },
+            parentCityName.takeIf { it.isNotEmpty() && it != districtName },
+            parentCityCleanName.takeIf { it.isNotEmpty() && it != parentCityName },
+            capitalCityName.takeIf { it.isNotEmpty() && it != parentCityName },
+            capitalCityCleanName.takeIf { it.isNotEmpty() && it != capitalCityName }
+        ).distinct()
+
+    /** 按优先级由高到低排列的候选坐标序列（去重） */
+    val orderedCoordinates: List<Pair<Double, Double>>
+        get() = listOfNotNull(
+            townshipVillageCoords,
+            districtCoords,
+            parentCityCoords,
+            capitalCoords
+        ).distinct()
+}
 
 /**
  * 全国行政区划层级知识库与区县映射引擎
@@ -75,6 +111,78 @@ object ChinaAdministrativeDivisions {
         val province: String,
         val latitude: Double,
         val longitude: Double
+    )
+
+    /**
+     * 乡镇与村庄行政条目实体
+     *
+     * @property townshipName 乡镇或村庄全称（如 "云集镇"、"新安村"、"乌镇"）
+     * @property cleanName 纯净名（如 "云集"、"新安"、"乌镇"）
+     * @property districtName 所属区县规范全称（如 "衡南县"、"桐乡市"）
+     * @property parentCity 所属地级市全称（如 "衡阳市"、"嘉兴市"）
+     * @property province 所属省份全称（如 "湖南省"、"浙江省"）
+     * @property latitude 纬度坐标
+     * @property longitude 经度坐标
+     * @property isVillage 是否为村庄或社区级别（true 为村庄/社区，false 为乡/镇/街道）
+     */
+    data class TownshipEntry(
+        val townshipName: String,
+        val cleanName: String,
+        val districtName: String,
+        val parentCity: String,
+        val province: String,
+        val latitude: Double,
+        val longitude: Double,
+        val isVillage: Boolean = false
+    )
+
+    /**
+     * 全国典型古镇、特色示范镇及重点区县（如衡南县）下辖乡镇与行政村知识库
+     */
+    val TOWNSHIPS: List<TownshipEntry> = listOf(
+        // 湖南省衡阳市衡南县重点乡镇与行政村
+        TownshipEntry("云集镇", "云集", "衡南县", "衡阳市", "湖南省", 26.7388, 112.6778),
+        TownshipEntry("云集街道", "云集", "衡南县", "衡阳市", "湖南省", 26.7388, 112.6778),
+        TownshipEntry("车江街道", "车江", "衡南县", "衡阳市", "湖南省", 26.8167, 112.6000),
+        TownshipEntry("向阳桥街道", "向阳桥", "衡南县", "衡阳市", "湖南省", 26.8000, 112.7167),
+        TownshipEntry("向阳镇", "向阳", "衡南县", "衡阳市", "湖南省", 26.8000, 112.7167),
+        TownshipEntry("三塘镇", "三塘", "衡南县", "衡阳市", "湖南省", 26.8667, 112.5167),
+        TownshipEntry("冠市镇", "冠市", "衡南县", "衡阳市", "湖南省", 26.7833, 112.8333),
+        TownshipEntry("江口镇", "江口", "衡南县", "衡阳市", "湖南省", 26.7500, 112.9833),
+        TownshipEntry("宝盖镇", "宝盖", "衡南县", "衡阳市", "湖南省", 26.6500, 112.9167),
+        TownshipEntry("栗江镇", "栗江", "衡南县", "衡阳市", "湖南省", 26.5833, 112.6833),
+        TownshipEntry("花桥镇", "花桥", "衡南县", "衡阳市", "湖南省", 26.9167, 112.9167),
+        TownshipEntry("硫市镇", "硫市", "衡南县", "衡阳市", "湖南省", 26.5000, 112.6500),
+        TownshipEntry("廖田镇", "廖田", "衡南县", "衡阳市", "湖南省", 26.5333, 112.8167),
+        TownshipEntry("茶市镇", "茶市", "衡南县", "衡阳市", "湖南省", 26.6667, 112.8000),
+        TownshipEntry("相市镇", "相市", "衡南县", "衡阳市", "湖南省", 26.6167, 112.7500),
+        TownshipEntry("谭子山镇", "谭子山", "衡南县", "衡阳市", "湖南省", 26.7500, 112.4333),
+        TownshipEntry("泉溪镇", "泉溪", "衡南县", "衡阳市", "湖南省", 26.8333, 112.7000),
+        TownshipEntry("洪山镇", "洪山", "衡南县", "衡阳市", "湖南省", 26.9667, 112.8167),
+        TownshipEntry("铁丝塘镇", "铁丝塘", "衡南县", "衡阳市", "湖南省", 26.9167, 113.0167),
+        TownshipEntry("茅市镇", "茅市", "衡南县", "衡阳市", "湖南省", 26.7000, 112.3500),
+        TownshipEntry("咸塘镇", "咸塘", "衡南县", "衡阳市", "湖南省", 26.8833, 112.7500),
+        TownshipEntry("松江镇", "松江", "衡南县", "衡阳市", "湖南省", 26.6500, 112.5667),
+        TownshipEntry("泉湖镇", "泉湖", "衡南县", "衡阳市", "湖南省", 26.7333, 112.3833),
+        TownshipEntry("近尾洲镇", "近尾洲", "衡南县", "衡阳市", "湖南省", 26.6167, 112.4833),
+        TownshipEntry("新安村", "新安", "衡南县", "衡阳市", "湖南省", 26.7500, 112.6900, isVillage = true),
+        TownshipEntry("龙确村", "龙确", "衡南县", "衡阳市", "湖南省", 26.5100, 112.6300, isVillage = true),
+        TownshipEntry("硫市村", "硫市", "衡南县", "衡阳市", "湖南省", 26.5050, 112.6480, isVillage = true),
+        TownshipEntry("保宁村", "保宁", "衡南县", "衡阳市", "湖南省", 26.7200, 112.6600, isVillage = true),
+        TownshipEntry("双庆村", "双庆", "衡南县", "衡阳市", "湖南省", 26.7300, 112.6800, isVillage = true),
+
+        // 全国知名历史文化名镇与特色示范村
+        TownshipEntry("乌镇", "乌镇", "桐乡市", "嘉兴市", "浙江省", 30.7443, 120.4854),
+        TownshipEntry("西塘镇", "西塘", "嘉善县", "嘉兴市", "浙江省", 30.9442, 120.8920),
+        TownshipEntry("周庄镇", "周庄", "昆山市", "苏州市", "江苏省", 31.1167, 120.8500),
+        TownshipEntry("同里镇", "同里", "吴江区", "苏州市", "江苏省", 31.1592, 120.7225),
+        TownshipEntry("甪直镇", "甪直", "吴中区", "苏州市", "江苏省", 31.2789, 120.8717),
+        TownshipEntry("南浔镇", "南浔", "南浔区", "湖州市", "浙江省", 30.8756, 120.4208),
+        TownshipEntry("芙蓉镇", "芙蓉", "永顺县", "湘西土家族苗族自治州", "湖南省", 28.7454, 109.9482),
+        TownshipEntry("宏村", "宏村", "黟县", "黄山市", "安徽省", 29.9967, 117.9892, isVillage = true),
+        TownshipEntry("西递镇", "西递", "黟县", "黄山市", "安徽省", 29.9075, 117.9917),
+        TownshipEntry("小岗村", "小岗", "凤阳县", "滁州市", "安徽省", 32.8592, 117.7075, isVillage = true),
+        TownshipEntry("中关村", "中关村", "海淀区", "北京市", "北京市", 39.9833, 116.3167)
     )
 
     /**
@@ -553,10 +661,143 @@ object ChinaAdministrativeDivisions {
     }
 
     /**
+     * 清理乡镇和村庄级后缀以方便纯净名匹配
+     *
+     * @param input 原始地名
+     * @return 去除镇/乡/街道/行政村/自然村/村/社区/屯等后缀后的纯净名
+     */
+    fun cleanTownshipVillageSuffix(input: String?): String {
+        if (input.isNullOrBlank()) return ""
+        val base = cleanSuffix(input)
+        return base
+            .removeSuffix("自然村")
+            .removeSuffix("行政村")
+            .removeSuffix("社区")
+            .removeSuffix("街道")
+            .removeSuffix("镇")
+            .removeSuffix("乡")
+            .removeSuffix("村")
+            .removeSuffix("屯")
+            .removeSuffix("庄")
+    }
+
+    /**
+     * 判断给定地名是否属于乡镇或村庄级别
+     *
+     * @param name 地名文本
+     * @return 若包含镇、乡、街道、村、屯、社区等乡镇村级后缀且非单纯区县级，则返回 true
+     */
+    fun isTownshipOrVillage(name: String?): Boolean {
+        if (name.isNullOrBlank()) return false
+        val trimmed = name.trim()
+        val townshipSuffixes = listOf("镇", "乡", "街道", "村", "自然村", "行政村", "社区", "屯")
+        return townshipSuffixes.any { trimmed.endsWith(it) } &&
+                trimmed.length >= 2 &&
+                !trimmed.endsWith("开发区") &&
+                !trimmed.endsWith("高新区") &&
+                !trimmed.endsWith("示范区") &&
+                !trimmed.endsWith("风景区")
+    }
+
+    /**
+     * 智能识别并解析乡镇或村庄行政条目
+     *
+     * 支持知名示范乡镇/古镇库匹配、复合多级地名智能切分（如 "衡南县新安村"、"衡南县云集镇"、"桐乡市乌镇"），
+     * 以及单村镇名结合省份与所属市县智能推导归属。
+     *
+     * @param name 待解析地名（如 "衡南县新安村", "云集镇", "乌镇", "新安村"）
+     * @param province 可选所属省份
+     * @param parentCity 可选所属地级市
+     * @param district 可选所属区县
+     * @return 匹配到的乡镇村实体 [TownshipEntry]，未匹配到返回 null
+     */
+    fun resolveTownshipVillage(
+        name: String,
+        province: String = "",
+        parentCity: String = "",
+        district: String = ""
+    ): TownshipEntry? {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return null
+
+        val clean = cleanSuffix(trimmedName)
+        val cleanProv = cleanSuffix(province)
+        val cleanParent = cleanSuffix(parentCity)
+        val cleanDist = cleanSuffix(district)
+
+        // 1. 优先在内置重点古镇与乡镇行政村库 (TOWNSHIPS) 中精准匹配
+        val matchInTownships = TOWNSHIPS.firstOrNull { entry ->
+            val nameMatch = entry.townshipName == trimmedName ||
+                    entry.cleanName == clean ||
+                    trimmedName.endsWith(entry.townshipName) ||
+                    entry.townshipName.endsWith(trimmedName)
+            val provMatch = cleanProv.isEmpty() || cleanSuffix(entry.province).contains(cleanProv) || cleanProv.contains(cleanSuffix(entry.province))
+            val parentMatch = cleanParent.isEmpty() || cleanSuffix(entry.parentCity).contains(cleanParent) || cleanParent.contains(cleanSuffix(entry.parentCity))
+            val distMatch = cleanDist.isEmpty() || cleanSuffix(entry.districtName).contains(cleanDist) || cleanDist.contains(cleanSuffix(entry.districtName))
+            nameMatch && provMatch && parentMatch && distMatch
+        }
+        if (matchInTownships != null) {
+            return matchInTownships
+        }
+
+        // 2. 复合地名智能提取：例如 "衡南县新安村"、"桐乡市乌镇"、"衡阳市衡南县云集镇"
+        val matchedDistrict = DISTRICTS.firstOrNull { d ->
+            (trimmedName.startsWith(d.districtName) || trimmedName.startsWith(d.cleanName)) &&
+                    (cleanProv.isEmpty() || cleanSuffix(d.province).contains(cleanProv) || cleanProv.contains(cleanSuffix(d.province))) &&
+                    (cleanParent.isEmpty() || cleanSuffix(d.parentCity).contains(cleanParent) || cleanParent.contains(cleanSuffix(d.parentCity)))
+        }
+        if (matchedDistrict != null) {
+            val suffixPart = if (trimmedName.startsWith(matchedDistrict.districtName)) {
+                trimmedName.removePrefix(matchedDistrict.districtName).trim()
+            } else {
+                trimmedName.removePrefix(matchedDistrict.cleanName).trim()
+            }
+            if (suffixPart.isNotEmpty() && (isTownshipOrVillage(suffixPart) || suffixPart.length >= 2)) {
+                val isVillage = suffixPart.endsWith("村") || suffixPart.endsWith("社区") || suffixPart.endsWith("屯") || suffixPart.endsWith("庄")
+                return TownshipEntry(
+                    townshipName = suffixPart,
+                    cleanName = cleanTownshipVillageSuffix(suffixPart),
+                    districtName = matchedDistrict.districtName,
+                    parentCity = matchedDistrict.parentCity,
+                    province = matchedDistrict.province,
+                    latitude = matchedDistrict.latitude,
+                    longitude = matchedDistrict.longitude,
+                    isVillage = isVillage
+                )
+            }
+        }
+
+        // 3. 传入了明确的 district 或 parentCity，且 name 本身是一个乡镇或村庄
+        if (isTownshipOrVillage(trimmedName)) {
+            val isVillage = trimmedName.endsWith("村") || trimmedName.endsWith("社区") || trimmedName.endsWith("屯") || trimmedName.endsWith("庄")
+            val targetDistName = district.ifEmpty { parentCity }
+            if (targetDistName.isNotEmpty()) {
+                val distDivision = findDivision(targetDistName, province, parentCity)
+                if (distDivision != null) {
+                    return TownshipEntry(
+                        townshipName = trimmedName,
+                        cleanName = cleanTownshipVillageSuffix(trimmedName),
+                        districtName = distDivision.district.ifEmpty { distDivision.standardName },
+                        parentCity = distDivision.parentCity,
+                        province = distDivision.province,
+                        latitude = distDivision.latitude,
+                        longitude = distDivision.longitude,
+                        isVillage = isVillage
+                    )
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
      * 根据地名和可选省份/所属市识别行政区划层级
      *
-     * @param name 地名（如 "衡南", "衡南县", "海淀", "南京"）
-     * @param province 所属省份（如 "湖南省", "江苏省"）
+     * 具备“乡镇/村 -> 区县 -> 地级市 -> 省会”全层级识别与级联归属推导能力。
+     *
+     * @param name 地名（如 "衡南", "衡南县", "新安村", "云集镇", "乌镇", "海淀", "南京"）
+     * @param province 所属省份（如 "湖南省", "江苏省", "浙江省"）
      * @param parentCity 上级地级市名称（可选）
      * @return 行政区划结果 [DivisionResult]，未找到返回 null
      */
@@ -570,6 +811,22 @@ object ChinaAdministrativeDivisions {
 
         val cleanProv = cleanSuffix(province)
         val cleanParent = cleanSuffix(parentCity)
+
+        // 0. 优先尝试解析乡镇或村庄级条目
+        val townshipEntry = resolveTownshipVillage(name, province, parentCity, "")
+        if (townshipEntry != null) {
+            val isVillage = townshipEntry.isVillage
+            return DivisionResult(
+                province = townshipEntry.province,
+                parentCity = townshipEntry.parentCity,
+                district = townshipEntry.districtName,
+                standardName = townshipEntry.cleanName,
+                latitude = townshipEntry.latitude,
+                longitude = townshipEntry.longitude,
+                township = if (isVillage) "" else townshipEntry.townshipName,
+                village = if (isVillage) townshipEntry.townshipName else ""
+            )
+        }
 
         // 1. 优先在区县数据库中精准匹配
         val districtCandidates = DISTRICTS.filter {
@@ -636,7 +893,7 @@ object ChinaAdministrativeDivisions {
             )
         }
 
-        // 3. 尝试模糊包含区县名匹配
+        // 4. 尝试模糊包含区县名匹配
         val partialMatches = DISTRICTS.filter {
             (it.cleanName.contains(clean) || clean.contains(it.cleanName)) &&
                     (cleanProv.isEmpty() || cleanSuffix(it.province).contains(cleanProv) || cleanProv.contains(cleanSuffix(it.province)))
@@ -659,7 +916,7 @@ object ChinaAdministrativeDivisions {
     /**
      * 对城市信息实体进行自动丰富与行政区划补全
      *
-     * 若城市的 parentCity、district 或经纬度缺失，自动通过全国行政区划知识库进行全方位补全，保证数据规范与层级完整。
+     * 若城市的 parentCity、district 或经纬度缺失，自动通过全国行政区划与乡镇村知识库进行全方位补全，保证数据规范与层级完整。
      *
      * @param city 待补全的城市实体 [CityInfo]
      * @return 补全后的规范城市实体 [CityInfo]
@@ -677,6 +934,27 @@ object ChinaAdministrativeDivisions {
             parentCity = (city.parentCity as String?) ?: "",
             detailedAddress = (city.detailedAddress as String?) ?: ""
         )
+
+        // 优先尝试识别乡镇或村庄
+        val twMatch = resolveTownshipVillage(enriched.name, enriched.province, enriched.parentCity, enriched.district)
+            ?: (if (enriched.landmark.isNotEmpty()) resolveTownshipVillage(enriched.landmark, enriched.province, enriched.parentCity, enriched.district) else null)
+
+        if (twMatch != null) {
+            val targetProvince = if (enriched.province.isEmpty()) twMatch.province else enriched.province
+            val targetParentCity = if (enriched.parentCity.isEmpty()) twMatch.parentCity else enriched.parentCity
+            val targetDistrict = if (enriched.district.isEmpty()) twMatch.districtName else enriched.district
+            val targetLat = enriched.latitude ?: twMatch.latitude
+            val targetLon = enriched.longitude ?: twMatch.longitude
+            enriched = enriched.copy(
+                province = targetProvince,
+                parentCity = targetParentCity,
+                district = targetDistrict,
+                latitude = targetLat,
+                longitude = targetLon
+            )
+            return enriched
+        }
+
         val queryName = enriched.district.ifEmpty { enriched.name }
         val division = findDivision(queryName, enriched.province, enriched.parentCity)
             ?: findDivision(enriched.name, enriched.province, enriched.parentCity)
@@ -724,33 +1002,52 @@ object ChinaAdministrativeDivisions {
     }
 
     /**
-     * 生成三级级联降级检索方案（区县 -> 地级市 -> 省会）
+     * 生成四级级联降级检索方案（乡镇/村 -> 区县 -> 地级市 -> 省会）
      *
-     * 适配所有天气数据源按正常逻辑执行级联降级请求。
+     * 适配所有天气数据源严格按照四级级联机制执行高效且精准的降级查询。
      *
      * @param city 当前目标城市 [CityInfo]
-     * @return 三级检索方案实体 [CascadeSearchPlan]
+     * @return 四级级联检索方案实体 [CascadeSearchPlan]
      */
     fun buildCascadeSearchPlan(city: CityInfo): CascadeSearchPlan {
         val enriched = enrichCityInfo(city)
 
-        val districtName = enriched.district.ifEmpty { enriched.name }
-        val districtClean = cleanSuffix(districtName)
-        val districtCoords = if (enriched.latitude != null && enriched.longitude != null) {
-            Pair(enriched.latitude, enriched.longitude)
+        // 1. 识别乡镇或村庄级地点
+        val twMatch = resolveTownshipVillage(enriched.name, enriched.province, enriched.parentCity, enriched.district)
+            ?: (if (enriched.landmark.isNotEmpty()) resolveTownshipVillage(enriched.landmark, enriched.province, enriched.parentCity, enriched.district) else null)
+
+        val townshipVillageName = when {
+            twMatch != null -> twMatch.townshipName
+            isTownshipOrVillage(enriched.name) -> enriched.name
+            isTownshipOrVillage(enriched.landmark) -> enriched.landmark
+            else -> ""
+        }
+        val townshipVillageCleanName = cleanTownshipVillageSuffix(townshipVillageName)
+        val townshipVillageCoords = if (city.latitude != null && city.longitude != null && (city.latitude != 0.0 || city.longitude != 0.0)) {
+            Pair(city.latitude, city.longitude)
         } else {
-            findDivision(districtName, enriched.province)?.let { Pair(it.latitude, it.longitude) }
+            twMatch?.let { Pair(it.latitude, it.longitude) }
         }
 
+        // 2. 识别所属区县
+        val districtName = enriched.district.ifEmpty { twMatch?.districtName ?: enriched.name }
+        val districtClean = cleanSuffix(districtName)
+        val districtCoords = if (districtName.isNotEmpty()) {
+            findDivision(districtName, enriched.province)?.let { Pair(it.latitude, it.longitude) }
+                ?: (if (enriched.latitude != null && enriched.longitude != null) Pair(enriched.latitude, enriched.longitude) else null)
+        } else null
+
+        // 3. 识别所属地级市
         val parentCityName = enriched.parentCity.ifEmpty {
-            findDivision(districtName, enriched.province)?.parentCity ?: ""
+            twMatch?.parentCity ?: findDivision(districtName, enriched.province)?.parentCity ?: ""
         }
         val parentCityClean = cleanSuffix(parentCityName)
         val parentCityCoords = if (parentCityClean.isNotEmpty()) {
             PREFECTURE_CITIES[parentCityClean]?.let { Pair(it.latitude, it.longitude) }
         } else null
 
-        val cleanProv = cleanSuffix(enriched.province)
+        // 4. 识别所属省会城市
+        val cleanProv = cleanSuffix(enriched.province.ifEmpty { twMatch?.province ?: "" })
         val capitalEntry = PROVINCE_CAPITALS.entries.firstOrNull {
             cleanProv.isNotEmpty() && (cleanProv.contains(it.key) || it.key.contains(cleanProv))
         }?.value
@@ -760,6 +1057,9 @@ object ChinaAdministrativeDivisions {
         val capitalCoords = capitalEntry?.let { Pair(it.second, it.third) } ?: Pair(39.9042, 116.4074)
 
         return CascadeSearchPlan(
+            townshipVillageName = townshipVillageName,
+            townshipVillageCleanName = townshipVillageCleanName,
+            townshipVillageCoords = townshipVillageCoords,
             districtName = districtName,
             districtCleanName = districtClean,
             districtCoords = districtCoords,
@@ -770,5 +1070,314 @@ object ChinaAdministrativeDivisions {
             capitalCityCleanName = capitalCityClean,
             capitalCoords = capitalCoords
         )
+    }
+
+    /**
+     * 根据省份名称或编码获取其下辖的所有地级市/直辖市辖区列表（第一级联动下钻）
+     *
+     * @param provinceCodeOrName 省份编码（如 "AHN", "ABJ"）或省份全称（如 "湖南省", "北京市"）
+     * @return 该省份下辖地级市或直辖市辖区的规范城市实体列表 [List<CityInfo>]
+     */
+    fun getPrefectureCitiesInProvince(provinceCodeOrName: String): List<CityInfo> {
+        val provName = com.weather.app.datasource.cma.CmaWeatherDataSource.STATIC_PROVINCES
+            .firstOrNull { it.code == provinceCodeOrName || it.name == provinceCodeOrName }?.name
+            ?: provinceCodeOrName
+        val cleanProv = cleanSuffix(provName)
+        if (cleanProv.isEmpty()) return emptyList()
+
+        // 1. 直辖市特殊处理（北京、上海、天津、重庆）：第一级展示其直辖市辖区
+        val municipalityDistricts = mapOf(
+            "北京" to "北京市",
+            "上海" to "上海市",
+            "天津" to "天津市",
+            "重庆" to "重庆市"
+        )
+        if (municipalityDistricts.containsKey(cleanProv)) {
+            val fullName = municipalityDistricts[cleanProv] ?: provName
+            val list = DISTRICTS.filter { cleanSuffix(it.province) == cleanProv }
+                .map { d ->
+                    CityInfo(
+                        code = "${d.latitude},${d.longitude}",
+                        name = d.districtName,
+                        province = fullName,
+                        parentCity = fullName,
+                        district = d.districtName,
+                        latitude = d.latitude,
+                        longitude = d.longitude,
+                        detailedAddress = "${fullName}${d.districtName}"
+                    )
+                }
+            if (list.isNotEmpty()) return list
+        }
+
+        // 2. 常规省份：从 PREFECTURE_CITIES 提取地级市列表
+        val prefCities = PREFECTURE_CITIES.values.filter {
+            cleanSuffix(it.province) == cleanProv
+        }.map { pref ->
+            CityInfo(
+                code = "${pref.latitude},${pref.longitude}",
+                name = pref.fullName,
+                province = pref.province,
+                parentCity = pref.fullName,
+                district = "",
+                latitude = pref.latitude,
+                longitude = pref.longitude,
+                detailedAddress = "${pref.province}${pref.fullName}"
+            )
+        }
+
+        if (prefCities.isNotEmpty()) return prefCities
+
+        // 3. 兜底从 ChinaCityCoordinates.ALL_CITIES 提取唯一 parentCity
+        return com.weather.app.datasource.openmeteo.ChinaCityCoordinates.ALL_CITIES
+            .filter { cleanSuffix(it.province) == cleanProv }
+            .map { it.parentCity }
+            .distinct()
+            .mapNotNull { parentCityName ->
+                findDivision(parentCityName, provName)?.let { div ->
+                    CityInfo(
+                        code = "${div.latitude},${div.longitude}",
+                        name = div.parentCity.ifEmpty { parentCityName },
+                        province = div.province.ifEmpty { provName },
+                        parentCity = div.parentCity.ifEmpty { parentCityName },
+                        district = "",
+                        latitude = div.latitude,
+                        longitude = div.longitude,
+                        detailedAddress = "${div.province}${parentCityName}"
+                    )
+                }
+            }
+    }
+
+    /**
+     * 根据地级市名称获取其下辖的所有区县列表（第二级联动下钻）
+     *
+     * @param parentCityName 所属地级市名称（如 "衡阳市", "衡阳"）
+     * @param provinceName 所属省份（可选，用于辅助精确定位）
+     * @return 该地级市下辖所有区县规范城市实体列表 [List<CityInfo>]
+     */
+    fun getDistrictsInCity(parentCityName: String, provinceName: String = ""): List<CityInfo> {
+        val cleanParent = cleanSuffix(parentCityName)
+        val cleanProv = cleanSuffix(provinceName)
+        if (cleanParent.isEmpty()) return emptyList()
+
+        val results = mutableListOf<CityInfo>()
+
+        // 1. 优先从 DISTRICTS 提取区县
+        val districtList = DISTRICTS.filter { d ->
+            val parentMatch = cleanSuffix(d.parentCity) == cleanParent
+            val provMatch = cleanProv.isEmpty() || cleanSuffix(d.province) == cleanProv
+            parentMatch && provMatch
+        }
+
+        districtList.forEach { d ->
+            if (results.none { it.name == d.districtName }) {
+                results.add(
+                    CityInfo(
+                        code = "${d.latitude},${d.longitude}",
+                        name = d.districtName,
+                        province = d.province,
+                        parentCity = d.parentCity,
+                        district = d.districtName,
+                        latitude = d.latitude,
+                        longitude = d.longitude,
+                        detailedAddress = "${d.province}${d.parentCity}${d.districtName}"
+                    )
+                )
+            }
+        }
+
+        // 2. 补充从 ChinaCityCoordinates.ALL_CITIES 提取其他区县
+        com.weather.app.datasource.openmeteo.ChinaCityCoordinates.ALL_CITIES.filter { item ->
+            val parentMatch = cleanSuffix(item.parentCity) == cleanParent
+            val provMatch = cleanProv.isEmpty() || cleanSuffix(item.province) == cleanProv
+            parentMatch && provMatch && item.name != item.parentCity
+        }.forEach { item ->
+            if (results.none { it.name == item.name || cleanSuffix(it.name) == cleanSuffix(item.name) }) {
+                results.add(
+                    CityInfo(
+                        code = "${item.latitude},${item.longitude}",
+                        name = item.name,
+                        province = item.province,
+                        parentCity = item.parentCity,
+                        district = item.name,
+                        latitude = item.latitude,
+                        longitude = item.longitude,
+                        detailedAddress = "${item.province}${item.parentCity}${item.name}"
+                    )
+                )
+            }
+        }
+
+        return results
+    }
+
+    /**
+     * 根据区县名称获取其下辖的所有乡镇与行政村列表（第三级联动下钻）
+     *
+     * @param districtName 所属区县名称（如 "衡南县", "衡南"）
+     * @param parentCityName 所属地级市名称（可选，用于辅助精确定位）
+     * @param provinceName 所属省份（可选，用于辅助精确定位）
+     * @return 该区县下辖乡镇与行政村的规范城市实体列表 [List<CityInfo>]
+     */
+    fun getTownshipsInDistrict(
+        districtName: String,
+        parentCityName: String = "",
+        provinceName: String = ""
+    ): List<CityInfo> {
+        val cleanDist = cleanSuffix(districtName)
+        val cleanParent = cleanSuffix(parentCityName)
+        val cleanProv = cleanSuffix(provinceName)
+        if (cleanDist.isEmpty()) return emptyList()
+
+        return TOWNSHIPS.filter { entry ->
+            val distMatch = cleanSuffix(entry.districtName) == cleanDist
+            val parentMatch = cleanParent.isEmpty() || cleanSuffix(entry.parentCity) == cleanParent
+            val provMatch = cleanProv.isEmpty() || cleanSuffix(entry.province) == cleanProv
+            distMatch && parentMatch && provMatch
+        }.map { entry ->
+            CityInfo(
+                code = "${entry.latitude},${entry.longitude}",
+                name = entry.townshipName,
+                province = entry.province,
+                parentCity = entry.parentCity,
+                district = entry.districtName,
+                latitude = entry.latitude,
+                longitude = entry.longitude,
+                detailedAddress = "${entry.province}${entry.parentCity}${entry.districtName}${entry.townshipName}"
+            )
+        }
+    }
+
+    /**
+     * 判断指定区县是否收录有下辖乡镇或村庄条目
+     *
+     * @param districtName 区县名称
+     * @return 若内置知识库中包含该区县下辖乡镇或村庄条目则返回 true，否则返回 false
+     */
+    fun hasTownshipsInDistrict(districtName: String): Boolean {
+        val cleanDist = cleanSuffix(districtName)
+        if (cleanDist.isEmpty()) return false
+        return TOWNSHIPS.any { cleanSuffix(it.districtName) == cleanDist }
+    }
+
+    /**
+     * 依据关键字模糊搜索乡镇与村庄级地点，并在结果中完整携带上级省市区县地址
+     *
+     * 支持知名古镇名村、重点区县乡镇库检索、动态复合地名拆分（如“衡南县新安村”）、
+     * 无后缀短词扩展重试（如输入“龙确”自动拓展匹配“龙确村”），以及单村镇名结合行政区划智能推导生成标准可添加的城市实体。
+     *
+     * @param keyword 搜索关键字（如 "龙确", "新安村", "云集镇", "乌镇", "衡南县新安村"）
+     * @param provinceContext 上下文省份名称（可选，用于辅助未知村镇推导上级归属）
+     * @param cityContext 上下文地级市/区县名称（可选，用于辅助未知村镇推导上级归属）
+     * @return 匹配到的乡镇与行政村规范城市实体列表 [List<CityInfo>]，均携带完整的上级地址
+     */
+    fun searchTownshipsAndVillages(
+        keyword: String,
+        provinceContext: String = "",
+        cityContext: String = ""
+    ): List<CityInfo> {
+        val trimmed = keyword.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        val results = mutableListOf<CityInfo>()
+        val clean = cleanTownshipVillageSuffix(trimmed)
+
+        // 1. 动态复合地名精准解析 (例如用户输入 "衡南县新安村"、"桐乡市乌镇"、"云集镇")
+        val dynamicMatch = resolveTownshipVillage(trimmed, provinceContext, cityContext)
+        if (dynamicMatch != null) {
+            results.add(
+                CityInfo(
+                    name = dynamicMatch.townshipName,
+                    province = dynamicMatch.province,
+                    parentCity = dynamicMatch.parentCity,
+                    district = dynamicMatch.districtName,
+                    latitude = dynamicMatch.latitude,
+                    longitude = dynamicMatch.longitude,
+                    detailedAddress = "${dynamicMatch.province}${dynamicMatch.parentCity}${dynamicMatch.districtName}${dynamicMatch.townshipName}"
+                )
+            )
+        }
+
+        // 2. 内置重点古镇与乡镇行政村库 (TOWNSHIPS) 模糊与无后缀匹配
+        val townshipMatches = TOWNSHIPS.filter { entry ->
+            entry.townshipName.contains(trimmed) ||
+                    (clean.isNotEmpty() && entry.cleanName.contains(clean)) ||
+                    trimmed.contains(entry.townshipName) ||
+                    (clean.isNotEmpty() && trimmed.contains(entry.cleanName)) ||
+                    "${entry.districtName}${entry.townshipName}".contains(trimmed) ||
+                    "${entry.parentCity}${entry.townshipName}".contains(trimmed) ||
+                    "${entry.province}${entry.townshipName}".contains(trimmed)
+        }.sortedWith(
+            compareBy<TownshipEntry> { entry ->
+                when {
+                    entry.townshipName == trimmed -> 0
+                    clean.isNotEmpty() && entry.cleanName == clean -> 1
+                    entry.townshipName.startsWith(trimmed) -> 2
+                    "${entry.districtName}${entry.townshipName}".startsWith(trimmed) -> 3
+                    else -> 4
+                }
+            }.thenBy { it.townshipName.length }
+        )
+
+        for (entry in townshipMatches) {
+            if (results.none { it.name == entry.townshipName && it.district == entry.districtName && it.province == entry.province }) {
+                results.add(
+                    CityInfo(
+                        name = entry.townshipName,
+                        province = entry.province,
+                        parentCity = entry.parentCity,
+                        district = entry.districtName,
+                        latitude = entry.latitude,
+                        longitude = entry.longitude,
+                        detailedAddress = "${entry.province}${entry.parentCity}${entry.districtName}${entry.townshipName}"
+                    )
+                )
+            }
+        }
+
+        // 3. 若用户输入的词不带后缀（如只输入“龙确”），尝试追加“村”、“镇”、“街道”、“乡”进行推导
+        if (results.isEmpty()) {
+            val suffixCandidates = listOf("${clean}村", "${clean}镇", "${clean}乡", "${clean}街道")
+            for (candidate in suffixCandidates) {
+                val candidateMatch = resolveTownshipVillage(candidate, provinceContext, cityContext)
+                if (candidateMatch != null) {
+                    results.add(
+                        CityInfo(
+                            name = candidateMatch.townshipName,
+                            province = candidateMatch.province,
+                            parentCity = candidateMatch.parentCity,
+                            district = candidateMatch.districtName,
+                            latitude = candidateMatch.latitude,
+                            longitude = candidateMatch.longitude,
+                            detailedAddress = "${candidateMatch.province}${candidateMatch.parentCity}${candidateMatch.districtName}${candidateMatch.townshipName}"
+                        )
+                    )
+                    break
+                }
+            }
+        }
+
+        // 4. 兜底智能识别：若输入形如 XX村、XX镇、XX乡、XX街道，且未在上述列表
+        if (results.isEmpty() && isTownshipOrVillage(trimmed)) {
+            val div = findDivision(trimmed, provinceContext, cityContext)
+            if (div != null) {
+                val distName = div.district.ifEmpty { div.standardName }
+                val targetName = if (div.village.isNotEmpty()) div.village else if (div.township.isNotEmpty()) div.township else trimmed
+                results.add(
+                    CityInfo(
+                        name = targetName,
+                        province = div.province,
+                        parentCity = div.parentCity,
+                        district = distName,
+                        latitude = div.latitude,
+                        longitude = div.longitude,
+                        detailedAddress = "${div.province}${div.parentCity}${distName}${targetName}"
+                    )
+                )
+            }
+        }
+
+        return results
     }
 }

@@ -427,29 +427,28 @@ class CmaWeatherDataSource : WeatherDataSource {
         try {
             var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
 
-            // 1. 若城市缺少编码，智能解析补全站点编码 (按严格三级级联：区县精准全等 -> 城市名精准全等 -> 复合地名提取 -> 地级市精准匹配 -> 省会兜底)
-            if (targetCity.code.isEmpty()) {
-                val resolved = 
-                    // 1.1 优先以明确的区县 (district) 进行精准全等匹配（例如 "衡南县" -> 衡南站 GYnJo，"江宁区" -> 江宁站 Dfezs）
-                    (if (targetCity.district.isNotEmpty()) resolveCityByName(targetCity.district, targetCity.province, exactOnly = true) else null)
-                    // 1.2 其次以城市名称 (name) 进行精准全等匹配（例如 "衡南" -> GYnJo，"海淀区" -> fElIR）
-                    ?: resolveCityByName(targetCity.name, targetCity.province, exactOnly = true)
-                    // 1.3 从复合地名文本中提取省内区县站点
-                    ?: resolveDistrictFromCompoundName(targetCity.name, targetCity.province)
-                    ?: (if (targetCity.landmark.isNotEmpty()) resolveDistrictFromCompoundName(targetCity.landmark, targetCity.province) else null)
-                    // 1.4 第 2 级降级：若无区县独立站点，降级至所属地级市 (parentCity) 匹配（例如 "衡阳市" -> 衡阳站，"南京市" -> 南京站）
-                    ?: (if (targetCity.parentCity.isNotEmpty()) resolveCityByName(targetCity.parentCity, targetCity.province, exactOnly = true) else null)
-                    ?: (if (targetCity.parentCity.isNotEmpty()) resolveCityByName(targetCity.parentCity, targetCity.province) else null)
-                    // 1.5 宽松多级模糊查找
-                    ?: (if (targetCity.district.isNotEmpty()) resolveCityByName(targetCity.district, targetCity.province) else null)
-                    ?: resolveCityByName(targetCity.name, targetCity.province)
-                    // 1.6 第 3 级降级：回退至所属省份省会城市主站
-                    ?: resolveCityByName(targetCity.province, targetCity.province, fallbackToProvinceCapital = true)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
 
-                if (resolved != null) {
+            // 1. 若城市缺少编码，智能解析补全站点编码 (严格遵循四级级联：乡镇/村 -> 区县 -> 地级市 -> 省会)
+            if (targetCity.code.isEmpty()) {
+                var resolvedCity: CityInfo? = null
+                for (candidate in cascadePlan.queryCandidateNames) {
+                    resolvedCity = resolveCityByName(candidate, targetCity.province, exactOnly = true)
+                        ?: resolveCityByName(candidate, targetCity.province)
+                    if (resolvedCity != null && resolvedCity.code.isNotEmpty()) {
+                        break
+                    }
+                }
+                if (resolvedCity == null) {
+                    resolvedCity = resolveDistrictFromCompoundName(targetCity.name, targetCity.province)
+                        ?: (if (targetCity.landmark.isNotEmpty()) resolveDistrictFromCompoundName(targetCity.landmark, targetCity.province) else null)
+                        ?: resolveCityByName(targetCity.province, targetCity.province, fallbackToProvinceCapital = true)
+                }
+
+                if (resolvedCity != null) {
                     targetCity = targetCity.copy(
-                        code = resolved.code,
-                        province = if (targetCity.province.isEmpty()) resolved.province else targetCity.province
+                        code = resolvedCity.code,
+                        province = if (targetCity.province.isEmpty()) resolvedCity.province else targetCity.province
                     )
                 } else {
                     return@withContext Result.failure(Exception("未能找到【${city.name}】对应的中央气象台站点编码"))
@@ -463,18 +462,9 @@ class CmaWeatherDataSource : WeatherDataSource {
             var response = safeFromJson(rawBody, CmaWeatherResponse::class.java)
             var data = response?.data
 
-            // 3. 若当前编码返回空，严格按“区县 -> 地级市 -> 省会”三级级联重新请求
+            // 3. 若当前编码返回空，严格按“乡镇/村 -> 区县 -> 地级市 -> 省会”四级级联重新请求
             if (data == null) {
-                val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
-                val fallbackCandidates = listOfNotNull(
-                    cascadePlan.parentCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    cascadePlan.parentCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    cascadePlan.capitalCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    cascadePlan.capitalCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    targetCity.province.takeIf { it.isNotEmpty() && it != targetCity.name }
-                ).distinct()
-
-                for (fallbackName in fallbackCandidates) {
+                for (fallbackName in cascadePlan.queryCandidateNames) {
                     val fallbackResolved = resolveCityByName(fallbackName, targetCity.province)
                     if (fallbackResolved != null && fallbackResolved.code.isNotEmpty() && fallbackResolved.code != targetCity.code) {
                         val retryBody = apiService.getWeather(fallbackResolved.code).string()

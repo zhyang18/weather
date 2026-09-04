@@ -395,7 +395,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     fun addCity(city: CityInfo) {
         viewModelScope.launch {
             val updated = repository.addCity(city)
-            val newIndex = updated.indexOfFirst { it.name == city.name || (it.code.isNotEmpty() && it.code == city.code) }
+            val newIndex = updated.indexOfFirst { it.name == city.name && it.province == city.province }
+                .let { if (it >= 0) it else updated.size - 1 }
                 .coerceAtLeast(0)
 
             _uiState.update {

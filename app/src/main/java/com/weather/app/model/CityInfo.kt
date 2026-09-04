@@ -165,12 +165,35 @@ data class CityInfo(
             sb.append(effectiveDistrict)
         }
 
-        val specific = if (l.isNotEmpty()) l else n
-        if (specific.isNotEmpty() && !sb.contains(specific) && specific != "当前位置") {
-            // 如果末尾具体名与区县纯净名重合（例如已拼“衡南县”，specific 为“衡南”），则不重复追加
-            val cleanSpecific = com.weather.app.datasource.ChinaAdministrativeDivisions.cleanSuffix(specific)
-            if (cleanSpecific.isEmpty() || !sb.contains(cleanSpecific)) {
-                sb.append(specific)
+        var specific = if (l.isNotEmpty()) l else n
+        if (specific.isNotEmpty() && specific != "当前位置") {
+            // 剥除已经拼装在开头的省份、地级市和区县前缀，防止地名重叠（如“衡南县新安村”重叠为“衡南县衡南县新安村”）
+            if (effectiveProvince.isNotEmpty() && specific.startsWith(effectiveProvince)) {
+                specific = specific.removePrefix(effectiveProvince)
+            }
+            if (effectiveParentCity.isNotEmpty()) {
+                val cleanParent = com.weather.app.datasource.ChinaAdministrativeDivisions.cleanSuffix(effectiveParentCity)
+                if (specific.startsWith(effectiveParentCity)) {
+                    specific = specific.removePrefix(effectiveParentCity)
+                } else if (cleanParent.isNotEmpty() && specific.startsWith(cleanParent)) {
+                    specific = specific.removePrefix(cleanParent)
+                }
+            }
+            if (effectiveDistrict.isNotEmpty()) {
+                val cleanDist = com.weather.app.datasource.ChinaAdministrativeDivisions.cleanSuffix(effectiveDistrict)
+                if (specific.startsWith(effectiveDistrict)) {
+                    specific = specific.removePrefix(effectiveDistrict)
+                } else if (cleanDist.isNotEmpty() && specific.startsWith(cleanDist)) {
+                    specific = specific.removePrefix(cleanDist)
+                }
+            }
+            specific = specific.trim()
+
+            if (specific.isNotEmpty() && !sb.contains(specific)) {
+                val cleanSpecific = com.weather.app.datasource.ChinaAdministrativeDivisions.cleanTownshipVillageSuffix(specific)
+                if (cleanSpecific.isEmpty() || !sb.contains(cleanSpecific)) {
+                    sb.append(specific)
+                }
             }
         }
 

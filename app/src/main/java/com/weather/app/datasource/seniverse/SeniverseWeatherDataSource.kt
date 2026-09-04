@@ -93,7 +93,7 @@ class SeniverseWeatherDataSource(
                 } else {
                     android.util.Log.e(TAG, message)
                 }
-            } catch (_: Throwable) {
+            } catch (e: Throwable) {
                 System.err.println("[$TAG ERROR] $message")
                 throwable?.printStackTrace()
             }
@@ -184,7 +184,8 @@ class SeniverseWeatherDataSource(
             }
 
             val targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
-            val locationParam = resolveLocationParam(targetCity)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
+            val locationParam = resolveLocationParam(targetCity, cascadePlan)
             val apiService = getApiService(config.getFormattedApiBaseUrl())
 
             log("【心知天气】准备获取城市【${targetCity.name}】天气，LocationParam=$locationParam")
@@ -353,10 +354,17 @@ class SeniverseWeatherDataSource(
     /**
      * 根据城市信息确定心知天气请求所需的 location 参数（城市中文名、LocationID 或 纬度:经度）
      *
+     * 优先匹配城市编码 (LocationID)，其次匹配四级级联有序经纬度坐标 (纬度:经度 格式)，
+     * 再次查询本地全国行政区划库，最后使用四级级联候选纯净名称。
+     *
      * @param city 城市信息对象 [CityInfo]
+     * @param cascadePlan 四级级联降级方案（可选）
      * @return 格式化后的 location 字符串
      */
-    private suspend fun resolveLocationParam(city: CityInfo): String {
+    private suspend fun resolveLocationParam(
+        city: CityInfo,
+        cascadePlan: com.weather.app.datasource.CascadeSearchPlan? = null
+    ): String {
         // 1. 若已有 LocationID (如 "WS0E9D8WN298")
         if (city.code.startsWith("WS", ignoreCase = true) || city.code.matches("^[A-Za-z0-9]{8,15}$".toRegex())) {
             return city.code
@@ -366,8 +374,8 @@ class SeniverseWeatherDataSource(
         cityLocationCache[city.name]?.let { return it }
 
         // 3. 若有经纬度，心知天气格式为 "lat:lon" (纬度:经度)
-        val lat = city.latitude
-        val lon = city.longitude
+        val lat = city.latitude ?: cascadePlan?.orderedCoordinates?.firstOrNull()?.first
+        val lon = city.longitude ?: cascadePlan?.orderedCoordinates?.firstOrNull()?.second
         if (lat != null && lon != null && (lat != 0.0 || lon != 0.0)) {
             val coords = "${String.format(Locale.US, "%.2f", lat)}:${String.format(Locale.US, "%.2f", lon)}"
             cityLocationCache[city.name] = coords
@@ -387,8 +395,9 @@ class SeniverseWeatherDataSource(
             return coords
         }
 
-        // 5. 兜底直接返回纯中文城市名
-        val cleanName = city.name.removeSuffix("市").removeSuffix("区").removeSuffix("县")
+        // 5. 兜底返回四级级联候选纯净城市名
+        val candidateName = cascadePlan?.queryCandidateNames?.firstOrNull() ?: city.name
+        val cleanName = candidateName.removeSuffix("市").removeSuffix("区").removeSuffix("县")
         return cleanName.ifEmpty { "beijing" }
     }
 

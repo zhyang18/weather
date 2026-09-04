@@ -218,9 +218,10 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
             var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
             val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
 
-            // 1. 确定有效经纬度（三级级联：区县坐标 -> 地级市坐标 -> 省会坐标）
-            var lat = targetCity.latitude ?: cascadePlan.districtCoords?.first ?: cascadePlan.parentCityCoords?.first ?: cascadePlan.capitalCoords?.first ?: 39.9042
-            var lon = targetCity.longitude ?: cascadePlan.districtCoords?.second ?: cascadePlan.parentCityCoords?.second ?: cascadePlan.capitalCoords?.second ?: 116.4074
+            // 1. 确定有效经纬度（四级级联：乡镇/村高精坐标 -> 区县坐标 -> 地级市坐标 -> 省会坐标）
+            val initialCoords = cascadePlan.orderedCoordinates.firstOrNull() ?: Pair(39.9042, 116.4074)
+            var lat = targetCity.latitude ?: initialCoords.first
+            var lon = targetCity.longitude ?: initialCoords.second
 
             targetCity = targetCity.copy(
                 latitude = lat,
@@ -228,7 +229,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
                 code = targetCity.code.ifEmpty { "${String.format(Locale.US, "%.2f", lat)},${String.format(Locale.US, "%.2f", lon)}" }
             )
 
-            // 2. 并发请求天气预报与空气质量 (若当前区县坐标请求失败，按地级市与省会降级重试)
+            // 2. 并发请求天气预报与空气质量 (若当前坐标请求失败，严格按四级级联坐标序列降级重试)
             suspend fun queryOpenMeteo(qLat: Double, qLon: Double): Pair<OpenMeteoForecastResponse?, OpenMeteoAirQualityResponse?> = coroutineScope {
                 val forecastDeferred = async {
                     try {
@@ -253,27 +254,19 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
 
             var (forecastResp, airQualityResp) = queryOpenMeteo(lat, lon)
 
-            // 若区县坐标未返回数据，第 2 级降级：地级市坐标
-            if (forecastResp?.current == null && cascadePlan.parentCityCoords != null && cascadePlan.parentCityCoords != Pair(lat, lon)) {
-                val fallbackCoords = cascadePlan.parentCityCoords
-                val (fbForecast, fbAir) = queryOpenMeteo(fallbackCoords.first, fallbackCoords.second)
-                if (fbForecast?.current != null) {
-                    forecastResp = fbForecast
-                    airQualityResp = fbAir
-                    lat = fallbackCoords.first
-                    lon = fallbackCoords.second
-                }
-            }
-
-            // 若仍无数据，第 3 级降级：省会坐标
-            if (forecastResp?.current == null && cascadePlan.capitalCoords != null && cascadePlan.capitalCoords != Pair(lat, lon)) {
-                val capCoords = cascadePlan.capitalCoords
-                val (capForecast, capAir) = queryOpenMeteo(capCoords.first, capCoords.second)
-                if (capForecast?.current != null) {
-                    forecastResp = capForecast
-                    airQualityResp = capAir
-                    lat = capCoords.first
-                    lon = capCoords.second
+            // 若首选坐标未返回有效数据，按“区县 -> 地级市 -> 省会”级联坐标序列逐级降级
+            if (forecastResp?.current == null) {
+                for (fallbackCoords in cascadePlan.orderedCoordinates) {
+                    if (fallbackCoords != Pair(lat, lon)) {
+                        val (fbForecast, fbAir) = queryOpenMeteo(fallbackCoords.first, fallbackCoords.second)
+                        if (fbForecast?.current != null) {
+                            forecastResp = fbForecast
+                            airQualityResp = fbAir
+                            lat = fallbackCoords.first
+                            lon = fallbackCoords.second
+                            break
+                        }
+                    }
                 }
             }
 

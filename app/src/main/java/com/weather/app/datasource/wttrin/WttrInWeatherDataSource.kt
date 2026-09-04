@@ -107,9 +107,10 @@ class WttrInWeatherDataSource : WeatherDataSource {
             var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
             val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
 
-            // 1. 确定有效经纬度（三级级联：区县坐标 -> 地级市坐标 -> 省会坐标）
-            var lat = targetCity.latitude ?: cascadePlan.districtCoords?.first ?: cascadePlan.parentCityCoords?.first ?: cascadePlan.capitalCoords?.first
-            var lon = targetCity.longitude ?: cascadePlan.districtCoords?.second ?: cascadePlan.parentCityCoords?.second ?: cascadePlan.capitalCoords?.second
+            // 1. 确定有效经纬度（四级级联：乡镇/村高精坐标 -> 区县坐标 -> 地级市坐标 -> 省会坐标）
+            val initialCoords = cascadePlan.orderedCoordinates.firstOrNull()
+            var lat = targetCity.latitude ?: initialCoords?.first
+            var lon = targetCity.longitude ?: initialCoords?.second
 
             if (lat != null && lon != null) {
                 targetCity = targetCity.copy(
@@ -121,7 +122,7 @@ class WttrInWeatherDataSource : WeatherDataSource {
                 )
             }
 
-            // 2. 发起 API 请求 (支持级联降级重试)
+            // 2. 发起 API 请求 (支持四级级联降级重试)
             suspend fun queryWttr(qLat: Double?, qLon: Double?, fallbackName: String): WttrInResponse? {
                 val locStr = if (qLat != null && qLon != null && qLat != 0.0 && qLon != 0.0) {
                     "${String.format(Locale.US, "%.4f", qLat)},${String.format(Locale.US, "%.4f", qLon)}"
@@ -135,28 +136,23 @@ class WttrInWeatherDataSource : WeatherDataSource {
                         lang = "zh"
                     ).string()
                     customGson.fromJson(responseBody, WttrInResponse::class.java)
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     null
                 }
             }
 
             var wttrResp = queryWttr(lat, lon, targetCity.name)
 
-            // 第 2 级降级：地级市坐标
-            if (wttrResp?.currentCondition.isNullOrEmpty() && cascadePlan.parentCityCoords != null) {
-                val fbCoords = cascadePlan.parentCityCoords
-                val fbResp = queryWttr(fbCoords.first, fbCoords.second, cascadePlan.parentCityName)
-                if (fbResp?.currentCondition?.isNotEmpty() == true) {
-                    wttrResp = fbResp
-                }
-            }
-
-            // 第 3 级降级：省会坐标
-            if (wttrResp?.currentCondition.isNullOrEmpty() && cascadePlan.capitalCoords != null) {
-                val capCoords = cascadePlan.capitalCoords
-                val capResp = queryWttr(capCoords.first, capCoords.second, cascadePlan.capitalCityName)
-                if (capResp?.currentCondition?.isNotEmpty() == true) {
-                    wttrResp = capResp
+            // 若首选坐标无返回，按“区县 -> 地级市 -> 省会”四级级联坐标序列有序降级重试
+            if (wttrResp?.currentCondition.isNullOrEmpty()) {
+                for (fallbackCoords in cascadePlan.orderedCoordinates) {
+                    if (fallbackCoords != Pair(lat, lon)) {
+                        val fbResp = queryWttr(fallbackCoords.first, fallbackCoords.second, "")
+                        if (fbResp?.currentCondition?.isNotEmpty() == true) {
+                            wttrResp = fbResp
+                            break
+                        }
+                    }
                 }
             }
 

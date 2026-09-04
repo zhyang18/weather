@@ -92,7 +92,7 @@ class QWeatherWeatherDataSource(
                 } else {
                     android.util.Log.e(TAG, message)
                 }
-            } catch (_: Throwable) {
+            } catch (e: Throwable) {
                 System.err.println("[$TAG ERROR] $message")
                 throwable?.printStackTrace()
             }
@@ -200,8 +200,9 @@ class QWeatherWeatherDataSource(
             }
 
             var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
-            val locationParam = resolveLocationParam(targetCity)
-            val coords = resolveCoordinates(targetCity)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
+            val locationParam = resolveLocationParam(targetCity, cascadePlan)
+            val coords = resolveCoordinates(targetCity, cascadePlan)
             val latStr = String.format(Locale.US, "%.2f", coords.first)
             val lonStr = String.format(Locale.US, "%.2f", coords.second)
             val apiBaseUrl = config.getFormattedApiBaseUrl()
@@ -385,12 +386,19 @@ class QWeatherWeatherDataSource(
     }
 
     /**
-     * 根据城市信息确定和风天气请求所需的 location 参数（LocationID 或 经度,纬度）
+     * 依据城市信息解析用于和风天气 API 请求的 location 参数
+     *
+     * 优先匹配城市编码 (LocationID)，其次匹配四级级联有序经纬度坐标 (经度,纬度 格式)，
+     * 再次查询本地全国行政区划库，最后使用四级级联候选纯净名称。
      *
      * @param city 城市信息对象 [CityInfo]
+     * @param cascadePlan 四级级联降级方案（可选）
      * @return 格式化后的 location 字符串
      */
-    private suspend fun resolveLocationParam(city: CityInfo): String {
+    private suspend fun resolveLocationParam(
+        city: CityInfo,
+        cascadePlan: com.weather.app.datasource.CascadeSearchPlan? = null
+    ): String {
         // 1. 若城市编码已为和风 LocationID (数字格式如 101010100)
         if (city.code.matches("^\\d{7,12}$".toRegex())) {
             return city.code
@@ -400,8 +408,8 @@ class QWeatherWeatherDataSource(
         cityLocationCache[city.name]?.let { return it }
 
         // 3. 若有经纬度，格式化为 "lon,lat"
-        val lat = city.latitude
-        val lon = city.longitude
+        val lat = city.latitude ?: cascadePlan?.orderedCoordinates?.firstOrNull()?.first
+        val lon = city.longitude ?: cascadePlan?.orderedCoordinates?.firstOrNull()?.second
         if (lat != null && lon != null && (lat != 0.0 || lon != 0.0)) {
             val coords = "${String.format(Locale.US, "%.2f", lon)},${String.format(Locale.US, "%.2f", lat)}"
             cityLocationCache[city.name] = coords
@@ -421,21 +429,26 @@ class QWeatherWeatherDataSource(
             return coords
         }
 
-        // 5. 兜底返回城市名称由 GeoAPI 处理
-        return city.name.removeSuffix("市").removeSuffix("区").removeSuffix("县")
+        // 5. 兜底返回四级级联候选城市名称由 GeoAPI 处理
+        val candidateName = cascadePlan?.queryCandidateNames?.firstOrNull() ?: city.name
+        return candidateName.removeSuffix("市").removeSuffix("区").removeSuffix("县")
     }
 
     /**
      * 解析城市对应的经纬度坐标（格式为 Pair(纬度, 经度)）
      *
-     * 优先提取城市实体自带坐标，其次查询本地行政区划坐标库，再次从城市编码尝试解析，最后降级使用默认省会/北京坐标。
+     * 优先提取城市实体自带坐标，其次查询四级级联有序坐标序列，再次查询本地行政区划坐标库，最后降级使用默认省会/北京坐标。
      *
      * @param city 待解析的城市信息实体 [CityInfo]
+     * @param cascadePlan 四级级联降级方案（可选）
      * @return 包含 (纬度, 经度) 的坐标对 [Pair]
      */
-    private suspend fun resolveCoordinates(city: CityInfo): Pair<Double, Double> {
-        val lat = city.latitude
-        val lon = city.longitude
+    private suspend fun resolveCoordinates(
+        city: CityInfo,
+        cascadePlan: com.weather.app.datasource.CascadeSearchPlan? = null
+    ): Pair<Double, Double> {
+        val lat = city.latitude ?: cascadePlan?.orderedCoordinates?.firstOrNull()?.first
+        val lon = city.longitude ?: cascadePlan?.orderedCoordinates?.firstOrNull()?.second
         if (lat != null && lon != null && (lat != 0.0 || lon != 0.0)) {
             return Pair(lat, lon)
         }
@@ -467,7 +480,7 @@ class QWeatherWeatherDataSource(
             }
         }
 
-        return Pair(39.90, 116.40)
+        return cascadePlan?.capitalCoords ?: Pair(39.90, 116.40)
     }
 
     /**

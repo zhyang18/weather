@@ -132,57 +132,62 @@ class CaiyunWeatherDataSource(
             val authKey = config.getEffectiveAuthKey()
 
             var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
 
-            // 1. 确定有效经纬度坐标
-            var lat = targetCity.latitude
-            var lon = targetCity.longitude
+            // 1. 确定有效经纬度坐标（四级级联：乡镇/村高精坐标 -> 区县坐标 -> 地级市坐标 -> 省会坐标）
+            val initialCoords = cascadePlan.orderedCoordinates.firstOrNull() ?: Pair(39.9042, 116.4074)
+            var lat = targetCity.latitude ?: initialCoords.first
+            var lon = targetCity.longitude ?: initialCoords.second
 
-            if (lat == null || lon == null || (lat == 0.0 && lon == 0.0)) {
-                val coords = resolveCoordinates(
-                    name = targetCity.name,
-                    province = targetCity.province,
-                    district = targetCity.district,
-                    parentCity = targetCity.parentCity,
-                    token = authKey
-                )
-                lat = coords.first
-                lon = coords.second
-                targetCity = targetCity.copy(
-                    latitude = lat,
-                    longitude = lon,
-                    code = targetCity.code.ifEmpty { "${String.format(Locale.US, "%.2f", lat)},${String.format(Locale.US, "%.2f", lon)}" }
-                )
-            }
+            targetCity = targetCity.copy(
+                latitude = lat,
+                longitude = lon,
+                code = targetCity.code.ifEmpty { "${String.format(Locale.US, "%.2f", lat)},${String.format(Locale.US, "%.2f", lon)}" }
+            )
 
-            // 2. 组织彩云 API 请求坐标：格式为 "经度,纬度"
-            val locationParam = "${String.format(Locale.US, "%.4f", lon)},${String.format(Locale.US, "%.4f", lat)}"
             val apiService = getApiService(config.getFormattedApiBaseUrl())
 
-            val rawBody = try {
-                apiService.getWeather(
-                    token = authKey,
-                    location = locationParam,
-                    alert = "true",
-                    dailySteps = 15,
-                    hourlySteps = 24,
-                    unit = "metric"
-                ).string()
-            } catch (e: Exception) {
-                return@withContext Result.failure(Exception("彩云天气网络请求失败: ${e.localizedMessage ?: "连接超时"}"))
+            suspend fun queryCaiyun(qLon: Double, qLat: Double): CaiyunWeatherResponse? {
+                val locationParam = "${String.format(Locale.US, "%.4f", qLon)},${String.format(Locale.US, "%.4f", qLat)}"
+                return try {
+                    val raw = apiService.getWeather(
+                        token = authKey,
+                        location = locationParam,
+                        alert = "true",
+                        dailySteps = 15,
+                        hourlySteps = 24,
+                        unit = "metric"
+                    ).string()
+                    customGson.fromJson(raw, CaiyunWeatherResponse::class.java)
+                } catch (e: Exception) {
+                    null
+                }
             }
 
-            val response = try {
-                customGson.fromJson(rawBody, CaiyunWeatherResponse::class.java)
-            } catch (e: Exception) {
-                return@withContext Result.failure(Exception("彩云天气响应数据解析异常: ${e.localizedMessage}"))
-            }
+            var response = queryCaiyun(lon, lat)
 
+            // 若首选坐标未返回有效数据，按“区县 -> 地级市 -> 省会”级联坐标序列逐级降级重试
             if (response == null || response.status != "ok" || response.result == null) {
-                val errorDesc = response?.error ?: "未知错误（状态码: ${response?.status}）"
+                for (fallbackCoords in cascadePlan.orderedCoordinates) {
+                    if (fallbackCoords != Pair(lat, lon)) {
+                        val retryResp = queryCaiyun(fallbackCoords.second, fallbackCoords.first)
+                        if (retryResp != null && retryResp.status == "ok" && retryResp.result != null) {
+                            response = retryResp
+                            lat = fallbackCoords.first
+                            lon = fallbackCoords.second
+                            break
+                        }
+                    }
+                }
+            }
+
+            val activeResponse = response
+            if (activeResponse == null || activeResponse.status != "ok" || activeResponse.result == null) {
+                val errorDesc = activeResponse?.error ?: "未知错误（状态码: ${activeResponse?.status}）"
                 return@withContext Result.failure(Exception("彩云天气接口返回异常: $errorDesc"))
             }
 
-            val result = response.result
+            val result = activeResponse.result
             val realtime = result.realtime
                 ?: return@withContext Result.failure(Exception("彩云天气未返回实时数据"))
 
@@ -197,8 +202,9 @@ class CaiyunWeatherDataSource(
             val pressureHpa = (realtime.pressure ?: 101325.0) / 100.0 // Pa 换算为 hPa
 
             val sdfTime = SimpleDateFormat("HH:mm", Locale.CHINA)
-            val publishTime = if (response.serverTime != null && response.serverTime > 0) {
-                sdfTime.format(Date(response.serverTime * 1000L))
+            val serverTime = activeResponse.serverTime
+            val publishTime = if (serverTime != null && serverTime > 0) {
+                sdfTime.format(Date(serverTime * 1000L))
             } else {
                 sdfTime.format(Date())
             }

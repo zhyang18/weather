@@ -391,13 +391,15 @@ class WeatherRepository(
     /**
      * 添加新城市至保存列表
      *
+     * 严格以城市名、所属省份与区县规范排重，杜绝因同县乡镇村共享国家气象站编码导致无法添加村镇的严重问题。
+     *
      * @param city 待添加的城市信息 [CityInfo]
      * @return 更新后的完整城市列表
      */
     fun addCity(city: CityInfo): List<CityInfo> {
         val safeCity = city.sanitize()
         val current = getSavedCities().toMutableList()
-        if (current.none { it.name == safeCity.name || (safeCity.code.isNotEmpty() && it.code == safeCity.code) }) {
+        if (current.none { it.name == safeCity.name && it.province == safeCity.province && (it.district.isEmpty() || safeCity.district.isEmpty() || it.district == safeCity.district) }) {
             current.add(safeCity)
             saveSavedCities(current)
         }
@@ -416,7 +418,7 @@ class WeatherRepository(
             return getSavedCities()
         }
         val current = getSavedCities().toMutableList()
-        current.removeAll { (it.name == safeCity.name && it.code == safeCity.code) || (!it.isAutoLocated && it.name == safeCity.name) }
+        current.removeAll { !it.isAutoLocated && it.name == safeCity.name && it.province == safeCity.province && (it.district.isEmpty() || safeCity.district.isEmpty() || it.district == safeCity.district) }
         if (current.isEmpty()) {
             current.add(CityInfo(code = "", name = "当前位置", province = "", isAutoLocated = true))
         }
@@ -435,7 +437,7 @@ class WeatherRepository(
         val safeCity = city.sanitize()
         val current = getSavedCities().toMutableList()
         val safeIndex = index.coerceIn(0, current.size)
-        if (current.none { it.name == safeCity.name && it.code == safeCity.code }) {
+        if (current.none { it.name == safeCity.name && it.province == safeCity.province && (it.district.isEmpty() || safeCity.district.isEmpty() || it.district == safeCity.district) }) {
             current.add(safeIndex, safeCity)
             saveSavedCities(current)
         }
@@ -604,11 +606,38 @@ class WeatherRepository(
     /**
      * 关键字模糊搜索匹配的城市列表
      *
-     * @param keyword 搜索关键字（如 "海淀", "南京"）
+     * 优先匹配全国乡镇与行政村知识库，并智能解析复合地名（如“衡南县新安村”），
+     * 保证乡镇与行政村地点能够秒级搜索、置顶呈现并顺利添加至城市列表。
+     *
+     * @param keyword 搜索关键字（如 "新安村", "云集镇", "乌镇", "衡南县新安村", "海淀"）
      * @return 匹配的城市列表 [Result]
      */
     suspend fun searchCities(keyword: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
-        getActiveDataSource().searchCities(keyword)
+        val trimmed = keyword.trim()
+        if (trimmed.isEmpty()) return@withContext Result.success(emptyList())
+
+        // 1. 本地全国乡镇与行政村全量检索与动态地名解析 (优先置顶)
+        val townshipResults = com.weather.app.datasource.ChinaAdministrativeDivisions.searchTownshipsAndVillages(trimmed)
+
+        // 2. 从当前生效的数据源获取区县及以上城市检索结果
+        val dataSourceResults = try {
+            getActiveDataSource().searchCities(trimmed).getOrDefault(emptyList())
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        // 3. 有序合并去重：乡镇村结果置顶，后接区县与地级市结果
+        val combined = mutableListOf<CityInfo>()
+        combined.addAll(townshipResults)
+
+        for (item in dataSourceResults) {
+            val safeItem = item.sanitize()
+            if (combined.none { it.name == safeItem.name && it.province == safeItem.province && (it.district.isEmpty() || safeItem.district.isEmpty() || it.district == safeItem.district) }) {
+                combined.add(safeItem)
+            }
+        }
+
+        Result.success(combined)
     }
 
     /**

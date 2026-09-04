@@ -119,16 +119,9 @@ class SojsonWeatherDataSource : WeatherDataSource {
             }
 
             val activeResponse = if (response == null || response.status != 200 || response.data == null) {
-                // 如果当前区县代码请求失败，严格按“所属地级市 -> 所属省份省会”三级级联降级
-                val fallbackCandidates = listOfNotNull(
-                    cascadePlan.parentCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    cascadePlan.parentCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    cascadePlan.capitalCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    cascadePlan.capitalCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name }
-                ).distinct()
-
+                // 如果当前代码请求失败，严格按“乡镇/村 -> 区县 -> 地级市 -> 省会”四级级联降级
                 var fallbackData: SojsonWeatherResponse? = null
-                for (fallback in fallbackCandidates) {
+                for (fallback in cascadePlan.queryCandidateNames) {
                     val fallbackCode = SojsonCityCodes.findCityCode(fallback, targetCity.province)
                     if (fallbackCode.isNotEmpty() && fallbackCode != cityCode) {
                         try {
@@ -139,7 +132,7 @@ class SojsonWeatherDataSource : WeatherDataSource {
                                 targetCity = targetCity.copy(code = fallbackCode)
                                 break
                             }
-                        } catch (_: Exception) {}
+                        } catch (e: Exception) {}
                     }
                 }
 
