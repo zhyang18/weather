@@ -150,7 +150,11 @@ fun LocationMapScreen(
         val lat = coords.first
         val lng = coords.second
         val cityName = city.name
-        val detailText = "${city.province} ${city.district}".trim()
+        val detailText = remember(city) {
+            city.getDetailedAddressText().ifEmpty {
+                "${city.province} ${city.district}".trim()
+            }
+        }
 
         // 经纬度偏转（GCJ-02）
         val gcjCoords = remember(lat, lng) {

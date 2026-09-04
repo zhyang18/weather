@@ -720,6 +720,21 @@ object SojsonCityCodes {
     }
 
     /**
+     * 根据城市实体对象直接解析获取 SOJSON 9 位城市编码
+     *
+     * @param city 城市信息实体 [CityInfo]
+     * @return 匹配到的 9 位数字城市代码，未命中时兜底返回北京代码 "101010100"
+     */
+    fun findCityCode(city: CityInfo): String {
+        return findCityCode(
+            name = city.name,
+            province = city.province,
+            district = city.district,
+            parentCity = city.parentCity
+        )
+    }
+
+    /**
      * 智能多级检索城市代码
      *
      * 采用“区县名称 -> 地级市名称 -> 上级市 -> 省份省会中心”四级精准与模糊递进查找机制。
@@ -737,15 +752,27 @@ object SojsonCityCodes {
         parentCity: String = ""
     ): String {
         val cleanName = cleanSuffix(name)
+        val cleanProvince = cleanSuffix(province)
         val cleanDistrict = cleanSuffix(district)
         val cleanParent = cleanSuffix(parentCity)
-        val cleanProvince = cleanSuffix(province)
+        val division = com.weather.app.datasource.ChinaAdministrativeDivisions.findDivision(
+            name = if (cleanDistrict.isNotEmpty()) cleanDistrict else cleanName,
+            province = province,
+            parentCity = parentCity
+        ) ?: com.weather.app.datasource.ChinaAdministrativeDivisions.findDivision(
+            name = cleanName,
+            province = province,
+            parentCity = parentCity
+        )
+
+        val resolvedParent = cleanParent.ifEmpty { division?.parentCity?.let { cleanSuffix(it) } ?: "" }
+        val resolvedDistrict = cleanDistrict.ifEmpty { division?.district?.let { cleanSuffix(it) } ?: "" }
 
         val candidates = listOfNotNull(
             cleanName.takeIf { it.isNotEmpty() },
-            cleanDistrict.takeIf { it.isNotEmpty() },
-            cleanParent.takeIf { it.isNotEmpty() }
-        )
+            resolvedDistrict.takeIf { it.isNotEmpty() },
+            resolvedParent.takeIf { it.isNotEmpty() }
+        ).distinct()
 
         // 1. 精确匹配（包含省份限定）
         if (cleanProvince.isNotEmpty()) {

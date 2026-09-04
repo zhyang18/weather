@@ -769,10 +769,15 @@ object ChinaCityCoordinates {
     /**
      * 根据 CityInfo 实体在全国行政区划数据库中检索匹配经纬度坐标
      *
+     * 优先提取实体自带坐标，其次按“目标区县坐标 -> 所属地级市坐标 -> 所属省份省会坐标”三级级联降级查找。
+     *
      * @param city 城市信息实体 [CityInfo]
      * @return 经纬度键值对 (Latitude, Longitude)，若完全无匹配则返回 null
      */
     fun findCoordinates(city: CityInfo): Pair<Double, Double>? {
+        if (city.latitude != null && city.longitude != null && (city.latitude != 0.0 || city.longitude != 0.0)) {
+            return Pair(city.latitude, city.longitude)
+        }
         return findCoordinates(
             name = city.name,
             province = city.province,
@@ -784,12 +789,13 @@ object ChinaCityCoordinates {
     /**
      * 在本地全国城市经纬度数据库中查找经纬度坐标
      *
-     * 采用“区县/地名精确匹配 -> 省市联合匹配 -> 包含模糊匹配 -> 上级地级市匹配 -> 所属省份省会兜底”多层级策略。
+     * 严格遵循“目标区县精确坐标 -> 上级地级市坐标 -> 所属省份省会兜底”三级级联查找策略，
+     * 杜绝越过地级市直接跳至省会坐标。
      *
-     * @param name 城市/区县名 (如 "盱眙", "海淀", "南京")
-     * @param province 所属省份名 (如 "江苏省", "北京市")
-     * @param district 区县名 (如 "盱眙县", "雨花台区")
-     * @param parentCity 上级地级市名 (如 "淮安市", "南京市")
+     * @param name 城市/区县名 (如 "衡南", "海淀", "南京")
+     * @param province 所属省份名 (如 "湖南省", "江苏省")
+     * @param district 区县名 (如 "衡南县", "雨花台区")
+     * @param parentCity 上级地级市名 (如 "衡阳市", "南京市")
      * @return 经纬度键值对 (Latitude, Longitude)，若完全无匹配则返回 null
      */
     fun findCoordinates(
@@ -803,32 +809,58 @@ object ChinaCityCoordinates {
         val cleanParentCity = cleanSuffix(parentCity)
         val cleanProvince = cleanSuffix(province)
 
+        // 1. 优先通过全国行政区划层级知识库匹配区县及其所属层级
+        val queryName = if (cleanDistrict.isNotEmpty()) cleanDistrict else cleanName
+        val division = com.weather.app.datasource.ChinaAdministrativeDivisions.findDivision(
+            name = queryName,
+            province = province,
+            parentCity = parentCity
+        ) ?: com.weather.app.datasource.ChinaAdministrativeDivisions.findDivision(
+            name = cleanName,
+            province = province,
+            parentCity = parentCity
+        )
+
+        if (division != null) {
+            // 第 1 级：命中目标区县独立坐标
+            if (division.latitude != 0.0 && division.longitude != 0.0) {
+                return Pair(division.latitude, division.longitude)
+            }
+            // 第 2 级：降级匹配所属地级市坐标
+            val resolvedParent = cleanSuffix(division.parentCity)
+            if (resolvedParent.isNotEmpty()) {
+                val parentMatch = ALL_CITIES.firstOrNull { cleanSuffix(it.name) == resolvedParent || cleanSuffix(it.parentCity) == resolvedParent }
+                if (parentMatch != null) {
+                    return Pair(parentMatch.latitude, parentMatch.longitude)
+                }
+            }
+        }
+
         val queryNames = listOfNotNull(
             cleanDistrict.takeIf { it.isNotEmpty() },
             cleanName.takeIf { it.isNotEmpty() }
         ).distinct()
 
-        // 1. 在全国城市数据库中精确匹配 (带省份/上级市筛选)
+        // 2. 在全国城市数据库中精确匹配 (带省份/上级市筛选)
         for (qName in queryNames) {
             val matches = ALL_CITIES.filter { cleanSuffix(it.name) == qName }
             if (matches.isNotEmpty()) {
-                // 如果有多个同名（例如不同省份的朝阳），优先匹配省份或上级市
                 if (cleanProvince.isNotEmpty()) {
                     matches.firstOrNull { cleanSuffix(it.province).contains(cleanProvince) || cleanProvince.contains(cleanSuffix(it.province)) }?.let {
                         return Pair(it.latitude, it.longitude)
                     }
                 }
-                if (cleanParentCity.isNotEmpty()) {
-                    matches.firstOrNull { cleanSuffix(it.parentCity).contains(cleanParentCity) || cleanParentCity.contains(cleanSuffix(it.parentCity)) }?.let {
+                val effectiveParent = cleanParentCity.ifEmpty { division?.parentCity?.let { cleanSuffix(it) } ?: "" }
+                if (effectiveParent.isNotEmpty()) {
+                    matches.firstOrNull { cleanSuffix(it.parentCity).contains(effectiveParent) || effectiveParent.contains(cleanSuffix(it.parentCity)) }?.let {
                         return Pair(it.latitude, it.longitude)
                     }
                 }
-                // 默认取第一个匹配项
                 return Pair(matches.first().latitude, matches.first().longitude)
             }
         }
 
-        // 2. 尝试模糊包含匹配 (例如 "盱眙县" 匹配 "盱眙")
+        // 3. 尝试模糊包含匹配 (例如 "衡南县" 匹配 "衡南")
         for (qName in queryNames) {
             val partialMatches = ALL_CITIES.filter {
                 val dbClean = cleanSuffix(it.name)
@@ -844,18 +876,23 @@ object ChinaCityCoordinates {
             }
         }
 
-        // 3. 尝试匹配上级地级市
-        if (cleanParentCity.isNotEmpty()) {
-            val parentMatches = ALL_CITIES.filter { cleanSuffix(it.name) == cleanParentCity || cleanSuffix(it.parentCity) == cleanParentCity }
+        // 4. 第 2 级降级：尝试匹配上级地级市 (由传入或由行政区划知识库推导出的所属地级市)
+        val targetParent = cleanParentCity.ifEmpty { division?.parentCity?.let { cleanSuffix(it) } ?: "" }
+        if (targetParent.isNotEmpty()) {
+            val parentMatches = ALL_CITIES.filter { cleanSuffix(it.name) == targetParent || cleanSuffix(it.parentCity) == targetParent }
             if (parentMatches.isNotEmpty()) {
                 return Pair(parentMatches.first().latitude, parentMatches.first().longitude)
             }
+            com.weather.app.datasource.ChinaAdministrativeDivisions.PREFECTURE_CITIES[targetParent]?.let {
+                return Pair(it.latitude, it.longitude)
+            }
         }
 
-        // 4. 尝试根据省份省会坐标兜底
-        if (cleanProvince.isNotEmpty()) {
+        // 5. 第 3 级降级：尝试根据省份省会坐标兜底
+        val targetProvince = cleanProvince.ifEmpty { division?.province?.let { cleanSuffix(it) } ?: "" }
+        if (targetProvince.isNotEmpty()) {
             PROVINCE_CAPITAL_COORDINATES.entries.firstOrNull {
-                cleanProvince.contains(it.key) || it.key.contains(cleanProvince)
+                targetProvince.contains(it.key) || it.key.contains(targetProvince)
             }?.let {
                 return it.value
             }
@@ -867,14 +904,42 @@ object ChinaCityCoordinates {
     /**
      * 根据关键字在内置数据库中快速搜索城市与区县
      *
-     * @param keyword 搜索关键字 (如 "盱眙", "南京")
+     * 整合全国地级市库与完整区县知识库，优先区县精准命中，提供带地级市与区县全称的规范数据。
+     *
+     * @param keyword 搜索关键字 (如 "衡南", "海淀", "南京")
      * @return 匹配到的城市列表 [CityInfo]
      */
     fun searchLocalCities(keyword: String): List<CityInfo> {
         val clean = cleanSuffix(keyword).lowercase(Locale.getDefault())
         if (clean.isEmpty()) return emptyList()
 
-        return ALL_CITIES.filter {
+        val results = mutableListOf<CityInfo>()
+
+        // 1. 优先在全国区县数据库中检索
+        val districtMatches = com.weather.app.datasource.ChinaAdministrativeDivisions.DISTRICTS.filter {
+            val distClean = it.cleanName.lowercase(Locale.getDefault())
+            val distFull = it.districtName.lowercase(Locale.getDefault())
+            val provClean = cleanSuffix(it.province).lowercase(Locale.getDefault())
+            val parentClean = cleanSuffix(it.parentCity).lowercase(Locale.getDefault())
+
+            distClean.contains(clean) || clean.contains(distClean) ||
+                    distFull.contains(clean) ||
+                    (clean.length >= 2 && (provClean.contains(clean) || parentClean.contains(clean)))
+        }.take(15).map { d ->
+            CityInfo(
+                code = "${String.format(Locale.US, "%.2f", d.latitude)},${String.format(Locale.US, "%.2f", d.longitude)}",
+                name = d.cleanName,
+                province = d.province,
+                latitude = d.latitude,
+                longitude = d.longitude,
+                district = d.districtName,
+                parentCity = d.parentCity
+            )
+        }
+        results.addAll(districtMatches)
+
+        // 2. 在地级市数据库中检索
+        val cityMatches = ALL_CITIES.filter {
             val itemClean = cleanSuffix(it.name).lowercase(Locale.getDefault())
             val provClean = cleanSuffix(it.province).lowercase(Locale.getDefault())
             itemClean.contains(clean) || clean.contains(itemClean) || it.name.contains(clean) || provClean.contains(clean)
@@ -889,6 +954,14 @@ object ChinaCityCoordinates {
                 parentCity = item.parentCity
             )
         }
+
+        cityMatches.forEach { c ->
+            if (results.none { it.name == c.name && it.province == c.province }) {
+                results.add(c)
+            }
+        }
+
+        return results.take(20)
     }
 
     /**

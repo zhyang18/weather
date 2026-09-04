@@ -131,7 +131,7 @@ class CaiyunWeatherDataSource(
             val config = getActiveConfig()
             val authKey = config.getEffectiveAuthKey()
 
-            var targetCity = city.sanitize()
+            var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
 
             // 1. 确定有效经纬度坐标
             var lat = targetCity.latitude
@@ -460,7 +460,8 @@ class CaiyunWeatherDataSource(
                 }
             }
 
-            Result.success(combinedList)
+            val enrichedList = combinedList.map { com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it) }
+            Result.success(enrichedList)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -500,7 +501,9 @@ class CaiyunWeatherDataSource(
      */
     override suspend fun getCitiesInProvince(provinceCode: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode)
+            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)

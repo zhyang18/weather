@@ -215,29 +215,24 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
         try {
-            var targetCity = city.sanitize()
+            var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
 
-            // 1. 确定有效经纬度
-            var lat = targetCity.latitude
-            var lon = targetCity.longitude
+            // 1. 确定有效经纬度（三级级联：区县坐标 -> 地级市坐标 -> 省会坐标）
+            var lat = targetCity.latitude ?: cascadePlan.districtCoords?.first ?: cascadePlan.parentCityCoords?.first ?: cascadePlan.capitalCoords?.first ?: 39.9042
+            var lon = targetCity.longitude ?: cascadePlan.districtCoords?.second ?: cascadePlan.parentCityCoords?.second ?: cascadePlan.capitalCoords?.second ?: 116.4074
 
-            // 如果城市对象中缺少经纬度，通过城市名解析
-            if (lat == null || lon == null || (lat == 0.0 && lon == 0.0)) {
-                val coords = resolveCoordinates(targetCity.name, targetCity.province, targetCity.district, targetCity.parentCity)
-                lat = coords.first
-                lon = coords.second
-                targetCity = targetCity.copy(
-                    latitude = lat,
-                    longitude = lon,
-                    code = targetCity.code.ifEmpty { "${String.format(Locale.US, "%.2f", lat)},${String.format(Locale.US, "%.2f", lon)}" }
-                )
-            }
+            targetCity = targetCity.copy(
+                latitude = lat,
+                longitude = lon,
+                code = targetCity.code.ifEmpty { "${String.format(Locale.US, "%.2f", lat)},${String.format(Locale.US, "%.2f", lon)}" }
+            )
 
-            // 2. 并发请求天气预报与空气质量
-            val (forecastResp, airQualityResp) = coroutineScope {
+            // 2. 并发请求天气预报与空气质量 (若当前区县坐标请求失败，按地级市与省会降级重试)
+            suspend fun queryOpenMeteo(qLat: Double, qLon: Double): Pair<OpenMeteoForecastResponse?, OpenMeteoAirQualityResponse?> = coroutineScope {
                 val forecastDeferred = async {
                     try {
-                        val body = apiService.getForecast(latitude = lat, longitude = lon).string()
+                        val body = apiService.getForecast(latitude = qLat, longitude = qLon).string()
                         customGson.fromJson(body, OpenMeteoForecastResponse::class.java)
                     } catch (e: Exception) {
                         null
@@ -246,7 +241,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
 
                 val airDeferred = async {
                     try {
-                        val body = apiService.getAirQuality(latitude = lat, longitude = lon).string()
+                        val body = apiService.getAirQuality(latitude = qLat, longitude = qLon).string()
                         customGson.fromJson(body, OpenMeteoAirQualityResponse::class.java)
                     } catch (e: Exception) {
                         null
@@ -256,11 +251,37 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
                 Pair(forecastDeferred.await(), airDeferred.await())
             }
 
+            var (forecastResp, airQualityResp) = queryOpenMeteo(lat, lon)
+
+            // 若区县坐标未返回数据，第 2 级降级：地级市坐标
+            if (forecastResp?.current == null && cascadePlan.parentCityCoords != null && cascadePlan.parentCityCoords != Pair(lat, lon)) {
+                val fallbackCoords = cascadePlan.parentCityCoords
+                val (fbForecast, fbAir) = queryOpenMeteo(fallbackCoords.first, fallbackCoords.second)
+                if (fbForecast?.current != null) {
+                    forecastResp = fbForecast
+                    airQualityResp = fbAir
+                    lat = fallbackCoords.first
+                    lon = fallbackCoords.second
+                }
+            }
+
+            // 若仍无数据，第 3 级降级：省会坐标
+            if (forecastResp?.current == null && cascadePlan.capitalCoords != null && cascadePlan.capitalCoords != Pair(lat, lon)) {
+                val capCoords = cascadePlan.capitalCoords
+                val (capForecast, capAir) = queryOpenMeteo(capCoords.first, capCoords.second)
+                if (capForecast?.current != null) {
+                    forecastResp = capForecast
+                    airQualityResp = capAir
+                    lat = capCoords.first
+                    lon = capCoords.second
+                }
+            }
+
             if (forecastResp == null || forecastResp.current == null) {
                 return@withContext Result.failure(Exception("Open-Meteo 未返回【${targetCity.name}】的有效天气数据"))
             }
 
-            val currentData = forecastResp.current
+            val currentData = forecastResp.current!!
             val hourlyData = forecastResp.hourly
             val dailyData = forecastResp.daily
 
@@ -417,7 +438,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
             val raw = apiService.searchGeocoding(name = query, count = 5, language = "zh").string()
             val resp = customGson.fromJson(raw, OpenMeteoGeocodingResponse::class.java)
             resp?.results ?: emptyList()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             emptyList()
         }
     }
@@ -454,7 +475,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
                         parentCity = loc.admin2 ?: cityName
                     )
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 emptyList()
             }
 
@@ -854,7 +875,7 @@ class OpenMeteoWeatherDataSource : WeatherDataSource {
                 Calendar.SATURDAY -> "星期六"
                 else -> dateStr
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             dateStr
         }
     }

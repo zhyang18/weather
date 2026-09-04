@@ -425,23 +425,25 @@ class CmaWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
         try {
-            var targetCity = city.sanitize()
+            var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
 
-            // 1. 若城市缺少编码，智能解析补全站点编码 (按层级优先级：区县精准全等 -> 城市名精准全等 -> 复合地名区县提取 -> 地级市精准匹配 -> 模糊降级 -> 省会兜底)
+            // 1. 若城市缺少编码，智能解析补全站点编码 (按严格三级级联：区县精准全等 -> 城市名精准全等 -> 复合地名提取 -> 地级市精准匹配 -> 省会兜底)
             if (targetCity.code.isEmpty()) {
                 val resolved = 
-                    // 1.1 优先以明确的区县 (district) 进行精准全等匹配（例如 "江宁区" -> 江宁站 Dfezs，杜绝被上级地级市南京站误拦截）
+                    // 1.1 优先以明确的区县 (district) 进行精准全等匹配（例如 "衡南县" -> 衡南站 GYnJo，"江宁区" -> 江宁站 Dfezs）
                     (if (targetCity.district.isNotEmpty()) resolveCityByName(targetCity.district, targetCity.province, exactOnly = true) else null)
-                    // 1.2 其次以城市名称 (name) 进行精准全等匹配（例如 "海淀区" -> 海淀站 fElIR，"昆山市" -> 昆山站 OxFhx）
+                    // 1.2 其次以城市名称 (name) 进行精准全等匹配（例如 "衡南" -> GYnJo，"海淀区" -> fElIR）
                     ?: resolveCityByName(targetCity.name, targetCity.province, exactOnly = true)
-                    // 1.3 从复合地名文本中提取省内区县站点（例如 name 为 "南京市江宁区龙港科技园" 时提取出江宁站）
+                    // 1.3 从复合地名文本中提取省内区县站点
                     ?: resolveDistrictFromCompoundName(targetCity.name, targetCity.province)
                     ?: (if (targetCity.landmark.isNotEmpty()) resolveDistrictFromCompoundName(targetCity.landmark, targetCity.province) else null)
-                    // 1.4 若均无区县独立站点，再降级至所属地级市 (parentCity) 精准匹配（例如 "南京市" -> 南京站 CxOWZ）
+                    // 1.4 第 2 级降级：若无区县独立站点，降级至所属地级市 (parentCity) 匹配（例如 "衡阳市" -> 衡阳站，"南京市" -> 南京站）
                     ?: (if (targetCity.parentCity.isNotEmpty()) resolveCityByName(targetCity.parentCity, targetCity.province, exactOnly = true) else null)
-                    // 1.5 宽松多级模糊查找与兜底
+                    ?: (if (targetCity.parentCity.isNotEmpty()) resolveCityByName(targetCity.parentCity, targetCity.province) else null)
+                    // 1.5 宽松多级模糊查找
                     ?: (if (targetCity.district.isNotEmpty()) resolveCityByName(targetCity.district, targetCity.province) else null)
                     ?: resolveCityByName(targetCity.name, targetCity.province)
+                    // 1.6 第 3 级降级：回退至所属省份省会城市主站
                     ?: resolveCityByName(targetCity.province, targetCity.province, fallbackToProvinceCapital = true)
 
                 if (resolved != null) {
@@ -461,13 +463,16 @@ class CmaWeatherDataSource : WeatherDataSource {
             var response = safeFromJson(rawBody, CmaWeatherResponse::class.java)
             var data = response?.data
 
-            // 3. 若当前编码返回空，尝试降级到所属地级市/区县/省会主站重新请求
+            // 3. 若当前编码返回空，严格按“区县 -> 地级市 -> 省会”三级级联重新请求
             if (data == null) {
+                val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
                 val fallbackCandidates = listOfNotNull(
-                    if (targetCity.parentCity.isNotEmpty() && targetCity.parentCity != targetCity.name) targetCity.parentCity else null,
-                    if (targetCity.district.isNotEmpty() && targetCity.district != targetCity.name) targetCity.district else null,
-                    if (targetCity.province.isNotEmpty() && targetCity.province != targetCity.name) targetCity.province else null
-                )
+                    cascadePlan.parentCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
+                    cascadePlan.parentCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name },
+                    cascadePlan.capitalCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
+                    cascadePlan.capitalCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name },
+                    targetCity.province.takeIf { it.isNotEmpty() && it != targetCity.name }
+                ).distinct()
 
                 for (fallbackName in fallbackCandidates) {
                     val fallbackResolved = resolveCityByName(fallbackName, targetCity.province)
@@ -690,7 +695,8 @@ class CmaWeatherDataSource : WeatherDataSource {
                 )
             }
 
-            Result.success(matches)
+            val enrichedMatches = matches.map { com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it) }
+            Result.success(enrichedMatches)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -942,11 +948,12 @@ class CmaWeatherDataSource : WeatherDataSource {
                 emptyList()
             }
             val list = response.map {
-                CityInfo(
+                val basic = CityInfo(
                     code = it.code,
                     name = it.city,
                     province = it.province
                 )
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(basic)
             }
             // 合并至全局缓存以便搜索
             synchronized(cachedCities) {

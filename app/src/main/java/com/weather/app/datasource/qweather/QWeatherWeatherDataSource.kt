@@ -199,7 +199,7 @@ class QWeatherWeatherDataSource(
                 )
             }
 
-            var targetCity = city.sanitize()
+            var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
             val locationParam = resolveLocationParam(targetCity)
             val coords = resolveCoordinates(targetCity)
             val latStr = String.format(Locale.US, "%.2f", coords.first)
@@ -539,7 +539,8 @@ class QWeatherWeatherDataSource(
                 }
             }
 
-            Result.success(combinedList)
+            val enrichedList = combinedList.map { com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it) }
+            Result.success(enrichedList)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -562,7 +563,9 @@ class QWeatherWeatherDataSource(
      */
     override suspend fun getCitiesInProvince(provinceCode: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode)
+            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)

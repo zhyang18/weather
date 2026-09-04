@@ -41,14 +41,15 @@ data class CityInfo(
 ) {
 
     /**
-     * 清理并保证所有非空字段不为 null
+     * 清理并保证所有非空字段不为 null，并自动补全缺失的行政区划与坐标
      *
-     * 用于防御 Gson 反序列化绕过默认构造方法导致字段为 null 的问题。
+     * 用于防御 Gson 反序列化绕过默认构造方法导致字段为 null 的问题，
+     * 同时基于全国行政区划层级知识库自动补全缺失的所属地级市 (parentCity)、规范区县名 (district) 及标准经纬度。
      *
-     * @return 经过安全校验与非空保全的 [CityInfo] 实例
+     * @return 经过安全校验与非空、区划全方位保全的 [CityInfo] 实例
      */
     fun sanitize(): CityInfo {
-        return CityInfo(
+        val basic = CityInfo(
             code = (code as String?) ?: "",
             name = (name as String?) ?: "",
             province = (province as String?) ?: "",
@@ -60,6 +61,11 @@ data class CityInfo(
             parentCity = (parentCity as String?) ?: "",
             detailedAddress = (detailedAddress as String?) ?: ""
         )
+        return if (basic.name.isNotEmpty() && basic.name != "当前位置" && (basic.parentCity.isEmpty() || basic.district.isEmpty() || basic.latitude == null)) {
+            com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(basic)
+        } else {
+            basic
+        }
     }
 
     /**
@@ -113,34 +119,67 @@ data class CityInfo(
     /**
      * 获取当前城市的定位详细地址描述
      *
-     * 若逆地理编码成功解析出精确街道门牌详细地址则优先展示；
-     * 否则根据省份、城市、区县与地标智能拼接完整层级地址。
+     * 严格遵循“省份 + 地级市 + 区县 + 详细地标”四级行政区划规范层级展示。
+     * 若逆地理编码包含具体街道门牌地址且完整包含省市区信息则优先采纳；
+     * 否则基于全国行政区划层级知识库推导补全所属地级市与区县后缀（例如当城市为“衡南”且省份为“湖南省”时，准确输出“湖南省衡阳市衡南县”）。
      *
-     * @return 格式化后的详细地址字符串（如 "江苏省南京市雨花台区软件大道109号"）
+     * @return 格式化后的完整规范详细地址字符串（如 "湖南省衡阳市衡南县"、"江苏省南京市雨花台区软件大道109号"）
      */
     fun getDetailedAddressText(): String {
-        val safeDetail = (detailedAddress as String?) ?: ""
-        if (safeDetail.isNotEmpty()) {
-            return safeDetail
-        }
         val p = (province as String?) ?: ""
         val c = (parentCity as String?) ?: ""
         val d = (district as String?) ?: ""
         val n = (name as String?) ?: ""
         val l = (landmark as String?) ?: ""
+        val safeDetail = (detailedAddress as String?) ?: ""
+
+        // 若自带的 detailedAddress 包含完整的地级市和区县层级，直接采纳
+        if (safeDetail.isNotEmpty() && (c.isEmpty() || safeDetail.contains(c)) && (d.isEmpty() || safeDetail.contains(d))) {
+            return safeDetail
+        }
+
+        // 尝试推导行政区划层级信息
+        val division = if (c.isEmpty() || d.isEmpty()) {
+            com.weather.app.datasource.ChinaAdministrativeDivisions.findDivision(
+                name = if (d.isNotEmpty()) d else n,
+                province = p,
+                parentCity = c
+            ) ?: com.weather.app.datasource.ChinaAdministrativeDivisions.findDivision(name = n, province = p, parentCity = c)
+        } else null
+
+        val effectiveProvince = p.ifEmpty { division?.province ?: "" }
+        val effectiveParentCity = c.ifEmpty { division?.parentCity ?: "" }
+        val effectiveDistrict = d.ifEmpty { division?.district ?: "" }
 
         val sb = StringBuilder()
-        if (p.isNotEmpty()) sb.append(p)
-        if (c.isNotEmpty() && !p.contains(c)) {
-            sb.append(c)
-            if (!c.endsWith("市") && !c.endsWith("地区") && !c.endsWith("州")) sb.append("市")
+        if (effectiveProvince.isNotEmpty()) {
+            sb.append(effectiveProvince)
         }
-        if (d.isNotEmpty() && !sb.contains(d)) sb.append(d)
+        if (effectiveParentCity.isNotEmpty() && !effectiveProvince.contains(effectiveParentCity)) {
+            sb.append(effectiveParentCity)
+            if (!effectiveParentCity.endsWith("市") && !effectiveParentCity.endsWith("地区") && !effectiveParentCity.endsWith("州")) {
+                sb.append("市")
+            }
+        }
+        if (effectiveDistrict.isNotEmpty() && !sb.contains(effectiveDistrict)) {
+            sb.append(effectiveDistrict)
+        }
+
         val specific = if (l.isNotEmpty()) l else n
         if (specific.isNotEmpty() && !sb.contains(specific) && specific != "当前位置") {
-            sb.append(specific)
+            // 如果末尾具体名与区县纯净名重合（例如已拼“衡南县”，specific 为“衡南”），则不重复追加
+            val cleanSpecific = com.weather.app.datasource.ChinaAdministrativeDivisions.cleanSuffix(specific)
+            if (cleanSpecific.isEmpty() || !sb.contains(cleanSpecific)) {
+                sb.append(specific)
+            }
         }
-        return sb.toString().ifEmpty { if (isAutoLocated) "当前定位位置" else n }
+
+        val constructed = sb.toString()
+        return when {
+            constructed.isNotEmpty() -> constructed
+            safeDetail.isNotEmpty() -> safeDetail
+            else -> if (isAutoLocated) "当前定位位置" else n
+        }
     }
 
     /**
@@ -317,7 +356,7 @@ class CityInfoJsonAdapter : JsonDeserializer<CityInfo>, JsonSerializer<CityInfo>
             landmark = obj.get("landmark")?.takeIf { !it.isJsonNull }?.asString ?: "",
             parentCity = obj.get("parentCity")?.takeIf { !it.isJsonNull }?.asString ?: "",
             detailedAddress = obj.get("detailedAddress")?.takeIf { !it.isJsonNull }?.asString ?: ""
-        )
+        ).sanitize()
     }
 
     /**

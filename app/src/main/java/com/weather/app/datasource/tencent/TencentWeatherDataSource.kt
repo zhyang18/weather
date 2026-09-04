@@ -106,10 +106,11 @@ class TencentWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
         try {
-            val targetCity = city.sanitize()
+            val targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
             val queryParams = resolveQueryParams(targetCity)
 
-            // 1. 发起主请求查询天气
+            // 1. 发起第 1 级请求查询区县天气
             var rawBody = try {
                 apiService.getWeather(
                     province = queryParams.province,
@@ -122,44 +123,44 @@ class TencentWeatherDataSource : WeatherDataSource {
 
             var response: TencentWeatherResponse? = try {
                 if (rawBody.isNotEmpty()) customGson.fromJson(rawBody, TencentWeatherResponse::class.java) else null
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 null
             }
 
-            // 2. 若区县查询无果，自动降级为地级市查询
+            // 2. 第 2 级降级：若区县查询无果，自动降级为地级市查询
             if (response == null || response.status != 200 || response.data?.observe?.degree == null) {
-                if (queryParams.county.isNotEmpty()) {
+                val candidateCity = queryParams.city.ifEmpty { cascadePlan.parentCityName }
+                if (candidateCity.isNotEmpty()) {
                     try {
                         val fallbackBody = apiService.getWeather(
                             province = queryParams.province,
-                            city = queryParams.city,
+                            city = candidateCity,
                             county = ""
                         ).string()
                         val fallbackResp = customGson.fromJson(fallbackBody, TencentWeatherResponse::class.java)
                         if (fallbackResp != null && fallbackResp.status == 200 && fallbackResp.data?.observe?.degree != null) {
                             response = fallbackResp
                         }
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
                     }
                 }
             }
 
-            // 3. 若依然无果，尝试按所属省份/地级市进一步重试
+            // 3. 第 3 级降级：若依然无果，降级为省会城市查询
             if (response == null || response.status != 200 || response.data?.observe?.degree == null) {
-                val candidateCity = targetCity.parentCity.ifEmpty { targetCity.name }
-                val candidateProvince = targetCity.province.ifEmpty { candidateCity }
-                if (candidateCity != queryParams.city || candidateProvince != queryParams.province) {
+                val capitalCity = cascadePlan.capitalCityName
+                if (capitalCity.isNotEmpty()) {
                     try {
                         val retryBody = apiService.getWeather(
-                            province = candidateProvince,
-                            city = candidateCity,
+                            province = queryParams.province,
+                            city = capitalCity,
                             county = ""
                         ).string()
                         val retryResp = customGson.fromJson(retryBody, TencentWeatherResponse::class.java)
                         if (retryResp != null && retryResp.status == 200 && retryResp.data?.observe?.degree != null) {
                             response = retryResp
                         }
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
                     }
                 }
             }
@@ -252,7 +253,9 @@ class TencentWeatherDataSource : WeatherDataSource {
      */
     override suspend fun searchCities(keyword: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val results = SojsonCityCodes.searchCities(keyword)
+            val results = SojsonCityCodes.searchCities(keyword).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(results)
         } catch (e: Exception) {
             Result.failure(e)
@@ -276,7 +279,9 @@ class TencentWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getCitiesInProvince(provinceCode: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val list = SojsonCityCodes.getCitiesByProvinceCode(provinceCode)
+            val list = SojsonCityCodes.getCitiesByProvinceCode(provinceCode).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)
@@ -604,7 +609,7 @@ class TencentWeatherDataSource : WeatherDataSource {
             if (firstEntry != null && firstEntry.value.isJsonObject) {
                 val alarmItem = try {
                     customGson.fromJson(firstEntry.value, TencentAlarmItem::class.java)
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     null
                 }
                 if (alarmItem != null && !alarmItem.alarmContent.isNullOrEmpty()) {

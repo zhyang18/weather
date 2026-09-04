@@ -95,9 +95,10 @@ class SojsonWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
         try {
-            var targetCity = city.sanitize()
+            var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
 
-            // 1. 校验或补全 9 位数字城市代码
+            // 1. 校验或补全 9 位数字城市代码（优先区县）
             var cityCode = targetCity.code.trim()
             if (cityCode.length != 9 || !cityCode.all { it.isDigit() }) {
                 cityCode = SojsonCityCodes.findCityCode(
@@ -118,16 +119,18 @@ class SojsonWeatherDataSource : WeatherDataSource {
             }
 
             val activeResponse = if (response == null || response.status != 200 || response.data == null) {
-                // 如果当前区县代码请求失败，尝试降级到所属地级市或省会
+                // 如果当前区县代码请求失败，严格按“所属地级市 -> 所属省份省会”三级级联降级
                 val fallbackCandidates = listOfNotNull(
-                    targetCity.parentCity.takeIf { it.isNotEmpty() && it != targetCity.name },
-                    targetCity.province.takeIf { it.isNotEmpty() && it != targetCity.name }
-                )
+                    cascadePlan.parentCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
+                    cascadePlan.parentCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name },
+                    cascadePlan.capitalCityName.takeIf { it.isNotEmpty() && it != targetCity.name },
+                    cascadePlan.capitalCityCleanName.takeIf { it.isNotEmpty() && it != targetCity.name }
+                ).distinct()
 
                 var fallbackData: SojsonWeatherResponse? = null
                 for (fallback in fallbackCandidates) {
                     val fallbackCode = SojsonCityCodes.findCityCode(fallback, targetCity.province)
-                    if (fallbackCode != cityCode) {
+                    if (fallbackCode.isNotEmpty() && fallbackCode != cityCode) {
                         try {
                             val retryBody = apiService.getWeather(fallbackCode).string()
                             val retryResp = customGson.fromJson(retryBody, SojsonWeatherResponse::class.java)
@@ -261,7 +264,9 @@ class SojsonWeatherDataSource : WeatherDataSource {
      */
     override suspend fun searchCities(keyword: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val results = SojsonCityCodes.searchCities(keyword)
+            val results = SojsonCityCodes.searchCities(keyword).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(results)
         } catch (e: Exception) {
             Result.failure(e)
@@ -285,7 +290,9 @@ class SojsonWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getCitiesInProvince(provinceCode: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val list = SojsonCityCodes.getCitiesByProvinceCode(provinceCode)
+            val list = SojsonCityCodes.getCitiesByProvinceCode(provinceCode).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)

@@ -576,11 +576,29 @@ class WeatherRepository(
     /**
      * 查询指定城市的天气数据
      *
+     * 自动丰富并补全城市行政区划与坐标，确保数据源采用规范三级级联查询，
+     * 并在天气抓取成功后保全完整的“省 - 地级市 - 区县”层级结构。
+     *
      * @param city 目标城市信息 [CityInfo]
      * @return 包含聚合天气数据 [WeatherData] 的结果 [Result]
      */
     suspend fun fetchWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
-        getActiveDataSource().getWeather(city)
+        val safeCity = city.sanitize()
+        val result = getActiveDataSource().getWeather(safeCity)
+        result.map { data ->
+            val enrichedCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(
+                data.city.copy(
+                    name = safeCity.name.ifEmpty { data.city.name },
+                    province = safeCity.province.ifEmpty { data.city.province },
+                    parentCity = safeCity.parentCity.ifEmpty { data.city.parentCity },
+                    district = safeCity.district.ifEmpty { data.city.district },
+                    latitude = safeCity.latitude ?: data.city.latitude,
+                    longitude = safeCity.longitude ?: data.city.longitude,
+                    detailedAddress = safeCity.detailedAddress.ifEmpty { data.city.detailedAddress }
+                )
+            )
+            data.copy(city = enrichedCity)
+        }
     }
 
     /**

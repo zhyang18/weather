@@ -183,7 +183,7 @@ class SeniverseWeatherDataSource(
                 )
             }
 
-            val targetCity = city.sanitize()
+            val targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
             val locationParam = resolveLocationParam(targetCity)
             val apiService = getApiService(config.getFormattedApiBaseUrl())
 
@@ -452,7 +452,8 @@ class SeniverseWeatherDataSource(
                 }
             }
 
-            Result.success(combinedList)
+            val enrichedList = combinedList.map { com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it) }
+            Result.success(enrichedList)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -475,7 +476,9 @@ class SeniverseWeatherDataSource(
      */
     override suspend fun getCitiesInProvince(provinceCode: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode)
+            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)

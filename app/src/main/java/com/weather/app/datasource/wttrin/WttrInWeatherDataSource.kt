@@ -104,47 +104,65 @@ class WttrInWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getWeather(city: CityInfo): Result<WeatherData> = withContext(Dispatchers.IO) {
         try {
-            var targetCity = city.sanitize()
+            var targetCity = com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(city)
+            val cascadePlan = com.weather.app.datasource.ChinaAdministrativeDivisions.buildCascadeSearchPlan(targetCity)
 
-            // 1. 确定有效经纬度或请求位置字符串
-            var lat = targetCity.latitude
-            var lon = targetCity.longitude
+            // 1. 确定有效经纬度（三级级联：区县坐标 -> 地级市坐标 -> 省会坐标）
+            var lat = targetCity.latitude ?: cascadePlan.districtCoords?.first ?: cascadePlan.parentCityCoords?.first ?: cascadePlan.capitalCoords?.first
+            var lon = targetCity.longitude ?: cascadePlan.districtCoords?.second ?: cascadePlan.parentCityCoords?.second ?: cascadePlan.capitalCoords?.second
 
-            if (lat == null || lon == null || (lat == 0.0 && lon == 0.0)) {
-                val coords = resolveCoordinates(
-                    targetCity.name,
-                    targetCity.province,
-                    targetCity.district,
-                    targetCity.parentCity
+            if (lat != null && lon != null) {
+                targetCity = targetCity.copy(
+                    latitude = lat,
+                    longitude = lon,
+                    code = targetCity.code.ifEmpty {
+                        "${String.format(Locale.US, "%.2f", lat)},${String.format(Locale.US, "%.2f", lon)}"
+                    }
                 )
-                if (coords != null) {
-                    lat = coords.first
-                    lon = coords.second
-                    targetCity = targetCity.copy(
-                        latitude = lat,
-                        longitude = lon,
-                        code = targetCity.code.ifEmpty {
-                            "${String.format(Locale.US, "%.2f", lat)},${String.format(Locale.US, "%.2f", lon)}"
-                        }
-                    )
+            }
+
+            // 2. 发起 API 请求 (支持级联降级重试)
+            suspend fun queryWttr(qLat: Double?, qLon: Double?, fallbackName: String): WttrInResponse? {
+                val locStr = if (qLat != null && qLon != null && qLat != 0.0 && qLon != 0.0) {
+                    "${String.format(Locale.US, "%.4f", qLat)},${String.format(Locale.US, "%.4f", qLon)}"
+                } else {
+                    fallbackName.ifEmpty { "Beijing" }
+                }
+                return try {
+                    val responseBody = apiService.getWeather(
+                        location = locStr,
+                        format = "j1",
+                        lang = "zh"
+                    ).string()
+                    customGson.fromJson(responseBody, WttrInResponse::class.java)
+                } catch (_: Exception) {
+                    null
                 }
             }
 
-            val queryLocation = if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
-                "${String.format(Locale.US, "%.4f", lat)},${String.format(Locale.US, "%.4f", lon)}"
-            } else {
-                targetCity.name.ifEmpty { "Beijing" }
+            var wttrResp = queryWttr(lat, lon, targetCity.name)
+
+            // 第 2 级降级：地级市坐标
+            if (wttrResp?.currentCondition.isNullOrEmpty() && cascadePlan.parentCityCoords != null) {
+                val fbCoords = cascadePlan.parentCityCoords
+                val fbResp = queryWttr(fbCoords.first, fbCoords.second, cascadePlan.parentCityName)
+                if (fbResp?.currentCondition?.isNotEmpty() == true) {
+                    wttrResp = fbResp
+                }
             }
 
-            // 2. 发起 API 请求
-            val responseBody = apiService.getWeather(
-                location = queryLocation,
-                format = "j1",
-                lang = "zh"
-            ).string()
+            // 第 3 级降级：省会坐标
+            if (wttrResp?.currentCondition.isNullOrEmpty() && cascadePlan.capitalCoords != null) {
+                val capCoords = cascadePlan.capitalCoords
+                val capResp = queryWttr(capCoords.first, capCoords.second, cascadePlan.capitalCityName)
+                if (capResp?.currentCondition?.isNotEmpty() == true) {
+                    wttrResp = capResp
+                }
+            }
 
-            val wttrResp = customGson.fromJson(responseBody, WttrInResponse::class.java)
-                ?: return@withContext Result.failure(Exception("wttr.in 未返回【${targetCity.name}】的有效天气数据"))
+            if (wttrResp == null) {
+                return@withContext Result.failure(Exception("wttr.in 未返回【${targetCity.name}】的有效天气数据"))
+            }
 
             val currentCondition = wttrResp.currentCondition?.firstOrNull()
                 ?: return@withContext Result.failure(Exception("wttr.in 实时天气数据为空"))
@@ -290,7 +308,9 @@ class WttrInWeatherDataSource : WeatherDataSource {
             val clean = keyword.trim()
             if (clean.isEmpty()) return@withContext Result.success(emptyList())
 
-            val localResults = ChinaCityCoordinates.searchLocalCities(clean)
+            val localResults = ChinaCityCoordinates.searchLocalCities(clean).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(localResults)
         } catch (e: Exception) {
             Result.failure(e)
@@ -314,7 +334,9 @@ class WttrInWeatherDataSource : WeatherDataSource {
      */
     override suspend fun getCitiesInProvince(provinceCode: String): Result<List<CityInfo>> = withContext(Dispatchers.IO) {
         try {
-            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode)
+            val list = ChinaCityCoordinates.getCitiesByProvinceCode(provinceCode).map {
+                com.weather.app.datasource.ChinaAdministrativeDivisions.enrichCityInfo(it)
+            }
             Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)

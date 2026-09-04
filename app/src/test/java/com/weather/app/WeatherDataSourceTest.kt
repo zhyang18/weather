@@ -133,11 +133,11 @@ class WeatherDataSourceTest {
         val rawGson = com.google.gson.Gson()
         val rawCity = rawGson.fromJson(legacyJson, CityInfo::class.java)
 
-        // 验证 sanitize 能清洗掉 null 字段并安全执行 copy
+        // 验证 sanitize 能清洗掉 null 字段并安全执行 copy，且智能区划引擎自动补齐地级市
         val safeCity = rawCity.sanitize()
         assertEquals("", safeCity.district)
         assertEquals("", safeCity.landmark)
-        assertEquals("", safeCity.parentCity)
+        assertEquals("西安市", safeCity.parentCity)
         val copied = safeCity.copy(province = "陕西省")
         assertEquals("西安", copied.name)
         assertEquals("陕西省 · 西安", safeCity.getFullDisplayName())
